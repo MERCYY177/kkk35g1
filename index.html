@@ -29335,6 +29335,11 @@ return String(str==null?'':str).replace(/[&<>"']/g,function(ch){
   }
   function route(app){
     app=String(app||'').trim();
+    if(app==='chat'){
+      if(typeof window.hideHomePage==='function') window.hideHomePage();
+      requestAnimationFrame(function(){requestAnimationFrame(closeDrawer);});
+      return false;
+    }
     closeDrawer();
     if(app==='chat2-big-keyboard'){
       setTimeout(function(){
@@ -29342,7 +29347,7 @@ return String(str==null?'':str).replace(/[&<>"']/g,function(ch){
       },80);
       return false;
     }
-    setTimeout(function(){ if(typeof window.openApp==='function') window.openApp(app); },80);
+    if(typeof window.openApp==='function') window.openApp(app);
     return false;
   }
 
@@ -31421,5 +31426,5 @@ html.xiaoshu-theme-booting *,body:not(.xiaoshu-first-paint-ready) *{transition:n
 <script id="kkk35g-v106-release-marker">window.__kkk35gRelease='v106-local-stickers-media-reply-seal';</script>
 <script id="kkk35g-v107-release-marker">window.__kkk35gRelease='v107-preserve-all-stickers-correction';</script>
 <style id="xiaoshu-sticker-batch-admin-v1">.xs-sticker-batch-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px;max-height:48vh;overflow:auto;padding:2px}.xs-sticker-batch-item{position:relative;aspect-ratio:1;border:2px solid transparent;border-radius:12px;background:var(--secondary-bg,#fff);padding:0;overflow:hidden;cursor:pointer}.xs-sticker-batch-item img{width:100%;height:100%;object-fit:contain;display:block}.xs-sticker-batch-item.selected{border-color:var(--accent-color,#5b8def);background:rgba(var(--accent-color-rgb,91,141,239),.12)}.xs-sticker-batch-check{display:none;position:absolute;right:4px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--accent-color,#5b8def);color:#fff;align-items:center;justify-content:center;font-size:13px;font-weight:900;box-shadow:0 1px 5px rgba(0,0,0,.25)}.xs-sticker-batch-item.selected .xs-sticker-batch-check{display:flex}.xs-sticker-batch-kind{position:absolute;left:3px;bottom:3px;padding:2px 5px;border-radius:6px;background:rgba(0,0,0,.64);color:#fff;font-size:9px;line-height:1.2}.xs-sticker-selection-count{font-size:12px;color:var(--text-secondary,#888);font-weight:700}@media(max-width:380px){.xs-sticker-batch-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}</style>
-<script id="kkk35g-final-499-release-marker">window.__kkk35gRelease='final-499-curated-local-stickers';</script>
+<script id="kkk35g-final-499-flashfix-release-marker">window.__kkk35gRelease='final-499-drawer-to-chat-flash-fix';</script>
 </body></html>

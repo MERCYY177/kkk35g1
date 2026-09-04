@@ -29340,24 +29340,31 @@ return String(str==null?'':str).replace(/[&<>"']/g,function(ch){
   function route(app){
     app=String(app||'').trim();
     if(app==='chat'){
-      document.body.classList.add('xs-chat-transition-hold');
       closeDrawer();
       requestAnimationFrame(function(){
-        if(typeof window.hideHomePage==='function') window.hideHomePage();
-        var started=performance.now();
-        (function revealStableChat(){
-          var now=performance.now();
-          var chat=document.querySelector('.main-chat-area');
-          var input=document.querySelector('.input-area-wrapper');
-          var ready=!!(chat&&input&&chat.getBoundingClientRect().height>0&&input.getBoundingClientRect().height>0&&!document.body.classList.contains('xiaoshu-page-switching'));
-          if((ready&&now-started>=120)||now-started>=700){
+        var switchToChat=function(){
+          if(typeof window.hideHomePage==='function') window.hideHomePage();
+          return new Promise(function(resolve){
             requestAnimationFrame(function(){
-              document.body.classList.remove('xs-chat-transition-hold');
+              requestAnimationFrame(function(){
+                try{if(typeof window.xiaoshuLockChatToBottom==='function')window.xiaoshuLockChatToBottom('atomic-chat-reveal');}catch(e){}
+                requestAnimationFrame(resolve);
+              });
             });
-            return;
-          }
-          requestAnimationFrame(revealStableChat);
-        })();
+          });
+        };
+        if(typeof document.startViewTransition==='function'){
+          try{
+            document.documentElement.classList.add('xs-atomic-chat-transition');
+            var transition=document.startViewTransition(switchToChat);
+            transition.finished.finally(function(){document.documentElement.classList.remove('xs-atomic-chat-transition');});
+          }catch(e){switchToChat();}
+        }else{
+          document.body.classList.add('xs-chat-transition-hold');
+          switchToChat().then(function(){
+            requestAnimationFrame(function(){document.body.classList.remove('xs-chat-transition-hold');});
+          });
+        }
       });
       return false;
     }
@@ -31484,4 +31491,11 @@ body.xs-chat-transition-hold #xiaoshuDrawerHomeEntry{display:none!important;visi
 body.xs-chat-transition-hold,body.xs-chat-transition-hold *{transition:none!important;animation-duration:.001ms!important}
 </style>
 <script id="kkk35g-v112-atomic-chat-reveal-release-marker">window.__kkk35gRelease='v112-atomic-chat-reveal';</script>
+<style id="kkk35g-v113-view-transition-freeze-css">
+/* 由浏览器保存旧页面快照；新聊天页完成三帧布局后才整帧替换。 */
+html.xs-atomic-chat-transition::view-transition-old(root){animation:none!important;opacity:1!important}
+html.xs-atomic-chat-transition::view-transition-new(root){animation:none!important;opacity:1!important}
+html.xs-atomic-chat-transition::view-transition-group(root){animation-duration:.001ms!important}
+</style>
+<script id="kkk35g-v113-view-transition-freeze-release-marker">window.__kkk35gRelease='v113-view-transition-freeze';</script>
 </body></html>

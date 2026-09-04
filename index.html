@@ -29340,20 +29340,8 @@ return String(str==null?'':str).replace(/[&<>"']/g,function(ch){
   function route(app){
     app=String(app||'').trim();
     if(app==='chat'){
+      closeDrawer();
       if(typeof window.hideHomePage==='function') window.hideHomePage();
-      var started=(window.performance&&performance.now)?performance.now():Date.now();
-      (function waitForStableChat(){
-        var now=(window.performance&&performance.now)?performance.now():Date.now();
-        var body=document.body,chat=document.getElementById('chat-container'),input=document.querySelector('.input-area-wrapper');
-        var chatRect=chat&&chat.getBoundingClientRect?chat.getBoundingClientRect():null;
-        var inputRect=input&&input.getBoundingClientRect?input.getBoundingClientRect():null;
-        var ready=!!(body&&body.classList.contains('xiaoshu-chat-active')&&!body.classList.contains('xiaoshu-page-switching')&&chatRect&&chatRect.height>100&&inputRect&&inputRect.height>20);
-        if((ready&&now-started>=220)||now-started>=900){
-          requestAnimationFrame(function(){requestAnimationFrame(closeDrawer);});
-          return;
-        }
-        requestAnimationFrame(waitForStableChat);
-      })();
       return false;
     }
     closeDrawer();
@@ -31461,5 +31449,5 @@ html[data-theme="dark"] #xiaoshuAppDrawer .xs-drawer-panel{
   background:#141414!important;
 }
 </style>
-<script id="kkk35g-v110-drawer-no-backdrop-release-marker">window.__kkk35gRelease='v110-drawer-no-backdrop-diagnostic';</script>
+<script id="kkk35g-v111-drawer-instant-close-release-marker">window.__kkk35gRelease='v111-drawer-no-backdrop-instant-close';</script>
 </body></html>

@@ -29340,8 +29340,25 @@ return String(str==null?'':str).replace(/[&<>"']/g,function(ch){
   function route(app){
     app=String(app||'').trim();
     if(app==='chat'){
+      document.body.classList.add('xs-chat-transition-hold');
       closeDrawer();
-      if(typeof window.hideHomePage==='function') window.hideHomePage();
+      requestAnimationFrame(function(){
+        if(typeof window.hideHomePage==='function') window.hideHomePage();
+        var started=performance.now();
+        (function revealStableChat(){
+          var now=performance.now();
+          var chat=document.querySelector('.main-chat-area');
+          var input=document.querySelector('.input-area-wrapper');
+          var ready=!!(chat&&input&&chat.getBoundingClientRect().height>0&&input.getBoundingClientRect().height>0&&!document.body.classList.contains('xiaoshu-page-switching'));
+          if((ready&&now-started>=120)||now-started>=700){
+            requestAnimationFrame(function(){
+              document.body.classList.remove('xs-chat-transition-hold');
+            });
+            return;
+          }
+          requestAnimationFrame(revealStableChat);
+        })();
+      });
       return false;
     }
     closeDrawer();
@@ -31450,4 +31467,21 @@ html[data-theme="dark"] #xiaoshuAppDrawer .xs-drawer-panel{
 }
 </style>
 <script id="kkk35g-v111-drawer-instant-close-release-marker">window.__kkk35gRelease='v111-drawer-no-backdrop-instant-close';</script>
+<style id="kkk35g-v112-atomic-chat-reveal-css">
+/* 抽屉立即关闭；聊天页在锁屏主页后方完成布局，再一次性显现。 */
+body.xs-chat-transition-hold #home-page-bg{
+  display:block!important;visibility:visible!important;opacity:1!important;pointer-events:none!important;
+  position:fixed!important;inset:0!important;z-index:2147481890!important;
+}
+body.xs-chat-transition-hold #home-container.home-container{
+  display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:none!important;
+  position:fixed!important;inset:0!important;z-index:2147481891!important;
+  width:100%!important;max-width:460px!important;min-height:100dvh!important;
+  margin:0 auto!important;padding:clamp(62px,9.2dvh,96px) 24px calc(24px + env(safe-area-inset-bottom,0px))!important;
+  justify-content:flex-start!important;align-items:center!important;
+}
+body.xs-chat-transition-hold #xiaoshuDrawerHomeEntry{display:none!important;visibility:hidden!important;opacity:0!important}
+body.xs-chat-transition-hold,body.xs-chat-transition-hold *{transition:none!important;animation-duration:.001ms!important}
+</style>
+<script id="kkk35g-v112-atomic-chat-reveal-release-marker">window.__kkk35gRelease='v112-atomic-chat-reveal';</script>
 </body></html>

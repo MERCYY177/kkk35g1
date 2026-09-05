@@ -143,7 +143,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <style id="xiaoshu-step18-system-font-fix">html,body,button,input,textarea,select,.modal,.modal *,.shop-container,.shop-container *,.door-page,.door-page *,.settings-modal,.settings-modal *{font-family:var(--font-family,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif) !important;}.message,.message *{font-family:var(--message-font-family,var(--font-family,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif)) !important;}</style>
 <style id="xiaoshu-step19-fontawesome-icon-font-restore">.fa,.fas,.far,.fab,.fa-solid,.fa-regular,.fa-brands,.fa-classic,[class^="fa-"],[class*=" fa-"]{font-family:"Font Awesome 6 Free" !important;font-style:normal !important;font-variant:normal !important;line-height:1 !important;text-rendering:auto !important;-webkit-font-smoothing:antialiased !important;-moz-osx-font-smoothing:grayscale !important;}.fas,.fa-solid,.fa-classic{font-weight:900 !important;}.far,.fa-regular{font-family:"Font Awesome 6 Free" !important;font-weight:400 !important;}.fab,.fa-brands{font-family:"Font Awesome 6 Brands" !important;font-weight:400 !important;}.fa::before,.fas::before,.far::before,.fab::before,.fa-solid::before,.fa-regular::before,.fa-brands::before{font-family:inherit !important;font-weight:inherit !important;}</style>
 
-<script id="xiaoshu-offline-core-status-v1">window.__xiaoshuOfflineCore={version:'v26',localforage:true,jszip:true,icons:'inline-svg',fonts:'system'};
+<script id="xiaoshu-offline-core-status-v1">window.__xiaoshuOfflineCore={version:'v27-card-library-lite',localforage:true,jszip:true,icons:'inline-svg',fonts:'system'};
 </script>
 
 <style id="xiaoshu-notification-layout-fix-v28">.notification{position:fixed !important;left:50% !important;top:calc(env(safe-area-inset-top,0px) + 58px) !important;right:auto !important;bottom:auto !important;z-index:2147483000 !important;display:flex !important;align-items:center !important;justify-content:center !important;gap:8px !important;width:max-content !important;max-width:calc(100vw - 32px) !important;min-height:38px !important;margin:0 !important;padding:9px 13px !important;box-sizing:border-box !important;border:1px solid rgba(0,0,0,0.08) !important;border-radius:12px !important;background:rgba(255,255,255,0.96) !important;color:#222 !important;box-shadow:0 8px 28px rgba(0,0,0,0.14) !important;font-size:13px !important;line-height:1.4 !important;white-space:normal !important;text-align:left !important;pointer-events:none !important;overflow:hidden !important;opacity:1 !important;transform:translateX(-50%) translateY(0) !important;animation:xiaoshu-notification-enter-v28 180ms ease-out both !important;}.notification>i{display:inline-flex !important;flex:0 0 auto !important;width:1em !important;height:1em !important;margin:0 !important;font-size:16px !important;}.notification>span{display:block !important;min-width:0 !important;overflow-wrap:anywhere !important;}.notification.hiding{animation:xiaoshu-notification-leave-v28 180ms ease-in both !important;}.notification.success>i{color:#2f8f57 !important;}.notification.error>i{color:#c64646 !important;}.notification.warning>i{color:#b7791f !important;}.notification.info>i{color:var(--accent-color,#666) !important;}html[data-theme="dark"] .notification,body.dark-mode .notification{border-color:rgba(255,255,255,0.12) !important;background:rgba(34,34,34,0.96) !important;color:#f2f2f2 !important;box-shadow:0 8px 28px rgba(0,0,0,0.38) !important;}@keyframes xiaoshu-notification-enter-v28{from{opacity:0;transform:translateX(-50%) translateY(-8px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}@keyframes xiaoshu-notification-leave-v28{from{opacity:1;transform:translateX(-50%) translateY(0);}to{opacity:0;transform:translateX(-50%) translateY(-8px);}}@media (prefers-reduced-motion:reduce){.notification,.notification.hiding{animation-duration:1ms !important;}}</style>
@@ -5183,22 +5183,11 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 showNotification('回复库为空，请先到「自定义回复」中添加内容', 'info', 3500);
                 return;
             }
-            const disabledItemsOnce = (() => {
-                try {
-                    const raw = localStorage.getItem('disabledReplyItems');
-                    return raw ? new Set(JSON.parse(raw)) : new Set();
-                } catch (e) { return new Set(); }
-            })();
-            const disabledGroupItemsOnce = new Set();
-            (window.customReplyGroups || []).forEach(g => {
-                if (g.disabled && Array.isArray(g.items)) g.items.forEach(item => disabledGroupItemsOnce.add(item));
-            });
             const replyPoolOnce = customReplies
-                .filter(r => !disabledItemsOnce.has(r) && !disabledGroupItemsOnce.has(r))
                 .map(r => String(r || '').trim())
                 .filter(Boolean);
             if (!replyPoolOnce.length) {
-                showNotification('回复库可用内容为空（可能被分组禁用或屏蔽），请到「自定义回复」中调整', 'info', 4000);
+                showNotification('回复库为空，请先到「自定义回复」中添加内容', 'info', 4000);
                 return;
             }
 
@@ -6524,7 +6513,7 @@ return { groups: window.customReplyGroups, items: customReplies, itemLabel: '字
 // 判断当前 tab 是否支持分组
 function _tabHasGroups(tab) {
 tab = tab || currentSubTab;
-return tab === 'custom' || tab === 'pokes' || tab === 'kaomojis' || tab === 'voices';
+return tab === 'pokes' || tab === 'kaomojis' || tab === 'voices';
 }
 let _batchSelectedIndices = new Set();
 let _batchModeActive = false;
@@ -6918,7 +6907,7 @@ list.appendChild(empty.firstElementChild || empty);
 return;
 }
 if (currentMajorTab === 'reply' && currentSubTab === 'custom') {
-_renderCardViewWithGroups(list, filtered);
+_renderPlainReplyCards(list, filtered);
 } else {
 _renderAtmosphereList(list, filtered);
 }
@@ -7013,9 +7002,39 @@ return;
 }
 if (_tabHasGroups()) {
 _renderCardViewWithGroups(list, filtered);
+} else if (currentMajorTab === 'reply' && currentSubTab === 'custom') {
+_renderPlainReplyCards(list, filtered);
 } else {
 _renderAtmosphereList(list, filtered);
 }
+}
+
+// 主字卡库保持为简洁清单：不显示屏蔽、分组或单条编辑；
+// 删除和批量删除仍保留，内容修改只从「最近抽过」进入。
+function _renderPlainReplyCards(list, items) {
+const indexMap = new Map();
+customReplies.forEach((text, idx) => { if (!indexMap.has(text)) indexMap.set(text, idx); });
+const frag = document.createDocumentFragment();
+items.forEach(item => {
+const index = indexMap.get(item);
+const selected = _batchModeActive && _batchSelectedIndices.has(index);
+const div = document.createElement('div');
+div.className = 'rl-card' + (selected ? ' rl-selected' : '');
+if (_batchModeActive) {
+div.style.cursor = 'pointer';
+div.innerHTML = `<div class="rl-batch-check" style="border:1.5px solid ${selected ? 'var(--accent-color)' : 'var(--border-color)'};background:${selected ? 'var(--accent-color)' : 'transparent'};">${selected ? ICONS.check : ''}</div><div style="flex:1;min-width:0;">${_rlFormatItemHtml(item)}</div>`;
+div.onclick = () => {
+if (_batchSelectedIndices.has(index)) _batchSelectedIndices.delete(index);
+else _batchSelectedIndices.add(index);
+renderReplyLibrary();
+};
+} else {
+div.innerHTML = `<div style="flex:1;min-width:0;">${_rlFormatItemHtml(item)}</div><div class="rl-card-actions"><button class="rl-act-btn danger" data-action="delete" title="删除">${ICONS.trash}</button></div>`;
+div.querySelector('[data-action="delete"]').onclick = e => { e.stopPropagation(); deleteItem(index); };
+}
+frag.appendChild(div);
+});
+list.appendChild(frag);
 }
 function _renderModernToolbar() {
 let toolbar = document.getElementById('batch-ops-toolbar');
@@ -7095,14 +7114,14 @@ batchActionsHtml = `
                 <span style="font-size:12px;color:var(--text-secondary);flex:1;min-width:60px;">
                     ${selectedCount > 0 ? `已选 <strong style="color:var(--text-primary);">${selectedCount}</strong> 条` : '点击字卡以选择'}
                 </span>
-                ${showGroupBtn ? `
+                ${showGroupBtn && !isMainCustom ? `
                     <button id="batch-group-btn" class="batch-act-pill ${selectedCount === 0 ? 'batch-act-disabled' : ''}" data-tip="分配分组">
                         ${ICONS.tag} 分组
                     </button>
                 ` : ''}
-                <button id="batch-disable-btn" class="batch-act-pill ${selectedCount === 0 ? 'batch-act-disabled' : ''}" data-tip="屏蔽/启用">
+                ${!isMainCustom ? `<button id="batch-disable-btn" class="batch-act-pill ${selectedCount === 0 ? 'batch-act-disabled' : ''}" data-tip="屏蔽/启用">
                     ${ICONS.eyeOff} 屏蔽
-                </button>
+                </button>` : ''}
                 <button id="batch-delete-btn" class="batch-act-pill batch-act-danger ${selectedCount === 0 ? 'batch-act-disabled' : ''}" data-tip="删除">
                     ${ICONS.trash} 删除
                 </button>
@@ -8580,7 +8599,7 @@ function _showBatchAddDialog() {
         animation:popIn 0.22s cubic-bezier(.34,1.56,.64,1);
     `;
 
-    const hasGroups = groups && groups.length > 0;
+    const hasGroups = currentSubTab !== 'custom' && groups && groups.length > 0;
     const groupPillsHTML = hasGroups ? `
         <button class="ba-grp-pill" data-gidx="-1" style="
             padding:5px 13px;border-radius:20px;font-size:12px;font-family:var(--font-family);cursor:pointer;

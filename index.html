@@ -2787,6 +2787,9 @@ const container = DOMElements && DOMElements.chatContainer;
 const scrollEl = (typeof window.xiaoshuGetChatScrollElement === 'function') ? window.xiaoshuGetChatScrollElement() : container;
 const currentOldestMsgIndex = messages.length - displayedMessageCount;
 if (!container || !scrollEl) return;
+// 程序定位或内容不足一屏时 scrollTop 也会是 0，不能据此认定用户上翻了历史。
+if (Date.now() < Number(window.__xiaoshuSuppressHistoryLoadUntil || 0)) return;
+if (scrollEl.scrollHeight <= scrollEl.clientHeight + 2) return;
 if (isLoadingHistory) return;
 if (currentOldestMsgIndex <= 0) {
 if (historyLoader) historyLoader.style.display = 'none';
@@ -2800,13 +2803,7 @@ return el.offsetTop + el.offsetHeight >= scrollEl.scrollTop;
 }) || visibleWrappers[0] || null;
 const anchorId = firstVisible ? firstVisible.dataset.msgId : null;
 const anchorTop = firstVisible ? firstVisible.getBoundingClientRect().top : 0;
-const prevVisibility = scrollEl.style.visibility;
-const prevOverflow = scrollEl.style.overflow;
 const prevScrollBehavior = scrollEl.style.scrollBehavior;
-const prevOpacity = scrollEl.style.opacity;
-scrollEl.style.opacity = '0.015';
-scrollEl.style.visibility = 'hidden';
-scrollEl.style.overflow = 'hidden';
 scrollEl.style.scrollBehavior = 'auto';
 setTimeout(() => {
 displayedMessageCount = Math.min(messages.length, displayedMessageCount + HISTORY_BATCH_SIZE);
@@ -2820,9 +2817,6 @@ scrollEl.scrollTop += (newTop - anchorTop);
 }
 }
 requestAnimationFrame(() => {
-scrollEl.style.opacity = prevOpacity || '';
-scrollEl.style.visibility = prevVisibility || '';
-scrollEl.style.overflow = prevOverflow || '';
 scrollEl.style.scrollBehavior = prevScrollBehavior || '';
 if (historyLoader) {
 historyLoader.style.display = (messages.length > displayedMessageCount) ? 'flex' : 'none';
@@ -5953,6 +5947,7 @@ updateTime();
 finishPageSwitch();
 };
 window.hideHomePage = function() {
+window.__xiaoshuSuppressHistoryLoadUntil = Date.now() + 700;
 beginPageSwitch();
 applyHomeChatState(true);
 try {
@@ -11800,9 +11795,17 @@ return names[style] || '标准';
 }
 function initCoreListeners() {
 const coreScrollElement = document.getElementById('xiaoshu-message-stack') || DOMElements.chatContainer;
+let historyScrollIntentUntil = 0;
+const markHistoryScrollIntent = () => { historyScrollIntentUntil = Date.now() + 1400; };
+coreScrollElement.addEventListener('touchstart', markHistoryScrollIntent, { passive: true });
+coreScrollElement.addEventListener('pointerdown', markHistoryScrollIntent, { passive: true });
+coreScrollElement.addEventListener('wheel', markHistoryScrollIntent, { passive: true });
 coreScrollElement.addEventListener('scroll', () => {
 const container = coreScrollElement;
 if (!container) return;
+if (Date.now() > historyScrollIntentUntil) return;
+if (Date.now() < Number(window.__xiaoshuSuppressHistoryLoadUntil || 0)) return;
+if (container.scrollHeight <= container.clientHeight + 2) return;
 if (container.scrollTop < 50 && !isLoadingHistory && messages.length > displayedMessageCount) {
 if (typeof loadMoreHistory === 'function') loadMoreHistory();
 }
@@ -27395,7 +27398,19 @@ if(snapshot&&snapshot.near)s.scrollTop=s.scrollHeight;else if(snapshot)s.scrollT
 };
 window.xiaoshuGetChatScrollElement=function(){return moveMessagesIntoStack();};
 window.xiaoshuLockChatToBottom=function(){apply(true);};
-window.xiaoshuPrepareChatForReveal=function(){applyViewportVars();var s=moveMessagesIntoStack();if(s)s.scrollTop=s.scrollHeight;return s;};
+window.xiaoshuPrepareChatForReveal=function(){
+applyViewportVars();var s=moveMessagesIntoStack();if(!s)return null;
+// 最近一批不足一屏时，在首次绘制前同步补足历史；避免显示后触发“隐藏再重绘”。
+try{
+var rounds=0;
+while(typeof messages!=='undefined'&&Array.isArray(messages)&&typeof displayedMessageCount!=='undefined'&&displayedMessageCount<messages.length&&s.scrollHeight<=s.clientHeight+2&&rounds<12){
+displayedMessageCount=Math.min(messages.length,displayedMessageCount+(typeof HISTORY_BATCH_SIZE!=='undefined'?HISTORY_BATCH_SIZE:20));
+if(typeof renderMessages==='function')renderMessages(true);
+s=moveMessagesIntoStack()||s;rounds++;
+}
+}catch(e){}
+s.scrollTop=s.scrollHeight;return s;
+};
 window.xiaoshuScheduleChatLayout=function(force){schedule(!!force);};
 function installObservers(){
 var c=container();if(!c){setTimeout(installObservers,80);return;}if(observerInstalled)return;observerInstalled=true;var s=moveMessagesIntoStack();
@@ -31446,5 +31461,5 @@ body.xiaoshu-page-switching .header,body.xiaoshu-page-switching .main-chat-area,
 body.xiaoshu-page-switching #home-page-bg,body.xiaoshu-page-switching #home-container{transition:none!important;animation:none!important;}
 #chat-container>.xiaoshu-message-stack{contain:layout paint style;scroll-behavior:auto!important;}
 </style>
-<script id="kkk35g-final-release-marker">window.__kkk35gRelease='final-atomic-chat-stack-496';</script>
+<script id="kkk35g-final-release-marker">window.__kkk35gRelease='final-history-no-flash-496';</script>
 </body></html>

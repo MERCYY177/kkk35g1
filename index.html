@@ -1970,7 +1970,7 @@ function stringErr(e) { return String(e && (e.message || e) || '未知错误'); 
 var ACTIVE_BACKUP_REGISTRY = [
   {
     id:'chat', label:'聊天记录 / 会话 / 基础设置', flag:'chat',
-    lfNeedles:['chatMessages','sessionList','lastSessionId','chatSettings','showPartnerNameInChat','partnerPersonas'],
+    lfNeedles:['chatMessages','sessionList','lastSessionId','chatSettings','showPartnerNameInChat','partnerPersonas','mailboxLettersV1'],
     lsExact:[], lsPrefixes:[]
   },
   {
@@ -2137,7 +2137,7 @@ function inferBackupSessionId(lfKeys, appPrefix){
     var sk=String(lfKeys[i]||'');
     if(!sk || sk.indexOf(pfx)!==0) continue;
     var m=sk.match(/_([^_]+)$/);
-    var suffixes=['chatMessages','chatSettings','customReplies','customPokes','customStatuses','customMottos','customIntros','customEmojis','customReplyGroups','customPokeGroups','customStatusGroups','recentDrawnRepliesV1','myStickerLibrary','stickerMessageResourcesV1','backgroundGallery','chatBackground','partnerAvatar','myAvatar','showPartnerNameInChat','partnerPersonas','kaomojiGroups','kaomojiLibrary','customVoices','customVoiceGroups','transferData'];
+    var suffixes=['chatMessages','chatSettings','mailboxLettersV1','customReplies','customPokes','customStatuses','customMottos','customIntros','customEmojis','customReplyGroups','customPokeGroups','customStatusGroups','recentDrawnRepliesV1','myStickerLibrary','stickerMessageResourcesV1','backgroundGallery','chatBackground','partnerAvatar','myAvatar','showPartnerNameInChat','partnerPersonas','kaomojiGroups','kaomojiLibrary','customVoices','customVoiceGroups','transferData'];
     for(var j=0;j<suffixes.length;j++){
       var tail='_'+suffixes[j];
       if(sk.slice(-tail.length)===tail){
@@ -4044,6 +4044,25 @@ if (msg.type === 'system') {
 const systemMsgDiv = document.createElement('div');
 systemMsgDiv.className = 'system-message';
 systemMsgDiv.textContent = String(msg.text == null ? '' : msg.text);
+if (msg.mailboxNotice) {
+systemMsgDiv.classList.add('xiaoshu-mailbox-notice');
+systemMsgDiv.setAttribute('role', 'button');
+systemMsgDiv.setAttribute('tabindex', '0');
+systemMsgDiv.title = '打开信箱查看';
+const openMailboxNotice = () => {
+try {
+if (window.xiaoshuMailbox && typeof window.xiaoshuMailbox.openLetterById === 'function') {
+window.xiaoshuMailbox.openLetterById(String(msg.mailboxLetterId || ''));
+} else if (window.xiaoshuMailbox && typeof window.xiaoshuMailbox.open === 'function') {
+window.xiaoshuMailbox.open();
+}
+} catch(e) { console.warn('[mailbox] 打开聊天提醒失败', e); }
+};
+systemMsgDiv.addEventListener('click', openMailboxNotice);
+systemMsgDiv.addEventListener('keydown', (event) => {
+if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openMailboxNotice(); }
+});
+}
 fragment.appendChild(systemMsgDiv);
 lastSenderRef.current = 'system';
 return fragment;
@@ -24087,10 +24106,108 @@ var STYLE_ID='xiaoshu-beautify-applied-style';
 var pushed=false;
 function $(id){return document.getElementById(id)}
 function readJson(id, fallback){try{var el=$(id);return JSON.parse((el&&el.textContent)||'[]')}catch(e){return fallback}}
+/* v105 phase 1: four chat-1 themes ported from the user's reference CSS.
+   They deliberately use the app's existing colour variables, fonts and DOM data;
+   no avatar, nickname, remote image or fixed personal text is embedded here. */
+var XIAOSHU_PHASE1_BUILTINS=[
+{
+id:'builtin_xiaoshu_ig_mono_system_v1',
+name:'IG黑白经典·跟随系统',
+file:'IG黑白经典_跟随系统.css',
+source:'用户参考样式·聊天1适配',
+chatCss:`
+body.xiaoshu-beautified>.header{background:var(--secondary-bg)!important;border-bottom:1px solid var(--border-color)!important;box-shadow:none!important;}
+body.xiaoshu-beautified>.header .username{font-weight:750!important;letter-spacing:.15px!important;}
+body.xiaoshu-beautified>.header .action-btn{border:1px solid var(--border-color)!important;background:var(--secondary-bg)!important;color:var(--text-primary)!important;}
+body.xiaoshu-beautified>.input-area-wrapper{background:var(--secondary-bg)!important;border-top:1px solid var(--border-color)!important;box-shadow:none!important;}
+body.xiaoshu-beautified>.input-area-wrapper .message-input{background:var(--primary-bg)!important;border:1px solid var(--border-color)!important;border-radius:999px!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper{margin-bottom:7px!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper,body.xiaoshu-beautified #chat-container .message-content-wrapper,body.xiaoshu-beautified #chat-container .message{overflow:visible!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper .message[data-xiaoshu-uniform-text="1"]{padding:7px 13px!important;border:0!important;border-radius:18px!important;box-shadow:none!important;line-height:1.4!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.sent .message[data-xiaoshu-uniform-text="1"]{background:var(--accent-color)!important;color:var(--accent-contrast,#fff)!important;border-bottom-right-radius:5px!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.received .message[data-xiaoshu-uniform-text="1"]{background:var(--message-received-bg)!important;color:var(--message-received-text,var(--text-primary))!important;border-bottom-left-radius:5px!important;}
+body.xiaoshu-beautified #chat-container .message[data-xiaoshu-uniform-text="1"]::before,body.xiaoshu-beautified #chat-container .message[data-xiaoshu-uniform-text="1"]::after{display:none!important;content:none!important;}
+body.xiaoshu-beautified #chat-container .message-image-bubble-none,body.xiaoshu-beautified #chat-container .message:has(img),body.xiaoshu-beautified #chat-container .message:has(video){padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:0!important;}
+body.xiaoshu-beautified #chat-container .message-meta{font-size:10px!important;opacity:.58!important;letter-spacing:.2px!important;}
+html[data-theme="dark"] body.xiaoshu-beautified>.header,html[data-theme="dark"] body.xiaoshu-beautified>.input-area-wrapper{background:var(--secondary-bg)!important;border-color:var(--border-color)!important;}
+`
+},
+{
+id:'builtin_xiaoshu_ig_gradient_system_v1',
+name:'IG渐变彩色·跟随系统',
+file:'IG渐变彩色_跟随系统.css',
+source:'用户参考样式·聊天1适配',
+chatCss:`
+body.xiaoshu-beautified>.header{background:linear-gradient(115deg,var(--secondary-bg) 0%,rgba(var(--accent-color-rgb,51,51,51),.13) 100%)!important;border-bottom:1px solid rgba(var(--accent-color-rgb,51,51,51),.22)!important;box-shadow:none!important;}
+body.xiaoshu-beautified>.header .username{font-weight:800!important;}
+body.xiaoshu-beautified>.header .action-btn{background:rgba(var(--accent-color-rgb,51,51,51),.1)!important;color:var(--accent-color)!important;border:1px solid rgba(var(--accent-color-rgb,51,51,51),.2)!important;}
+body.xiaoshu-beautified>.input-area-wrapper{background:var(--secondary-bg)!important;border-top:1px solid rgba(var(--accent-color-rgb,51,51,51),.18)!important;}
+body.xiaoshu-beautified>.input-area-wrapper .message-input{background:var(--primary-bg)!important;border:1px solid rgba(var(--accent-color-rgb,51,51,51),.25)!important;border-radius:999px!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper{margin-bottom:8px!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper,body.xiaoshu-beautified #chat-container .message-content-wrapper,body.xiaoshu-beautified #chat-container .message{overflow:visible!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper .message[data-xiaoshu-uniform-text="1"]{padding:7px 14px!important;border:0!important;border-radius:20px!important;box-shadow:0 4px 12px rgba(var(--accent-color-rgb,51,51,51),.1)!important;line-height:1.4!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.sent .message[data-xiaoshu-uniform-text="1"]{background:linear-gradient(135deg,var(--accent-color) 0%,rgba(var(--accent-color-rgb,51,51,51),.62) 100%)!important;color:var(--accent-contrast,#fff)!important;border-bottom-right-radius:6px!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.received .message[data-xiaoshu-uniform-text="1"]{background:linear-gradient(135deg,var(--secondary-bg) 0%,rgba(var(--accent-color-rgb,51,51,51),.1) 100%)!important;color:var(--text-primary)!important;border:1px solid rgba(var(--accent-color-rgb,51,51,51),.16)!important;border-bottom-left-radius:6px!important;}
+body.xiaoshu-beautified #chat-container .message[data-xiaoshu-uniform-text="1"]::before,body.xiaoshu-beautified #chat-container .message[data-xiaoshu-uniform-text="1"]::after{display:none!important;content:none!important;}
+body.xiaoshu-beautified #chat-container .message-image-bubble-none,body.xiaoshu-beautified #chat-container .message:has(img),body.xiaoshu-beautified #chat-container .message:has(video){padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:0!important;}
+body.xiaoshu-beautified #chat-container .reply-indicator{background:rgba(var(--accent-color-rgb,51,51,51),.11)!important;border-left-color:var(--accent-color)!important;}
+html[data-theme="dark"] body.xiaoshu-beautified #chat-container .message-wrapper.received .message[data-xiaoshu-uniform-text="1"]{background:linear-gradient(135deg,var(--message-received-bg) 0%,rgba(var(--accent-color-rgb,51,51,51),.16) 100%)!important;color:var(--text-primary)!important;}
+`
+},
+{
+id:'builtin_xiaoshu_wechat_system_v1',
+name:'仿微信·跟随系统',
+file:'仿微信_跟随系统.css',
+source:'用户参考样式·聊天1适配',
+chatCss:`
+body.xiaoshu-beautified>.header{background:var(--secondary-bg)!important;border-bottom:1px solid var(--border-color)!important;box-shadow:none!important;}
+body.xiaoshu-beautified>.main-chat-area{background:var(--primary-bg)!important;}
+body.xiaoshu-beautified>.input-area-wrapper{background:var(--secondary-bg)!important;border-top:1px solid var(--border-color)!important;box-shadow:none!important;}
+body.xiaoshu-beautified>.input-area-wrapper .message-input{background:var(--primary-bg)!important;border:0!important;border-radius:6px!important;box-shadow:none!important;}
+body.xiaoshu-beautified>.input-area-wrapper .input-btn{border-radius:6px!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper{margin-bottom:10px!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper,body.xiaoshu-beautified #chat-container .message-content-wrapper,body.xiaoshu-beautified #chat-container .message{overflow:visible!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper .message[data-xiaoshu-uniform-text="1"]{padding:9px 12px!important;border-radius:5px!important;border:1px solid rgba(0,0,0,.035)!important;box-shadow:0 1px 2px rgba(0,0,0,.045)!important;line-height:1.45!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.sent .message[data-xiaoshu-uniform-text="1"]{background:var(--accent-color)!important;color:var(--accent-contrast,#fff)!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.received .message[data-xiaoshu-uniform-text="1"]{background:var(--secondary-bg)!important;color:var(--text-primary)!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.sent .message[data-xiaoshu-uniform-text="1"]::after{content:""!important;display:block!important;position:absolute!important;right:-7px!important;top:13px!important;width:0!important;height:0!important;border-top:6px solid transparent!important;border-bottom:6px solid transparent!important;border-left:8px solid var(--accent-color)!important;pointer-events:none!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.received .message[data-xiaoshu-uniform-text="1"]::before{content:""!important;display:block!important;position:absolute!important;left:-7px!important;top:13px!important;width:0!important;height:0!important;border-top:6px solid transparent!important;border-bottom:6px solid transparent!important;border-right:8px solid var(--secondary-bg)!important;pointer-events:none!important;}
+body.xiaoshu-beautified #chat-container .message-image-bubble-none,body.xiaoshu-beautified #chat-container .message:has(img),body.xiaoshu-beautified #chat-container .message:has(video){padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:0!important;}
+body.xiaoshu-beautified #chat-container .message:has(img)::before,body.xiaoshu-beautified #chat-container .message:has(img)::after,body.xiaoshu-beautified #chat-container .message:has(video)::before,body.xiaoshu-beautified #chat-container .message:has(video)::after{display:none!important;content:none!important;}
+html[data-theme="dark"] body.xiaoshu-beautified #chat-container .message[data-xiaoshu-uniform-text="1"]{border-color:rgba(255,255,255,.05)!important;box-shadow:none!important;}
+`
+},
+{
+id:'builtin_xiaoshu_ios6_retro_system_v1',
+name:'iOS6复古绿·跟随系统',
+file:'iOS6复古绿_跟随系统.css',
+source:'用户参考样式·聊天1适配',
+chatCss:`
+body.xiaoshu-beautified>.header{background:linear-gradient(180deg,rgba(var(--accent-color-rgb,51,51,51),.86) 0%,var(--accent-color) 52%,rgba(var(--accent-color-rgb,51,51,51),.72) 100%)!important;border-bottom:1px solid rgba(0,0,0,.28)!important;box-shadow:inset 0 1px rgba(255,255,255,.28),0 1px 3px rgba(0,0,0,.22)!important;}
+body.xiaoshu-beautified>.header .username,body.xiaoshu-beautified>.header .status,body.xiaoshu-beautified>.header .action-btn{color:var(--accent-contrast,#fff)!important;text-shadow:0 -1px rgba(0,0,0,.35)!important;}
+body.xiaoshu-beautified>.header .action-btn{background:rgba(0,0,0,.1)!important;border:1px solid rgba(0,0,0,.22)!important;box-shadow:inset 0 1px rgba(255,255,255,.18)!important;}
+body.xiaoshu-beautified>.main-chat-area{background-color:var(--primary-bg)!important;background-image:linear-gradient(45deg,rgba(var(--accent-color-rgb,51,51,51),.035) 25%,transparent 25%,transparent 75%,rgba(var(--accent-color-rgb,51,51,51),.035) 75%),linear-gradient(45deg,rgba(var(--accent-color-rgb,51,51,51),.035) 25%,transparent 25%,transparent 75%,rgba(var(--accent-color-rgb,51,51,51),.035) 75%)!important;background-size:12px 12px!important;background-position:0 0,6px 6px!important;}
+body.xiaoshu-beautified>.input-area-wrapper{background:linear-gradient(180deg,var(--secondary-bg),var(--primary-bg))!important;border-top:1px solid var(--border-color)!important;box-shadow:inset 0 1px rgba(255,255,255,.35)!important;}
+body.xiaoshu-beautified>.input-area-wrapper .message-input{background:var(--secondary-bg)!important;border:1px solid var(--border-color)!important;border-radius:6px!important;box-shadow:inset 0 1px 3px rgba(0,0,0,.09)!important;}
+body.xiaoshu-beautified>.input-area-wrapper .input-btn{border-radius:7px!important;box-shadow:inset 0 1px rgba(255,255,255,.22),0 1px 2px rgba(0,0,0,.14)!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper{margin-bottom:11px!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper,body.xiaoshu-beautified #chat-container .message-content-wrapper,body.xiaoshu-beautified #chat-container .message{overflow:visible!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper .message[data-xiaoshu-uniform-text="1"]{padding:9px 13px!important;border-radius:10px!important;border:1px solid rgba(0,0,0,.2)!important;box-shadow:inset 0 1px 1px rgba(255,255,255,.48),0 1px 2px rgba(0,0,0,.18)!important;line-height:1.42!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.sent .message[data-xiaoshu-uniform-text="1"]{background:linear-gradient(180deg,rgba(var(--accent-color-rgb,51,51,51),.66),var(--accent-color))!important;color:var(--accent-contrast,#fff)!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.received .message[data-xiaoshu-uniform-text="1"]{background:linear-gradient(180deg,var(--secondary-bg),var(--message-received-bg))!important;color:var(--text-primary)!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.sent .message[data-xiaoshu-uniform-text="1"]::after{content:""!important;display:block!important;position:absolute!important;right:-6px!important;bottom:8px!important;width:10px!important;height:10px!important;background:var(--accent-color)!important;border-right:1px solid rgba(0,0,0,.2)!important;border-bottom:1px solid rgba(0,0,0,.2)!important;transform:rotate(-45deg)!important;pointer-events:none!important;}
+body.xiaoshu-beautified #chat-container .message-wrapper.received .message[data-xiaoshu-uniform-text="1"]::before{content:""!important;display:block!important;position:absolute!important;left:-6px!important;bottom:8px!important;width:10px!important;height:10px!important;background:var(--message-received-bg)!important;border-left:1px solid rgba(0,0,0,.18)!important;border-bottom:1px solid rgba(0,0,0,.18)!important;transform:rotate(45deg)!important;pointer-events:none!important;}
+body.xiaoshu-beautified #chat-container .message-image-bubble-none,body.xiaoshu-beautified #chat-container .message:has(img),body.xiaoshu-beautified #chat-container .message:has(video){padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:0!important;}
+body.xiaoshu-beautified #chat-container .message:has(img)::before,body.xiaoshu-beautified #chat-container .message:has(img)::after,body.xiaoshu-beautified #chat-container .message:has(video)::before,body.xiaoshu-beautified #chat-container .message:has(video)::after{display:none!important;content:none!important;}
+html[data-theme="dark"] body.xiaoshu-beautified>.header{box-shadow:inset 0 1px rgba(255,255,255,.12),0 1px 3px rgba(0,0,0,.5)!important;}
+html[data-theme="dark"] body.xiaoshu-beautified #chat-container .message[data-xiaoshu-uniform-text="1"]{border-color:rgba(255,255,255,.13)!important;box-shadow:inset 0 1px rgba(255,255,255,.1),0 1px 2px rgba(0,0,0,.45)!important;}
+`
+}
+];
 var BUILTIN=null;
 function getBuiltin(){
 if(Array.isArray(BUILTIN)) return BUILTIN;
-BUILTIN=readJson('xiaoshu-builtin-bubble-css-data',[]);
+BUILTIN=readJson('xiaoshu-builtin-bubble-css-data',[]).concat(XIAOSHU_PHASE1_BUILTINS);
 return BUILTIN;
 }
 function kkk35gNormalizeLegacyBeautifyId(value){
@@ -29310,6 +29427,7 @@ var SECTIONS=[
 ['chat','聊天1','fas fa-comment-alt'],
 ['chat2-big-keyboard','聊天2','fas fa-keyboard'],
 ['moments','朋友圈','fas fa-users'],
+['mailbox','信箱','fas fa-envelope'],
 ['shop','商城','fas fa-store'],
 ['phone','电话','fas fa-phone'],
 ['map','家门','fas fa-door-open']
@@ -29394,6 +29512,12 @@ return String(str==null?'':str).replace(/[&<>"']/g,function(ch){
       setTimeout(function(){
         if(typeof window.xiaoshuOpenBigKeyboard==='function') window.xiaoshuOpenBigKeyboard();
       },80);
+      return false;
+    }
+    if(app==='mailbox'){
+      setTimeout(function(){
+        if(window.xiaoshuMailbox&&typeof window.xiaoshuMailbox.open==='function') window.xiaoshuMailbox.open();
+      },40);
       return false;
     }
     if(typeof window.openApp==='function') window.openApp(app);
@@ -31461,7 +31585,7 @@ function bindToastDismiss(){var mo=new MutationObserver(function(records){record
 function boot(){indicator();bindChatScroll();bindHomeNotification();guardHomeNotification();bindToastDismiss();}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();</script>
-<script id="kkk35g-v104-release-marker">window.__kkk35gRelease='v104-chat1-interaction-performance-seal';</script>
+<script id="kkk35g-v105-theme-presets-release-marker">window.__kkk35gRelease='v105-phase1-system-theme-presets';</script>
 <style id="kkk35g-v106-no-reentry-flash-css">
 body:not(.xiaoshu-first-paint-ready)::after{display:none!important;opacity:0!important;visibility:hidden!important}
 body:not(.xiaoshu-first-paint-ready) .header,body:not(.xiaoshu-first-paint-ready) .main-chat-area,body:not(.xiaoshu-first-paint-ready) .input-area-wrapper{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important}
@@ -31498,5 +31622,153 @@ body.xiaoshu-page-switching .header,body.xiaoshu-page-switching .main-chat-area,
 body.xiaoshu-page-switching #home-page-bg,body.xiaoshu-page-switching #home-container{transition:none!important;animation:none!important;}
 #chat-container>.xiaoshu-message-stack{contain:layout paint style;scroll-behavior:auto!important;}
 </style>
-<script id="kkk35g-final-release-marker">window.__kkk35gRelease='final-history-no-flash-496';</script>
+<style id="xiaoshu-mailbox-phase4-style">
+#xiaoshuMailboxHost{position:fixed;inset:0;z-index:2147483430;display:none;flex-direction:column;background:var(--primary-bg,#f7f7f7);color:var(--text-primary,#1a1a1a);font-family:var(--font-family,system-ui,-apple-system,"PingFang SC",sans-serif);overflow:hidden}
+#xiaoshuMailboxHost.show{display:flex}
+body.xiaoshu-mailbox-open{overflow:hidden!important}
+body.xiaoshu-mailbox-open #xiaoshuDrawerMask,body.xiaoshu-mailbox-open #xiaoshuAppDrawer{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important}
+.xs-mail-head{position:relative;flex:0 0 auto;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 30px;background:linear-gradient(150deg,var(--accent-color),rgba(var(--accent-color-rgb,51,51,51),.72));color:var(--accent-contrast,#fff);clip-path:polygon(0 0,100% 0,100% 72%,50% 100%,0 72%);box-shadow:0 3px 14px rgba(0,0,0,.12)}
+.xs-mail-head::after{content:"";position:absolute;inset:0;background:linear-gradient(155deg,rgba(255,255,255,.2),transparent 58%);pointer-events:none}
+.xs-mail-head-row{position:relative;z-index:1;display:grid;grid-template-columns:54px 1fr 54px;align-items:center;min-height:42px}
+.xs-mail-back,.xs-mail-head-action{width:42px;height:42px;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:inherit;font-size:18px;display:flex;align-items:center;justify-content:center;justify-self:start}
+.xs-mail-head-action{justify-self:end;font-size:15px}
+.xs-mail-title{text-align:center;font-size:17px;font-weight:850;letter-spacing:2px}.xs-mail-sub{text-align:center;font-size:9px;letter-spacing:2px;opacity:.72;margin-top:2px;text-transform:uppercase}
+.xs-mail-shell{width:min(720px,100%);margin:0 auto;flex:1;min-height:0;display:flex;flex-direction:column;padding:4px 14px calc(12px + env(safe-area-inset-bottom,0px))}
+.xs-mail-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 12px}.xs-mail-tab{position:relative;border:1px solid var(--border-color,#e6e6e6);border-radius:13px;background:var(--secondary-bg,#fff);color:var(--text-secondary,#777);min-height:42px;font-weight:750}.xs-mail-tab.active{border-color:var(--accent-color);color:var(--accent-color);background:rgba(var(--accent-color-rgb,51,51,51),.09)}
+.xs-mail-badge{display:none;position:absolute;right:8px;top:7px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#e5484d;color:#fff;font-size:9px;line-height:17px;text-align:center;font-weight:800}.xs-mail-badge.show{display:block}
+.xs-mail-main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px 0 10px}.xs-mail-list{display:grid;gap:10px}
+.xs-mail-item{position:relative;width:100%;border:1px solid var(--border-color,#e6e6e6);border-radius:16px;background:var(--secondary-bg,#fff);color:var(--text-primary,#222);padding:0;overflow:hidden;text-align:left;box-shadow:0 4px 16px rgba(0,0,0,.035)}
+.xs-mail-item-top{display:flex;align-items:center;gap:8px;padding:8px 12px;background:linear-gradient(100deg,rgba(var(--accent-color-rgb,51,51,51),.95),rgba(var(--accent-color-rgb,51,51,51),.64));color:var(--accent-contrast,#fff)}
+.xs-mail-item-direction{font-size:10px;font-weight:800;letter-spacing:.5px}.xs-mail-item-date{margin-left:auto;font-size:9px;opacity:.78}.xs-mail-stamp{width:25px;height:29px;border:1.5px dashed currentColor;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:11px;opacity:.76}
+.xs-mail-item-body{padding:11px 42px 12px 13px}.xs-mail-item-title{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.xs-mail-item-preview{font-size:12px;color:var(--text-secondary,#777);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:italic}.xs-mail-unread-dot{display:inline-block;width:7px;height:7px;margin-left:6px;border-radius:50%;background:#e5484d;vertical-align:1px}
+.xs-mail-delete{position:absolute;right:10px;bottom:10px;width:28px;height:28px;border:0;border-radius:50%;background:rgba(229,72,77,.09);color:#d9494f;font-size:12px;display:flex;align-items:center;justify-content:center}
+.xs-mail-empty{text-align:center;padding:58px 22px;color:var(--text-secondary,#888)}.xs-mail-empty-icon{font-size:42px;opacity:.28;margin-bottom:12px}.xs-mail-empty-title{font-size:14px;font-weight:800;color:var(--text-primary,#222)}.xs-mail-empty-sub{font-size:12px;line-height:1.6;margin-top:6px}
+.xs-mail-footer{flex:0 0 auto;padding-top:8px}.xs-mail-write{width:100%;min-height:48px;border:0;border-radius:16px;background:var(--accent-color);color:var(--accent-contrast,#fff);font-size:14px;font-weight:850;letter-spacing:1px;box-shadow:0 5px 18px rgba(var(--accent-color-rgb,51,51,51),.22)}
+.xs-mail-compose,.xs-mail-view{display:none}.xs-mail-compose.show,.xs-mail-view.show{display:block}.xs-mail-paper{position:relative;border:1px solid rgba(var(--accent-color-rgb,51,51,51),.2);border-radius:15px;background:var(--secondary-bg,#fff);overflow:hidden;box-shadow:0 5px 20px rgba(0,0,0,.045)}
+.xs-mail-paper::before{content:"";position:absolute;left:42px;top:0;bottom:0;width:1px;background:rgba(var(--accent-color-rgb,51,51,51),.2);pointer-events:none}.xs-mail-paper::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(transparent 0,transparent 31px,rgba(var(--accent-color-rgb,51,51,51),.075) 31px,rgba(var(--accent-color-rgb,51,51,51),.075) 32px);pointer-events:none}
+.xs-mail-paper-inner{position:relative;z-index:1;padding:16px 16px 18px 54px}.xs-mail-paper-date{text-align:right;font-size:10px;color:var(--text-secondary,#777);letter-spacing:.5px}.xs-mail-paper-to{font-size:13px;font-weight:750;margin:11px 0 5px}.xs-mail-paper-greeting{font-size:12px;color:var(--text-secondary,#777);font-style:italic;margin-bottom:8px}
+.xs-mail-subject,.xs-mail-content{position:relative;z-index:2;width:100%;border:0!important;outline:0!important;background:transparent!important;color:var(--text-primary,#222)!important;font-family:inherit!important;box-shadow:none!important;border-radius:0!important}.xs-mail-subject{font-size:14px!important;font-weight:800!important;min-height:32px!important;padding:3px 0!important;margin-bottom:4px}.xs-mail-content{font-size:14px!important;line-height:32px!important;min-height:224px!important;resize:none!important;padding:0!important;white-space:pre-wrap}.xs-mail-counter{text-align:right;font-size:10px;color:var(--text-secondary,#777);padding:7px 3px 0}
+.xs-mail-actions{display:flex;gap:9px;margin-top:12px}.xs-mail-btn{flex:1;min-height:44px;border:1px solid var(--border-color,#e4e4e4);border-radius:14px;background:var(--secondary-bg,#fff);color:var(--text-primary,#222);font-weight:800}.xs-mail-btn.primary{flex:1.7;background:var(--accent-color);border-color:var(--accent-color);color:var(--accent-contrast,#fff)}.xs-mail-btn.danger{color:#d9494f;background:rgba(229,72,77,.08);border-color:rgba(229,72,77,.18)}
+.xs-mail-view-original{font-size:12px;color:var(--text-secondary,#777);padding:10px 13px;border-radius:12px;background:rgba(var(--accent-color-rgb,51,51,51),.07);border-left:3px solid var(--accent-color);margin-bottom:10px;display:none}.xs-mail-view-title{font-size:15px;font-weight:850;margin:9px 0 7px}.xs-mail-view-content{font-size:14px;line-height:32px;white-space:pre-wrap;word-break:break-word;min-height:160px}.xs-mail-sign{text-align:right;margin-top:18px}.xs-mail-sign-name{font-size:14px;font-weight:800;color:var(--accent-color)}.xs-mail-sign-date{font-size:10px;color:var(--text-secondary,#777);margin-top:3px}
+.xs-mail-card-trace{display:none;margin:11px 0 0;padding:10px 11px;border:1px dashed rgba(var(--accent-color-rgb,51,51,51),.28);border-radius:12px;background:rgba(var(--accent-color-rgb,51,51,51),.045)}.xs-mail-card-trace.show{display:block}.xs-mail-card-trace-title{font-size:10px;font-weight:800;color:var(--accent-color);letter-spacing:.5px;margin-bottom:7px}.xs-mail-card-chips{display:flex;flex-wrap:wrap;gap:6px}.xs-mail-card-chip{max-width:100%;padding:5px 8px;border-radius:9px;background:var(--secondary-bg,#fff);color:var(--text-secondary,#777);font-size:10px;line-height:1.45;border:1px solid var(--border-color,#e6e6e6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xs-mail-settings{display:none;position:fixed;inset:0;z-index:2147483435;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.42)}.xs-mail-settings.show{display:flex}.xs-mail-settings-panel{width:min(360px,100%);border:1px solid var(--border-color,#e6e6e6);border-radius:18px;background:var(--primary-bg,#f7f7f7);color:var(--text-primary,#222);padding:18px;box-shadow:0 14px 38px rgba(0,0,0,.2)}.xs-mail-settings-title{font-size:16px;font-weight:850;margin-bottom:5px}.xs-mail-settings-sub{font-size:11px;line-height:1.55;color:var(--text-secondary,#777);margin-bottom:15px}.xs-mail-settings-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;margin-top:9px;border:1px solid var(--border-color,#e6e6e6);border-radius:13px;background:var(--secondary-bg,#fff);font-size:13px;font-weight:700}.xs-mail-settings-row input{width:66px;min-height:36px;border:1px solid var(--border-color,#e6e6e6);border-radius:10px;background:var(--primary-bg,#f7f7f7);color:var(--text-primary,#222);font:inherit;text-align:center;outline:none}.xs-mail-settings-row input:focus{border-color:var(--accent-color);box-shadow:0 0 0 2px rgba(var(--accent-color-rgb,51,51,51),.13)}.xs-mail-settings-unit{color:var(--text-secondary,#777);font-size:12px;font-weight:600}.xs-mail-settings-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:15px}.xs-mail-settings-actions .xs-mail-btn.primary{grid-column:1/-1;grid-row:1}.xs-mail-settings-error{min-height:18px;margin-top:8px;color:#d9494f;font-size:11px;line-height:1.5}
+.xs-mail-toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483440;background:rgba(20,20,20,.9);color:#fff;border-radius:999px;padding:9px 14px;font-size:12px;opacity:0;pointer-events:none;transition:opacity .18s}.xs-mail-toast.show{opacity:1}
+.xiaoshu-mailbox-notice{cursor:pointer!important;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}.xiaoshu-mailbox-notice:focus-visible{outline:2px solid var(--accent-color);outline-offset:3px}
+#xiaoshuAppDrawer .xs-drawer-item[data-xs-drawer-app="mailbox"]{position:relative}.xs-mail-drawer-badge{display:none;position:absolute;top:5px;right:calc(50% - 23px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#e5484d;color:#fff;font-size:9px;line-height:16px;text-align:center;font-weight:850}.xs-mail-drawer-badge.show{display:block}
+html[data-theme="dark"] #xiaoshuMailboxHost{background:var(--primary-bg,#0f1115)}html[data-theme="dark"] .xs-mail-item,html[data-theme="dark"] .xs-mail-paper,html[data-theme="dark"] .xs-mail-tab,html[data-theme="dark"] .xs-mail-btn{background:var(--secondary-bg,#171a20);border-color:var(--border-color,#343b46)}html[data-theme="dark"] .xs-mail-paper::after{background:repeating-linear-gradient(transparent 0,transparent 31px,rgba(var(--accent-color-rgb,51,51,51),.11) 31px,rgba(var(--accent-color-rgb,51,51,51),.11) 32px)}
+@media(max-width:420px){.xs-mail-head{padding-left:12px;padding-right:12px}.xs-mail-shell{padding-left:12px;padding-right:12px}.xs-mail-paper-inner{padding-left:48px}.xs-mail-paper::before{left:36px}.xs-mail-content{min-height:190px!important}}
+</style>
+<section id="xiaoshuMailboxHost" aria-label="信箱" aria-hidden="true">
+  <header class="xs-mail-head">
+    <div class="xs-mail-head-row">
+      <button class="xs-mail-back" id="xsMailBack" type="button" aria-label="返回">‹</button>
+      <div><div class="xs-mail-title" id="xsMailTitle">信箱</div><div class="xs-mail-sub">Letters · Correspondence</div></div>
+      <button class="xs-mail-head-action" id="xsMailHome" type="button" aria-label="返回信箱列表"><i class="fas fa-envelope"></i></button>
+    </div>
+  </header>
+  <div class="xs-mail-shell">
+    <div id="xsMailListMode">
+      <div class="xs-mail-tabs">
+        <button class="xs-mail-tab active" type="button" data-mail-tab="in">收到的信<span class="xs-mail-badge" id="xsMailUnreadBadge"></span></button>
+        <button class="xs-mail-tab" type="button" data-mail-tab="out">寄出的信</button>
+      </div>
+    </div>
+    <main class="xs-mail-main" id="xsMailMain">
+      <div class="xs-mail-list" id="xsMailList"></div>
+      <section class="xs-mail-compose" id="xsMailCompose">
+        <div class="xs-mail-view-original" id="xsMailComposeOriginal"></div>
+        <div class="xs-mail-paper"><div class="xs-mail-paper-inner">
+          <div class="xs-mail-paper-date" id="xsMailComposeDate"></div>
+          <div class="xs-mail-paper-to" id="xsMailComposeTo"></div>
+          <div class="xs-mail-paper-greeting">见字如面，愿你今日安好。</div>
+          <input class="xs-mail-subject" id="xsMailSubject" maxlength="80" placeholder="给这封信写个标题（选填）"/>
+          <textarea class="xs-mail-content" id="xsMailContent" maxlength="8000" placeholder="今天想跟你说……"></textarea>
+        </div></div>
+        <div class="xs-mail-counter" id="xsMailCounter">0 / 8000</div>
+        <div class="xs-mail-actions"><button class="xs-mail-btn" id="xsMailCancelCompose" type="button">取消</button><button class="xs-mail-btn primary" id="xsMailSend" type="button">封 · 寄出</button></div>
+      </section>
+      <section class="xs-mail-view" id="xsMailView">
+        <div class="xs-mail-view-original" id="xsMailOriginal"></div>
+        <div class="xs-mail-paper"><div class="xs-mail-paper-inner">
+          <div class="xs-mail-paper-date" id="xsMailViewDate"></div>
+          <div class="xs-mail-paper-to" id="xsMailViewTo"></div>
+          <div class="xs-mail-paper-greeting" id="xsMailViewGreeting"></div>
+          <div class="xs-mail-view-title" id="xsMailViewTitle"></div>
+          <div class="xs-mail-view-content" id="xsMailViewContent"></div>
+          <div class="xs-mail-card-trace" id="xsMailCardTrace"><div class="xs-mail-card-trace-title" id="xsMailCardTraceTitle"></div><div class="xs-mail-card-chips" id="xsMailCardChips"></div></div>
+          <div class="xs-mail-sign"><div class="xs-mail-sign-name" id="xsMailSignName"></div><div class="xs-mail-sign-date" id="xsMailSignDate"></div></div>
+        </div></div>
+        <div class="xs-mail-actions"><button class="xs-mail-btn" id="xsMailViewClose" type="button">返回列表</button><button class="xs-mail-btn primary" id="xsMailReply" type="button">回信</button><button class="xs-mail-btn danger" id="xsMailViewDelete" type="button">删除</button></div>
+      </section>
+    </main>
+    <footer class="xs-mail-footer" id="xsMailFooter"><button class="xs-mail-write" id="xsMailWrite" type="button"><i class="fas fa-edit"></i>　提笔写信</button></footer>
+  </div>
+  <div class="xs-mail-toast" id="xsMailToast"></div>
+  <div class="xs-mail-settings" id="xsMailSettings" aria-hidden="true">
+    <section class="xs-mail-settings-panel" role="dialog" aria-modal="true" aria-labelledby="xsMailSettingsTitle">
+      <div class="xs-mail-settings-title" id="xsMailSettingsTitle">信箱设置</div>
+      <div class="xs-mail-settings-sub">设置只影响以后新生成的主动来信和自动回信。</div>
+      <label class="xs-mail-settings-row"><span>每封信最少使用</span><span><input id="xsMailCardMin" type="number" min="1" max="10" step="1" inputmode="numeric"/><span class="xs-mail-settings-unit"> 张字卡</span></span></label>
+      <label class="xs-mail-settings-row"><span>每封信最多使用</span><span><input id="xsMailCardMax" type="number" min="1" max="10" step="1" inputmode="numeric"/><span class="xs-mail-settings-unit"> 张字卡</span></span></label>
+      <div class="xs-mail-settings-error" id="xsMailSettingsError" aria-live="polite"></div>
+      <div class="xs-mail-settings-actions"><button class="xs-mail-btn primary" id="xsMailSettingsSave" type="button">保存</button><button class="xs-mail-btn" id="xsMailSettingsDefault" type="button">恢复默认值</button><button class="xs-mail-btn" id="xsMailSettingsCancel" type="button">取消</button></div>
+    </section>
+  </div>
+</section>
+<script id="xiaoshu-mailbox-phase4-script">(function(){
+'use strict';
+if(window.__xiaoshuMailboxPhase4)return;window.__xiaoshuMailboxPhase4=true;
+var KEY='mailboxLettersV1',DEFAULT_CARD_MIN=2,DEFAULT_CARD_MAX=4,state={version:4,items:[],pending:[],nextIncomingAt:0,recentCardKeys:[],cardCountMin:DEFAULT_CARD_MIN,cardCountMax:DEFAULT_CARD_MAX},tab='in',viewId=null,replyToId=null,loadedKey='',toastTimer=null,processing=false,stateChain=Promise.resolve(),openRequestId=0;
+function el(id){return document.getElementById(id)}
+function storeKey(){try{if(typeof getStorageKey==='function')return getStorageKey(KEY)}catch(e){}var sid=String(window.SESSION_ID||'');return sid?String(window.APP_PREFIX||'CHAT_APP_V3_')+sid+'_'+KEY:''}
+function names(){var s=(typeof settings!=='undefined'&&settings)||window.settings||{};return{me:String(s.myName||(el('my-name')&&el('my-name').textContent)||'我').trim()||'我',partner:String(s.partnerName||(el('partner-name')&&el('partner-name').textContent)||'对方').trim()||'对方'}}
+function validCardCount(v,fallback){var n=Number(v);return Number.isInteger(n)&&n>=1&&n<=10?n:fallback}
+function safeState(v){var items=v&&Array.isArray(v.items)?v.items:[],pending=v&&Array.isArray(v.pending)?v.pending:[],min=validCardCount(v&&v.cardCountMin,DEFAULT_CARD_MIN),max=validCardCount(v&&v.cardCountMax,DEFAULT_CARD_MAX);if(min>max){min=DEFAULT_CARD_MIN;max=DEFAULT_CARD_MAX}return{version:4,items:items.filter(function(x){return x&&x.id&&(x.type==='sent'||x.type==='received')}).map(function(x){return{id:String(x.id),type:x.type,title:String(x.title||''),content:String(x.content||''),createdAt:Number(x.createdAt)||Date.now(),read:x.type==='sent'?true:!!x.read,originalContent:String(x.originalContent||''),replyToId:String(x.replyToId||''),cardFragments:(Array.isArray(x.cardFragments)?x.cardFragments:[]).map(function(t){return String(t||'').trim()}).filter(Boolean).slice(0,10)}}),pending:pending.filter(function(x){return x&&x.id&&x.kind==='reply'&&x.sourceId&&Number(x.dueAt)>0}).map(function(x){return{id:String(x.id),kind:'reply',sourceId:String(x.sourceId),dueAt:Number(x.dueAt)}}),nextIncomingAt:Number(v&&v.nextIncomingAt)||0,recentCardKeys:(Array.isArray(v&&v.recentCardKeys)?v.recentCardKeys:[]).map(function(t){return String(t||'')}).filter(Boolean).slice(-24),cardCountMin:min,cardCountMax:max}}
+async function load(force){var key=storeKey();if(!key){state=safeState(null);loadedKey='';return state}if(!force&&loadedKey===key)return state;loadedKey=key;try{var v=window.localforage?await localforage.getItem(key):null;state=safeState(v)}catch(e){console.warn('[mailbox] 读取失败',e);state=safeState(null)}return state}
+async function save(){var key=storeKey();if(!key)throw new Error('当前会话尚未准备好');state=safeState(state);if(window.localforage)await localforage.setItem(key,state);else throw new Error('本地存储不可用');updateBadges()}
+function queueState(task){var run=stateChain.catch(function(){}).then(task);stateChain=run.catch(function(){});return run}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function fmt(ts,full){var d=new Date(Number(ts)||Date.now()),p=function(n){return String(n).padStart(2,'0')};return full?d.getFullYear()+'/'+p(d.getMonth()+1)+'/'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()):p(d.getMonth()+1)+'/'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())}
+function toast(msg){var t=el('xsMailToast');if(!t)return;t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show')},1800)}
+function unread(){return state.items.filter(function(x){return x.type==='received'&&!x.read}).length}
+function ensureDrawerBadge(){var btn=document.querySelector('#xiaoshuAppDrawer [data-xs-drawer-app="mailbox"]');if(!btn)return null;var b=btn.querySelector('.xs-mail-drawer-badge');if(!b){b=document.createElement('span');b.className='xs-mail-drawer-badge';btn.appendChild(b)}return b}
+function updateBadges(){var n=unread(),b=el('xsMailUnreadBadge'),d=ensureDrawerBadge();[b,d].forEach(function(x){if(!x)return;x.textContent=n>99?'99+':String(n);x.classList.toggle('show',n>0)})}
+function makeId(prefix){return prefix+'_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8)}
+function randomBetween(min,max){return Math.floor(min+Math.random()*(max-min+1))}
+function pick(arr){return arr[Math.floor(Math.random()*arr.length)]}
+function ensureIncomingPlan(){if(state.nextIncomingAt)return false;state.nextIncomingAt=Date.now()+randomBetween(20*60000,90*60000);return true}
+function cleanCard(raw){var text=String(raw||'').split('|')[0].replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();return text.length>=2&&text.length<=180?text:''}
+function cardPool(){var list=(typeof customReplies!=='undefined'&&Array.isArray(customReplies))?customReplies:[],disabled=new Set();try{disabled=typeof _getDisabledItemsSet==='function'?_getDisabledItemsSet():new Set(JSON.parse(localStorage.getItem('disabledReplyItems')||'[]'))}catch(e){}try{(window.customReplyGroups||[]).forEach(function(g){if(g&&g.disabled)(g.items||[]).forEach(function(t){disabled.add(t)})})}catch(e){}var seen=new Set();return list.map(function(raw){return{raw:String(raw||'').trim(),text:cleanCard(raw)}}).filter(function(x){if(!x.text||disabled.has(x.raw)||seen.has(x.text))return false;seen.add(x.text);return true})}
+function cardScore(card,source){var score=Math.random()*1.5,text=String(source||''),topics=[['想念','想你想念惦记见面陪抱'],['情绪','累困疲惫难过委屈哭疼'],['开心','开心高兴快乐喜欢幸福笑'],['日常','今天最近吃饭睡觉工作学习天气'],['亲密','喜欢爱在意亲亲抱抱宝贝老公']];topics.forEach(function(group){var hitSource=Array.from(group[1]).some(function(ch){return text.indexOf(ch)>=0}),hitCard=Array.from(group[1]).some(function(ch){return card.text.indexOf(ch)>=0});if(hitSource&&hitCard)score+=4});var chars=new Set(text.replace(/[\s，。！？、；：“”‘’的了我你他她它是在有和就也都而很]/g,'').split(''));chars.forEach(function(ch){if(ch&&card.text.indexOf(ch)>=0)score+=.35});if(state.recentCardKeys.indexOf(card.text)>=0)score-=5;if(card.text.length>=6&&card.text.length<=70)score+=1;return score}
+function selectCards(source){var pool=cardPool(),min=validCardCount(state.cardCountMin,DEFAULT_CARD_MIN),max=validCardCount(state.cardCountMax,DEFAULT_CARD_MAX);if(min>max){min=DEFAULT_CARD_MIN;max=DEFAULT_CARD_MAX}if(!pool.length||pool.length<min)return[];pool.forEach(function(x){x.score=cardScore(x,source)});pool.sort(function(a,b){return b.score-a.score});var count=Math.min(randomBetween(min,max),pool.length),shortlist=pool.slice(0,Math.min(pool.length,Math.max(8,count*3))),out=[];while(out.length<count&&shortlist.length){var ceiling=Math.min(shortlist.length,Math.max(3,Math.ceil(shortlist.length/2))),idx=Math.floor(Math.random()*ceiling);out.push(shortlist.splice(idx,1)[0].text)}state.recentCardKeys=state.recentCardKeys.concat(out).slice(-24);return out}
+function punctuate(text){text=String(text||'').trim();return text&&!/[。！？!?…]$/.test(text)?text+'。':text}
+function cardBody(cards){if(!cards.length)return'';var lines=cards.map(punctuate);return lines.some(function(x){return x.length>55})?lines.join('\n\n'):lines.join('')}
+function makeReply(source){var text=String(source&&source.content||''),lead='你的信我认真看完了。';if(/[累困疲惫难过委屈]/.test(text))lead='看到你写这些，我有一点心疼。';else if(/[开心高兴快乐喜欢爱]/.test(text))lead='读到这里的时候，我也跟着开心起来。';else if(/[想你想念见面]/.test(text))lead='其实我也在想你，看到信的时候更明显了。';else if(/[晚安睡觉]/.test(text))lead='信收到啦，希望你今晚能睡得安稳。';var cards=selectCards(text),body=cardBody(cards)||pick(['有些话慢慢写下来，好像比匆匆说出口更珍贵。你写的每一句我都收好了，也想让你知道：我一直在这里。','谢谢你愿意把这些告诉我。隔着一封信读你的心情，很安静，也很靠近。剩下的话，我们慢慢说。','我读了不止一遍。纸短情长，大概就是这种感觉吧。你的心意我收到了，也给你留一份同样认真的回应。','看到你的字，就像今天忽然多了一件值得收藏的小事。以后也继续写给我吧，我会好好读完。']);return{title:'回信 · '+(source.title||'给我的那封信'),content:lead+'\n\n'+body,cardFragments:cards}}
+function makeIncoming(){var n=names(),hour=new Date().getHours(),opening=hour<11?'早上忽然想写信给你。':hour<18?'刚刚想到你，就来写几句话。':'夜里安静下来，忽然很想给你留一封信。',cards=selectCards(opening+' '+n.me),body=cardBody(cards)||pick(['不是什么要紧的大事，只是觉得“想起一个人”的那一刻，如果能被好好记下来，就会变得很珍贵。希望你看到这封信的时候，心情是松软的。','今天路过一些很普通的风景，却莫名觉得如果你也在就好了。于是把这一点小小的想念装进信里，寄给你。','最近发生的事可以慢慢讲。此刻我只想问问你：今天过得好吗？如果累了，就在这里歇一会儿，我会认真听。','写信好像会让时间慢下来。平时来不及说的话，在这里终于可以一笔一笔写清楚：我很在意你，也很期待你的回信。']);return{title:pick(['今天也想起你','寄给'+n.me+'的一点心情','想和你说几句话','一封没有特别理由的信']),content:opening+'\n\n'+body,cardFragments:cards}}
+function notifyLetter(letter){var n=names(),text='📮 '+n.partner+'给你寄来了一封信 · 点击查看';try{if(typeof addMessage==='function')addMessage({id:makeId('mail_notice'),sender:'system',text:text,timestamp:new Date(),status:'received',type:'system',mailboxNotice:true,mailboxLetterId:letter.id,favorited:false,note:null})}catch(e){console.warn('[mailbox] 写入聊天提醒失败',e)}try{if(typeof window._sendPartnerNotification==='function')window._sendPartnerNotification(n.partner,'给你寄来了一封信')}catch(e){}}
+async function processDue(){if(processing)return false;processing=true;var changed=false,arrived=[];try{var now=Date.now(),due=state.pending.filter(function(x){return x.dueAt<=now}),rest=state.pending.filter(function(x){return x.dueAt>now});if(rest.length!==state.pending.length)changed=true;state.pending=rest;due.forEach(function(job){var source=state.items.find(function(x){return x.id===job.sourceId&&x.type==='sent'});if(!source)return;var reply=makeReply(source),letter={id:makeId('mail'),type:'received',title:reply.title,content:reply.content,createdAt:Math.max(job.dueAt,now-1000),read:false,originalContent:source.content,replyToId:source.id,cardFragments:reply.cardFragments||[]};state.items.push(letter);arrived.push(letter);changed=true});if(ensureIncomingPlan())changed=true;if(state.nextIncomingAt<=now){var fresh=makeIncoming(),incoming={id:makeId('mail'),type:'received',title:fresh.title,content:fresh.content,createdAt:now,read:false,originalContent:'',replyToId:'',cardFragments:fresh.cardFragments||[]};state.items.push(incoming);arrived.push(incoming);state.nextIncomingAt=now+randomBetween(12*60*60000,36*60*60000);changed=true}if(changed)await save();else updateBadges();arrived.forEach(notifyLetter);if(changed&&el('xiaoshuMailboxHost').classList.contains('show')&&!el('xsMailCompose').classList.contains('show')&&!el('xsMailView').classList.contains('show'))renderList();return changed}catch(e){console.warn('[mailbox] 到期信件处理失败',e);return false}finally{processing=false}}
+function checkDueFresh(){return queueState(function(){return load(true).then(processDue)}).catch(function(e){console.warn('[mailbox] 检查信件失败',e);return false})}
+function setHeaderAction(mode){var b=el('xsMailHome'),isList=mode==='list';b.style.visibility='visible';b.innerHTML='<i class="fas '+(isList?'fa-cog':'fa-envelope')+'"></i>';b.setAttribute('aria-label',isList?'打开信箱设置':'返回信箱列表');b.dataset.mailAction=isList?'settings':'home'}
+function setMode(mode){var listMode=el('xsMailListMode'),compose=el('xsMailCompose'),view=el('xsMailView'),footer=el('xsMailFooter');closeSettings();listMode.style.display=mode==='list'?'block':'none';compose.classList.toggle('show',mode==='compose');view.classList.toggle('show',mode==='view');footer.style.display=mode==='list'?'block':'none';setHeaderAction(mode);if(mode==='list')renderList();el('xsMailMain').scrollTop=0}
+function openSettings(){el('xsMailCardMin').value=state.cardCountMin;el('xsMailCardMax').value=state.cardCountMax;el('xsMailSettingsError').textContent='';el('xsMailSettings').classList.add('show');el('xsMailSettings').setAttribute('aria-hidden','false');setTimeout(function(){try{el('xsMailCardMin').focus()}catch(e){}},50)}
+function closeSettings(){var p=el('xsMailSettings');if(!p)return;p.classList.remove('show');p.setAttribute('aria-hidden','true');el('xsMailSettingsError').textContent=''}
+function readCardCountSettings(){var minRaw=String(el('xsMailCardMin').value||'').trim(),maxRaw=String(el('xsMailCardMax').value||'').trim();if(!/^(?:10|[1-9])$/.test(minRaw)||!/^(?:10|[1-9])$/.test(maxRaw))throw new Error('请输入 1～10 之间的整数');var min=Number(minRaw),max=Number(maxRaw);if(min>max)throw new Error('最少字卡数不能大于最多字卡数');return{min:min,max:max}}
+async function saveCardCountSettings(min,max,message){try{await queueState(async function(){state.cardCountMin=min;state.cardCountMax=max;await save()});closeSettings();toast(message||('字卡数量已保存：'+min+'～'+max+' 张'))}catch(e){el('xsMailSettingsError').textContent='保存失败：'+(e.message||'未知错误')}}
+function submitCardCountSettings(){try{var value=readCardCountSettings();saveCardCountSettings(value.min,value.max)}catch(e){el('xsMailSettingsError').textContent=e.message}}
+function restoreCardCountDefaults(){el('xsMailCardMin').value=DEFAULT_CARD_MIN;el('xsMailCardMax').value=DEFAULT_CARD_MAX;el('xsMailSettingsError').textContent='';saveCardCountSettings(DEFAULT_CARD_MIN,DEFAULT_CARD_MAX,'字卡数量已恢复默认：2～4 张')}
+function emptyHtml(){var isIn=tab==='in';return'<div class="xs-mail-empty"><div class="xs-mail-empty-icon">✉</div><div class="xs-mail-empty-title">'+(isIn?'还没有收到信':'还没有寄出信件')+'</div><div class="xs-mail-empty-sub">'+(isIn?'以后收到的来信会安静地放在这里。':'提笔写下想说的话，寄给当前聊天对象。')+'</div></div>'}
+function renderList(){var list=el('xsMailList'),n=names();document.querySelectorAll('[data-mail-tab]').forEach(function(b){b.classList.toggle('active',b.dataset.mailTab===tab)});var arr=state.items.filter(function(x){return tab==='in'?x.type==='received':x.type==='sent'}).sort(function(a,b){return b.createdAt-a.createdAt});if(!arr.length){list.innerHTML=emptyHtml();updateBadges();return}list.innerHTML=arr.map(function(x){var who=x.type==='received'?n.partner:n.partner,dir=x.type==='received'?'收到 · '+who:'寄给 · '+who,preview=(x.content||'').replace(/\s+/g,' ').slice(0,70);return'<article class="xs-mail-item" data-mail-id="'+esc(x.id)+'"><button type="button" data-mail-open="'+esc(x.id)+'" style="all:unset;display:block;width:100%;cursor:pointer"><div class="xs-mail-item-top"><span class="xs-mail-item-direction">'+esc(dir)+(x.type==='received'&&!x.read?'<span class="xs-mail-unread-dot"></span>':'')+'</span><span class="xs-mail-item-date">'+esc(fmt(x.createdAt,false))+'</span><span class="xs-mail-stamp">✉</span></div><div class="xs-mail-item-body"><div class="xs-mail-item-title">'+esc(x.title||'一封没有标题的信')+'</div><div class="xs-mail-item-preview">'+esc(preview||'（空白）')+'</div></div></button><button class="xs-mail-delete" type="button" data-mail-delete="'+esc(x.id)+'" aria-label="删除">×</button></article>'}).join('');updateBadges()}
+function openCompose(sourceId){var n=names(),source=sourceId&&state.items.find(function(x){return x.id===sourceId&&x.type==='received'});replyToId=source?source.id:null;el('xsMailComposeDate').textContent=fmt(Date.now(),true);el('xsMailComposeTo').textContent='致 '+n.partner+'：';el('xsMailSubject').value=source?'回复 · '+(source.title||'你的来信'):'';el('xsMailContent').value='';el('xsMailCounter').textContent='0 / 8000';el('xsMailComposeOriginal').style.display=source?'block':'none';el('xsMailComposeOriginal').textContent=source?'回复 '+n.partner+'：'+source.content:'';setMode('compose');setTimeout(function(){try{el('xsMailContent').focus()}catch(e){}},80)}
+async function send(){var content=el('xsMailContent').value.trim(),title=el('xsMailSubject').value.trim(),sourceId=replyToId;if(!content){toast('信件内容不能为空');return}try{await queueState(async function(){var source=sourceId&&state.items.find(function(x){return x.id===sourceId}),now=Date.now(),letter={id:makeId('mail'),type:'sent',title:title||'写给'+names().partner+'的一封信',content:content,createdAt:now,read:true,originalContent:source?source.content:'',replyToId:source?source.id:'',cardFragments:[]};state.items.push(letter);state.pending.push({id:makeId('mail_job'),kind:'reply',sourceId:letter.id,dueAt:now+randomBetween(2*60000,15*60000)});ensureIncomingPlan();await save()});if(replyToId===sourceId)replyToId=null;tab='out';setMode('list');toast('信已寄出，对方会在稍后回信')}catch(e){toast('保存失败：'+(e.message||'未知错误'))}}
+function renderCardTrace(letter){var trace=el('xsMailCardTrace'),chips=el('xsMailCardChips'),cards=Array.isArray(letter.cardFragments)?letter.cardFragments:[];trace.classList.toggle('show',cards.length>0);chips.textContent='';if(!cards.length)return;el('xsMailCardTraceTitle').textContent=names().partner+'从 '+cards.length+' 张字卡里拼出了这封信';cards.forEach(function(text){var chip=document.createElement('span');chip.className='xs-mail-card-chip';chip.textContent=text;chip.title=text;chips.appendChild(chip)})}
+async function openLetter(id){var x;try{x=await queueState(async function(){var found=state.items.find(function(v){return v.id===id});if(!found)return null;if(found.type==='received'&&!found.read){found.read=true;await save()}return found})}catch(e){console.warn('[mailbox] 标记已读失败',e);x=state.items.find(function(v){return v.id===id})}if(!x)return;viewId=id;var n=names(),received=x.type==='received',author=received?n.partner:n.me,to=received?n.me:n.partner;el('xsMailOriginal').style.display=x.originalContent?'block':'none';el('xsMailOriginal').textContent=x.originalContent?(received?'你的原信：':'对方的来信：')+x.originalContent:'';el('xsMailViewDate').textContent=fmt(x.createdAt,true);el('xsMailViewTo').textContent='致 '+to+'：';el('xsMailViewGreeting').textContent=received?'见字如面，一切都好。':'见字如面，愿你今日安好。';el('xsMailViewTitle').textContent=x.title||'一封没有标题的信';el('xsMailViewContent').textContent=x.content;renderCardTrace(x);el('xsMailSignName').textContent=author;el('xsMailSignDate').textContent=fmt(x.createdAt,true);el('xsMailReply').style.display=received?'block':'none';setMode('view')}
+async function remove(id){if(!state.items.some(function(v){return v.id===id}))return;if(!confirm('确定删除这封信吗？删除后无法恢复。'))return;try{var removed=await queueState(async function(){if(!state.items.some(function(v){return v.id===id}))return false;state.items=state.items.filter(function(v){return v.id!==id});state.pending=state.pending.filter(function(v){return v.sourceId!==id});await save();return true});if(!removed)return;viewId=null;setMode('list');toast('信件已删除')}catch(e){toast('删除失败')}}
+async function open(targetId){var requestId=++openRequestId;try{if(window.xiaoshuCloseDrawer)window.xiaoshuCloseDrawer()}catch(e){}await checkDueFresh();if(requestId!==openRequestId)return;var h=el('xiaoshuMailboxHost');h.classList.add('show');h.setAttribute('aria-hidden','false');document.body.classList.add('xiaoshu-mailbox-open');el('xsMailTitle').textContent=names().partner+'的信箱';if(targetId&&state.items.some(function(x){return x.id===targetId})){tab='in';await openLetter(targetId)}else{tab='in';setMode('list')}updateBadges()}
+function close(){openRequestId++;closeSettings();var h=el('xiaoshuMailboxHost');h.classList.remove('show');h.setAttribute('aria-hidden','true');document.body.classList.remove('xiaoshu-mailbox-open');viewId=null;replyToId=null}
+function bind(){el('xsMailBack').addEventListener('click',close);el('xsMailHome').addEventListener('click',function(){if(this.dataset.mailAction==='settings')openSettings();else{replyToId=null;setMode('list')}});el('xsMailSettingsSave').addEventListener('click',submitCardCountSettings);el('xsMailSettingsDefault').addEventListener('click',restoreCardCountDefaults);el('xsMailSettingsCancel').addEventListener('click',closeSettings);el('xsMailSettings').addEventListener('click',function(e){if(e.target===this)closeSettings()});el('xsMailWrite').addEventListener('click',function(){openCompose()});el('xsMailCancelCompose').addEventListener('click',function(){replyToId=null;setMode('list')});el('xsMailSend').addEventListener('click',send);el('xsMailViewClose').addEventListener('click',function(){setMode('list')});el('xsMailReply').addEventListener('click',function(){if(viewId)openCompose(viewId)});el('xsMailViewDelete').addEventListener('click',function(){if(viewId)remove(viewId)});el('xsMailContent').addEventListener('input',function(){el('xsMailCounter').textContent=this.value.length+' / 8000'});document.querySelectorAll('[data-mail-tab]').forEach(function(b){b.addEventListener('click',function(){tab=this.dataset.mailTab;setMode('list')})});el('xsMailList').addEventListener('click',function(e){var del=e.target.closest('[data-mail-delete]');if(del){e.preventDefault();e.stopPropagation();remove(del.dataset.mailDelete);return}var op=e.target.closest('[data-mail-open]');if(op)openLetter(op.dataset.mailOpen)});document.addEventListener('keydown',function(e){if(e.key==='Escape'&&el('xiaoshuMailboxHost').classList.contains('show')){if(el('xsMailSettings').classList.contains('show'))closeSettings();else if(el('xsMailCompose').classList.contains('show')||el('xsMailView').classList.contains('show'))setMode('list');else close()}});document.addEventListener('visibilitychange',function(){if(!document.hidden)checkDueFresh()});window.addEventListener('focus',checkDueFresh);window.addEventListener('xiaoshu-session-data-ready',function(){loadedKey='';checkDueFresh()})}
+function boot(){bind();queueState(function(){return load(true).then(updateBadges)}).catch(function(){})}
+window.xiaoshuMailbox={open:open,close:close,openLetterById:function(id){return open(String(id||''))},checkNow:checkDueFresh,reload:function(){loadedKey='';return checkDueFresh().then(function(){renderList();updateBadges()})},getState:function(){return JSON.parse(JSON.stringify(state))}};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+})();</script>
+<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v117-mail-card-count-settings';</script>
 </body></html>

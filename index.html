@@ -5178,7 +5178,9 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 // 拍一拍是附加互动，继续生成正常回复，避免空拍一拍吞掉整轮消息。
             }
 
-            const replyCount = 1;
+            // 字卡随机组合：大多数时候回复 1 张，偶尔连续回复 2～3 张。
+            // 沿用 milk 原版的节奏概率：1 张 75%，2 张 23.75%，3 张 1.25%。
+            const replyCount = Math.random() < 0.75 ? 1 : (Math.random() < 0.95 ? 2 : 3);
             if (!customReplies || customReplies.length === 0) {
                 showNotification('回复库为空，请先到「自定义回复」中添加内容', 'info', 3500);
                 return;
@@ -5191,20 +5193,35 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 return;
             }
 
+            // 在本轮开始时一次性抽好字卡，并从临时池中移除已抽内容，
+            // 避免同一轮随机组合出现完全相同的回复。
+            const availableReplies = replyPoolOnce.slice();
+            const selectedReplies = [];
+            const drawCount = Math.min(replyCount, availableReplies.length);
+            for (let drawIndex = 0; drawIndex < drawCount; drawIndex++) {
+                let picked = (typeof window.xiaoshuPickCardReply === 'function')
+                    ? window.xiaoshuPickCardReply(availableReplies)
+                    : availableReplies[Math.floor(Math.random() * availableReplies.length)];
+                picked = String(picked || '').trim();
+                if (!picked) {
+                    const fallbackIndex = Math.floor(Math.random() * availableReplies.length);
+                    picked = String(availableReplies[fallbackIndex] || '').trim();
+                }
+                if (!picked) continue;
+                selectedReplies.push(picked);
+                const usedIndex = availableReplies.findIndex(item => String(item || '').trim() === picked);
+                if (usedIndex >= 0) availableReplies.splice(usedIndex, 1);
+            }
+            if (!selectedReplies.length) return;
+
             // 确认有可用回复后再展示“正在输入中”，避免空转
             let delay = 0;
-            for (let i = 0; i < replyCount; i++) {
+            for (let i = 0; i < selectedReplies.length; i++) {
                 const delayRange = settings.replyDelayMax - settings.replyDelayMin;
                 delay += settings.replyDelayMin + Math.random() * delayRange;
                 xsScheduleConversationTask(__xsReplyConversation, () => {
                     try {
-                    const replyPool = replyPoolOnce;
-                    let replyText = '';
-                    // 被屏蔽或无效项直接换下一个，尽量保证每次都产出可用回复
-                    for (let t = 0; t < 6; t++) {
-                        const picked = (typeof window.xiaoshuPickCardReply === 'function') ? window.xiaoshuPickCardReply(replyPool) : replyPool[Math.floor(Math.random() * replyPool.length)];
-                        if (picked && String(picked).trim()) { replyText = String(picked).trim(); break; }
-                    }
+                    const replyText = selectedReplies[i];
                     if (!replyText) {
                         return;
                     }
@@ -5229,7 +5246,8 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                     }
                     enabledStickerPool = (enabledStickerPool || []).filter(Boolean);
                     // 上一条是表情包时，对方从当前本地表情池中追加回复。
-                    const shouldSendSticker = enabledStickerPool.length > 0 && __xsUserJustSentSticker;
+                    // 随机组合时只在最后一张字卡后追加一次表情，避免一轮连续刷出多张表情包。
+                    const shouldSendSticker = enabledStickerPool.length > 0 && __xsUserJustSentSticker && i === selectedReplies.length - 1;
 
                     let finalText = replyText;
                     let separateEmoji = null;

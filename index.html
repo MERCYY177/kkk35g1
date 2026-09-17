@@ -164,251 +164,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <div class="date-display" id="home-date-display">5月24日 周六</div>
 </div>
 </div>
-<div class="shop-container" id="shop-container" style="display:none;">
-<div class="shop-header">
-<button class="shop-back" onclick="window.ShopApp.hideShop()">← 返回</button>
-<span class="shop-title" id="shop-page-title">商城</span>
-<div class="shop-balance" onclick="window.ShopApp.showBalanceModal()">
-<i class="fas fa-wallet"></i>
-<span id="shop-balance-display">我 ¥520.00 ｜ 对方 ¥520.00</span>
-</div>
-</div>
-<div class="search-bar" id="shop-search-bar">
-<div class="search-wrapper">
-<input class="search-input" id="shop-search-input" onfocus="window.ShopApp.showSearchDropdown()" oninput="window.ShopApp.onSearchInput()" placeholder="搜索商品..." type="text"/>
-<button class="search-clear" id="shop-search-clear" onclick="window.ShopApp.clearSearch()">✕</button>
-<div class="search-dropdown" id="shop-search-dropdown">
-<div class="search-dropdown-title">
-<span>搜索历史</span>
-<button onclick="window.ShopApp.clearSearchHistory()">清除</button>
-</div>
-<div class="search-dropdown-tags" id="shop-search-history"></div>
-<div class="search-dropdown-title"><span>热门搜索</span></div>
-<div class="search-dropdown-tags">
-<div class="search-dropdown-tag" onclick="window.ShopApp.quickSearch('耳机')">耳机</div>
-<div class="search-dropdown-tag" onclick="window.ShopApp.quickSearch('蛋糕')">蛋糕</div>
-<div class="search-dropdown-tag" onclick="window.ShopApp.quickSearch('对戒')">对戒</div>
-</div>
-</div>
-</div>
-<button class="wish-btn" onclick="window.ShopApp.showWishModal()">
-<i class="fas fa-magic"></i> 许愿
-            </button>
-</div>
-<div class="shop-tabs" id="shop-main-tabs"></div>
-<div class="shop-content" id="shop-content">
-<div id="shop-recommend-panel">
-<div class="sub-tags-wrapper">
-<div class="sub-tags-toggle" onclick="window.ShopApp.toggleSubTags(this)">
-<i class="fas fa-chevron-right"></i>
-<span>全部</span>
-</div>
-<div class="sub-tags-content" id="shop-recommend-subtags">
-<div class="sub-tag active" onclick="window.ShopApp.filterSubTag(this)">全部</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">衣物</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">日用品</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">数码</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">计生用品</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">饰品</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">居家</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">美妆</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">文具</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">书籍</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">日常随身</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">工作通勤</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">洗漱护理</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">药妆照顾</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">小家生活</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">衣服类</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">季节用品</div>
-<div class="sub-tag" onclick="window.ShopApp.filterSubTag(this)">小物</div>
-<div class="sub-tag-add" onclick="window.ShopApp.showAddTagModal('recommend')">+ 自定义</div>
-</div>
-</div>
-<div class="product-grid" id="shop-recommend-grid"></div>
-</div>
-<div id="shop-cart-panel" style="display:none;">
-<div class="cart-list" id="shop-cart-list"></div>
-</div>
-<div id="shop-order-panel" style="display:none;">
-<div class="order-tabs">
-<button class="order-tab active" onclick="window.ShopApp.filterOrder(this,'all')">全部</button>
-<button class="order-tab" onclick="window.ShopApp.filterOrder(this,'pending')">待送达</button>
-<button class="order-tab" onclick="window.ShopApp.filterOrder(this,'completed')">已完成</button>
-<button class="order-tab" onclick="window.ShopApp.filterOrder(this,'cancelled')">已取消</button>
-</div>
-<div class="order-list" id="shop-order-list"></div>
-</div>
-</div>
-<div class="cart-footer" id="shop-cart-footer">
-<div style="display:flex;align-items:center;gap:8px;">
-<input class="cart-checkbox" id="shop-cart-selectall" onchange="window.ShopApp.toggleSelectAll()" type="checkbox"/>
-<span style="font-size:0.8rem;color:var(--text-light);">全选</span>
-</div>
-<div style="flex:1;"></div>
-<div class="cart-total">合计: <span id="shop-cart-total">¥0</span></div>
-<button class="checkout-btn delete-selected-btn" onclick="window.ShopApp.deleteSelected()" style="background:var(--danger-color,#ff4757);">删除</button>
-<button class="checkout-btn" onclick="window.ShopApp.checkout()">结算</button>
-</div>
-<div class="shop-bottom-nav">
-<button class="shop-nav-item active" onclick="window.ShopApp.switchNav('shop', this)">
-<i class="fas fa-store"></i>
-<span>商城</span>
-</button>
-<button class="shop-nav-item" onclick="window.ShopApp.switchNav('cart', this)">
-<i class="fas fa-shopping-cart"></i>
-<span>购物车</span>
-</button>
-<button class="shop-nav-item" onclick="window.ShopApp.switchNav('order', this)">
-<i class="fas fa-clipboard-list"></i>
-<span>订单</span>
-</button>
-</div>
-<div class="shop-modal" id="shop-product-modal">
-<button class="shop-modal-close" onclick="window.ShopApp.closeProductModal()">✕</button>
-<button class="shop-modal-share-btn" onclick="window.ShopApp.shareProduct()">🔗</button>
-<div class="shop-modal-content">
-<div class="shop-modal-img" id="shop-modal-img"></div>
-<div class="shop-modal-name" id="shop-modal-name"></div>
-<div class="shop-modal-desc" id="shop-modal-desc"></div>
-<div class="shop-modal-price" id="shop-modal-price"></div>
-<div id="shop-modal-specs"></div>
-<div class="spec-section">
-<div class="spec-title">数量</div>
-<div class="quantity-control">
-<button class="qty-btn" onclick="window.ShopApp.changeQty(-1)">-</button>
-<span class="qty-num" id="shop-modal-qty">1</span>
-<button class="qty-btn" onclick="window.ShopApp.changeQty(1)">+</button>
-</div>
-</div>
-<div class="remark-section">
-<div class="spec-title">订单备注</div>
-<textarea class="remark-input" id="shop-modal-remark" placeholder="给TA留言，或备注特殊要求..."></textarea>
-</div>
-<div class="buy-options" id="shop-modal-buy-options">
-<button class="buy-btn self" id="shop-modal-btn-cart" onclick="window.ShopApp.addToCartFromModal()">
-<i class="fas fa-cart-plus"></i> 加入购物车
-                </button>
-<button class="buy-btn self" id="shop-modal-btn-self" onclick="window.ShopApp.buy('self')">
-<i class="fas fa-user"></i> 给自己买
-                </button>
-<button class="buy-btn dream" id="shop-modal-btn-dream" onclick="window.ShopApp.buy('dream')">
-<i class="fas fa-heart"></i> 给对方买
-                </button>
-</div>
-<button class="buy-btn wish" id="shop-modal-btn-booking" onclick="window.ShopApp.showBookingModal()" style="width:100%;margin-top:10px;">
-<i class="fas fa-clock"></i> 预订送达
-            </button>
-<button class="buy-btn pay-request-style" id="shop-modal-btn-pay" onclick="window.ShopApp.askTAPay()" style="width:100%;margin-top:10px;">
-<i class="fas fa-hand-holding-heart"></i> 让对方买
-            </button>
-</div>
-</div>
-<div class="shop-modal wish-modal" id="shop-wish-modal">
-<button class="shop-modal-close" onclick="window.ShopApp.closeWishModal()">✕</button>
-<div class="shop-modal-content">
-<div style="font-size:1.1rem;font-weight:700;margin-bottom:16px;text-align:center;">✨ 许愿商品</div>
-<div class="wish-form-group">
-<label class="wish-label">商品名称</label>
-<input class="wish-input" id="wish-name" placeholder="输入商品名称..." type="text"/>
-</div>
-<div class="wish-form-group">
-<label class="wish-label">价格 (¥)</label>
-<input class="wish-input" id="wish-price" placeholder="0.00" type="number"/>
-</div>
-<div class="wish-form-group">
-<label class="wish-label">分类</label>
-<select class="wish-select" id="wish-category">
-<option value="recommend">推荐</option>
-<option value="food">外卖</option>
-</select>
-</div>
-<div class="wish-form-group">
-<label class="wish-label">小标签（用逗号分隔）</label>
-<input class="wish-input" id="wish-tags" placeholder="如: 衣物, 新品, 限量" type="text"/>
-</div>
-<div class="wish-form-group">
-<label class="wish-label">商品图标</label>
-<div class="wish-icon-row">
-<input class="wish-input" id="wish-icon" placeholder="输入emoji 如: 👔 🧋 🎁" style="flex:1;" type="text"/>
-<span style="color:var(--text-light);font-size:0.8rem;">或</span>
-<label class="wish-img-upload">
-<input accept="image/*" id="wish-img-input" onchange="window.ShopApp.handleWishImgUpload(event)" style="display:none;" type="file"/>
-<span>📷 上传图片</span>
-</label>
-</div>
-<div class="wish-img-preview" id="wish-img-preview" style="display:none;"></div>
-</div>
-<div class="wish-form-group">
-<label class="wish-label">商品描述</label>
-<textarea class="wish-textarea" id="wish-desc" placeholder="输入商品详细描述..."></textarea>
-</div>
-<div class="wish-form-group">
-<label class="wish-label">规格选项</label>
-<div id="wish-specs"></div>
-<button class="add-spec-btn" onclick="window.ShopApp.addWishSpec()">+ 添加规格</button>
-</div>
-<button class="buy-btn dream" onclick="window.ShopApp.submitWish()" style="width:100%;margin-top:10px;">
-<i class="fas fa-magic"></i> 许愿上架
-            </button>
-</div>
-</div>
-<div class="shop-modal balance-modal" id="shop-balance-modal">
-<button class="shop-modal-close" onclick="window.ShopApp.closeBalanceModal()">✕</button>
-<div class="shop-modal-content" style="text-align:center;padding:30px 20px;">
-<div style="font-size:1.1rem;font-weight:700;margin-bottom:10px;">💰 余额设置</div>
-<div style="font-size:0.8rem;color:var(--text-light);margin-bottom:20px;">分别设置双方余额</div>
-<div class="balance-display" id="shop-balance-modal-display">我 ¥520.00 ｜ 对方 ¥520.00</div>
-<div style="text-align:left;margin:14px 0 6px;font-size:.9rem;color:var(--text-light);">我的余额</div>
-<input class="balance-input" id="shop-balance-input" placeholder="输入我的余额" type="number"/>
-<div style="text-align:left;margin:14px 0 6px;font-size:.9rem;color:var(--text-light);">对方余额</div>
-<input class="balance-input" id="shop-partner-balance-input" placeholder="输入对方余额" type="number"/>
-<button class="buy-btn dream" onclick="window.ShopApp.saveBalance()" style="width:100%;">
-<i class="fas fa-check"></i> 确认修改
-            </button>
-</div>
-</div>
-<div class="shop-modal" id="shop-reply-modal">
-<button class="shop-modal-close" onclick="window.ShopApp.closeReplyModal()">✕</button>
-<div class="shop-modal-content">
-<div style="font-size:1.1rem;font-weight:700;margin-bottom:16px;text-align:center;">💬 对方的回复</div>
-<div id="shop-reply-list"></div>
-</div>
-</div>
-<div class="shop-modal" id="shop-addtag-modal">
-<button class="shop-modal-close" onclick="window.ShopApp.closeAddTagModal()">✕</button>
-<div class="shop-modal-content">
-<div style="font-size:1.1rem;font-weight:700;margin-bottom:16px;text-align:center;">+ 自定义分类</div>
-<div class="tag-input-row">
-<input id="shop-newtag-input" placeholder="输入分类名称..." type="text"/>
-<button class="tag-add-btn" onclick="window.ShopApp.addCustomTag()">添加</button>
-</div>
-</div>
-</div>
-<div class="shop-modal" id="shop-booking-modal">
-<button class="shop-modal-close" onclick="window.ShopApp.closeBookingModal()">✕</button>
-<div class="shop-modal-content">
-<div style="font-size:1.1rem;font-weight:700;margin-bottom:16px;text-align:center;">⏰ 预订送达</div>
-<div class="wish-form-group">
-<label class="wish-label">快捷选项</label>
-<div class="spec-options">
-<div class="spec-option" onclick="window.ShopApp.selectBooking(this,5)">5分钟后</div>
-<div class="spec-option" onclick="window.ShopApp.selectBooking(this,30)">30分钟后</div>
-<div class="spec-option" onclick="window.ShopApp.selectBooking(this,60)">1小时后</div>
-<div class="spec-option" onclick="window.ShopApp.selectBooking(this,1440)">明天</div>
-</div>
-</div>
-<div class="wish-form-group">
-<label class="wish-label">自定义分钟数</label>
-<input class="wish-input" id="shop-booking-minutes" placeholder="输入分钟数" type="number"/>
-</div>
-<div class="buy-options">
-<button class="buy-btn self" onclick="window.ShopApp.bookingBuy('self')" style="flex:1;">给自己买</button>
-<button class="buy-btn dream" onclick="window.ShopApp.bookingBuy('dream')" style="flex:1;">给对方买</button>
-</div>
-</div>
-</div>
-</div>
 <div class="home-notification" id="home-notification">
 <div class="home-notification-inner" onclick="window.dismissHomeNotification &amp;&amp; window.dismissHomeNotification(true)">
 <img alt="" class="home-notification-avatar" id="notification-avatar" src=""/>
@@ -1970,7 +1725,7 @@ function stringErr(e) { return String(e && (e.message || e) || '未知错误'); 
 var ACTIVE_BACKUP_REGISTRY = [
   {
     id:'chat', label:'聊天记录 / 会话 / 基础设置', flag:'chat',
-    lfNeedles:['chatMessages','sessionList','lastSessionId','chatSettings','showPartnerNameInChat','partnerPersonas','mailboxLettersV1'],
+    lfNeedles:['chatMessages','sessionList','lastSessionId','chatSettings','showPartnerNameInChat','partnerPersonas','mailboxLettersV1','callRecordsV2','callSettingsV2'],
     lsExact:[], lsPrefixes:[]
   },
   {
@@ -2000,13 +1755,13 @@ var ACTIVE_BACKUP_REGISTRY = [
     lsPrefixes:[]
   },
   {
-    id:'shop', label:'商城 / 订单 / 礼物柜', flag:'shop',
+    id:'shop', label:'历史订单 / 礼物柜数据（兼容）', flag:'shop',
     lfNeedles:[],
     lsExact:['shop_balance','shop_partner_balance','shop_search_history','shop_gift_cabinet','shop_products','shop_cart','shop_orders','shop_category','shop_category_page','coupon_wallet','xiaoshu_shop_current_category_v1','xiaoshu_shop_category_page_v1','xiaoshu_coupon_wallet_v1','xiaoshu_shop_deleted_defaults_v1','xiaoshu_shop_custom_tags_v1'],
     lsPrefixes:[], shopDB:true
   },
   {
-    id:'map', label:'小家位置记录', flag:'map',
+    id:'map', label:'历史位置记录（兼容）', flag:'map',
     lfNeedles:['_mapData'],
     lsExact:['little_home_state_v8','little_home_state_v8_backup'],
     lsPrefixes:['xiaoshu_little_home_state_'],
@@ -6295,23 +6050,6 @@ if (window.TaPhoneApp && typeof window.TaPhoneApp.showTaPhone === 'function') {
 return window.TaPhoneApp.showTaPhone();
 }
 notify('TA的手机加载失败', 'error');
-return false;
-}
-if (app === 'phone' || app === 'call' || app === 'main-phone') {
-if (typeof window.xiaoshuOpenMainPhone === 'function') return window.xiaoshuOpenMainPhone();
-notify('电话功能加载中...', 'info');
-return false;
-}
-if (app === 'shop') {
-if (window.ShopApp && typeof window.ShopApp.showShop === 'function') return window.ShopApp.showShop();
-if (typeof window.xiaoshuOpenShopLazy === 'function') return window.xiaoshuOpenShopLazy();
-notify('商城加载失败', 'error');
-return false;
-}
-if (app === 'map' || app === 'home' || app === 'house') {
-if (window.MapApp && typeof window.MapApp.show === 'function') return window.MapApp.show();
-if (typeof window.xiaoshuOpenDoorLazy === 'function') return window.xiaoshuOpenDoorLazy();
-notify('家门加载失败，请刷新重试', 'error');
 return false;
 }
 if (app === 'moments' || app === 'circle') {
@@ -11080,7 +10818,7 @@ clearAndDeleteDatabase('MomentsVideoDB')
 }
 var clearBtn = mc.querySelector('#clear-storage');
 if (clearBtn) clearBtn.addEventListener('click', async function () {
-if (!confirm('⚠️ 确定要重置此应用的数据吗？\n\n将删除两份聊天、设置、字卡、头像、互动工具、商城数据和朋友圈媒体。不会无范围清空整个 localStorage；同一域名下其他网页的未知数据将保留。\n\n此操作不可恢复！')) return;
+if (!confirm('⚠️ 确定要重置此应用的数据吗？\n\n将删除两份聊天、设置、字卡、头像、互动工具、历史模块数据和朋友圈媒体。不会无范围清空整个 localStorage；同一域名下其他网页的未知数据将保留。\n\n此操作不可恢复！')) return;
 if (!confirm('最后确认：重置完成后页面将自动刷新。继续吗？')) return;
 window._skipBackup = true;
 try {
@@ -24085,7 +23823,7 @@ return false;
 </div>
 <div class="xiaoshu-beautify-card">
 <div class="xiaoshu-beautify-card-title">☁︎ 美化备份</div>
-<div class="xiaoshu-beautify-card-desc">这里导出 / 导入的是你后续编辑、删除、新增和导入的美化设置，不会动聊天记录、朋友圈、商城和地图数据。换网址/换浏览器前先导出一份最稳。</div>
+<div class="xiaoshu-beautify-card-desc">这里导出 / 导入的是你后续编辑、删除、新增和导入的美化设置，不会动聊天记录、朋友圈和其他模块数据。换网址/换浏览器前先导出一份最稳。</div>
 <div class="xiaoshu-beautify-actions">
 <button class="xiaoshu-beautify-btn" id="xiaoshuBeautifyExportAll" type="button">导出全部美化设置</button>
 <button class="xiaoshu-beautify-btn" id="xiaoshuBeautifyImportBtn" type="button">导入美化设置</button>
@@ -27704,7 +27442,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
   function updateTime(){var el=$('xs-clean-phone-time');if(el)el.textContent=timeOnly();}
   function startClock(){updateTime();if(!clockTimer)clockTimer=setInterval(updateTime,30000);}
   function stopClock(){if(clockTimer){clearInterval(clockTimer);clockTimer=0;}}
-  function myName(){return '我';}
+  function myName(){try{var s=(typeof settings!=='undefined'&&settings)||window.settings||{},n=document.getElementById('my-name');return String(s.myName||(n&&n.textContent)||'我').trim()||'我';}catch(e){return '我';}}
   function myAvatar(){try{var p=loadJSON('profile_me',null);if(p&&p.avatar)return p.avatar;var a=localStorage.getItem('home_avatar_me');if(a)return a;var el=document.querySelector('#my-avatar img,#avatar-me img,.user-info[data-role="me"] .avatar img');if(el&&el.src)return el.src;}catch(e){}return '';}
   function avatarHTML(){var a=safeMedia(myAvatar());return '<div class="xs-clean-avatar">'+(a?'<img src="'+esc(a)+'">':'<span>我</span>')+'</div>';}
 
@@ -27725,7 +27463,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
   function stripHTML(raw){var s=String(raw==null?'':raw);if(/^\s*</.test(s)){var tpl=document.createElement('template');tpl.innerHTML=s;return (tpl.content.textContent||'').replace(/\s+/g,' ').trim();}return s.trim();}
   function productFromItem(item){var sd=item&&item.shareData;if(sd&&typeof sd==='object')return {name:sd.name||sd.title||'商品',price:sd.price,img:sd.image||sd.img||sd.imageData||'',icon:sd.icon||sd.emoji||'🎁'};var raw=String(item&&item.content||'');if(!/^\s*</.test(raw))return null;var tpl=document.createElement('template');tpl.innerHTML=raw;var txt=(tpl.content.textContent||'').replace(/\s+/g,' ').trim();if(!/(¥|已代付|已送达|已收到|送给|商品|帮我买)/.test(txt))return null;var im=tpl.content.querySelector('img'),src=im&&im.getAttribute('src')||'';if(!/^(https?:\/\/|data:image\/|blob:|file:|content:)/i.test(src))src='';var price=(txt.match(/¥\s*([0-9.]+)/)||[])[1]||'';var name=txt.replace(/¥\s*[0-9.]+/g,'').replace(/已代付|已送达|已收到|送给[^\s]*|帮我买|备注[:：]?.*$/g,'').trim()||'商品';return {name:name,price:price,img:src,icon:'🎁'};}
   function productRow(p){return '<div class="xs-product-row"><div class="xs-product-thumb">'+(safeMedia(p.img)?'<img src="'+esc(safeMedia(p.img))+'">':'<span>'+esc(p.icon||'🎁')+'</span>')+'</div><div><div class="xs-product-name">'+esc(p.name||'商品')+'</div>'+(p.price!==undefined&&p.price!==''?'<div class="xs-product-price">¥'+esc(p.price)+'</div>':'')+'</div></div>';}
-  function giftsData(){var gifts=[];try{if(window.ShopApp&&typeof ShopApp.getGiftCabinet==='function')gifts=ShopApp.getGiftCabinet()||[];}catch(e){}if(!gifts.length)gifts=loadJSON('shop_gift_cabinet',[])||[];return Array.isArray(gifts)?gifts:[];}
+  function giftsData(){var gifts=loadJSON('shop_gift_cabinet',[])||[];return Array.isArray(gifts)?gifts:[];}
   function circleStore(){var keys=['moments_site_blank_v49_rebuild_baseline_same_layout','moments_data','xiaoshu_moments_data'];for(var i=0;i<keys.length;i++){var v=loadJSON(keys[i],null);if(!v)continue;if(Array.isArray(v))return v;if(Array.isArray(v.posts))return v.posts;if(Array.isArray(v.items))return v.items;if(Array.isArray(v.list))return v.list;}return [];}
   function postImages(p){var imgs=[];if(!p)return imgs;['images','imgs','photos','pictures'].forEach(function(k){if(Array.isArray(p[k]))imgs=imgs.concat(p[k]);});['image','img','photo','cover'].forEach(function(k){if(p[k])imgs.push(p[k]);});return imgs.map(function(x){return typeof x==='string'?x:(x&&x.src)||x&&x.url||'';}).filter(Boolean);}
   function renderWallet(){var t=enterApp();if(!t)return false;var arr=loadJSON(WALLET_KEY,[]);if(!Array.isArray(arr))arr=[];t.innerHTML='<div class="xs-clean-list">'+(arr.length?arr.map(function(c){return '<div class="xs-clean-item"><div class="xs-clean-name">'+esc(c.name||'关系券')+'</div><div class="xs-clean-time">'+esc(fmt(c.boughtAt||c.time||c.createdAt))+'</div><div class="xs-clean-text">'+esc((c.status==='used'||c.usedAt)?'已使用':'未使用')+'</div></div>';}).join(''):'<div class="xs-clean-empty">暂无券</div>')+'</div>';return false;}
@@ -27999,114 +27737,6 @@ function cssUrl(v){return /gradient\(/i.test(String(v))?String(v):'url("'+String
 <style id="xiaoshu-main-phone-entry-css-v3">#xiaoshu-call-home-host{position:fixed!important;inset:0!important;z-index:1000002!important;display:none!important;align-items:center!important;justify-content:center!important;background:rgba(0,0,0,.42)!important;backdrop-filter:blur(12px)!important;-webkit-backdrop-filter:blur(12px)!important;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif!important;color:#111!important;box-sizing:border-box!important;padding:18px!important;}#xiaoshu-call-home-host.show{display:flex!important;}#xiaoshu-call-home-host *{box-sizing:border-box!important;}.xs-main-call-sheet{width:min(420px,94vw)!important;max-height:min(720px,88vh)!important;overflow:auto!important;background:#fff!important;border-radius:28px!important;padding:20px!important;box-shadow:0 24px 70px rgba(0,0,0,.28)!important;}.xs-main-call-head{display:flex!important;align-items:center!important;gap:12px!important;margin-bottom:18px!important;}.xs-main-call-close{width:40px!important;height:40px!important;border:0!important;border-radius:20px!important;background:#f1f1f1!important;color:#111!important;font-size:22px!important;font-weight:700!important;line-height:1!important;display:flex!important;align-items:center!important;justify-content:center!important;}.xs-main-call-title{flex:1!important;text-align:center!important;font-size:20px!important;font-weight:850!important;letter-spacing:.02em!important;}.xs-main-call-spacer{width:40px!important;height:40px!important;}.xs-main-call-profile{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;padding:12px 0 20px!important;}.xs-main-call-avatar{width:82px!important;height:82px!important;border-radius:50%!important;background:#f1f1f1!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important;color:#333!important;margin-bottom:10px!important;box-shadow:0 10px 28px rgba(0,0,0,.08)!important;}.xs-main-call-avatar img{width:100%!important;height:100%!important;object-fit:cover!important;display:block!important;}.xs-main-call-name{font-size:24px!important;font-weight:900!important;line-height:1.2!important;color:#111!important;}.xs-main-call-sub{font-size:13px!important;color:#777!important;margin-top:6px!important;text-align:center!important;line-height:1.45!important;}.xs-main-call-options{display:grid!important;grid-template-columns:1fr 1fr!important;gap:12px!important;margin:8px 0 14px!important;}.xs-main-call-option{appearance:none!important;border:0!important;border-radius:22px!important;min-height:120px!important;padding:16px 10px!important;background:#f4f4f4!important;color:#111!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:10px!important;font-size:16px!important;font-weight:850!important;box-shadow:none!important;-webkit-tap-highlight-color:transparent!important;}.xs-main-call-option i{font-size:28px!important;line-height:1!important;}.xs-main-call-option.voice{background:#111!important;color:#fff!important;}.xs-main-call-option.video{background:#eeeeee!important;color:#111!important;}.xs-main-call-records{border-top:1px solid #eee!important;margin-top:12px!important;padding-top:12px!important;}.xs-main-call-record-title{font-size:13px!important;font-weight:850!important;color:#777!important;margin-bottom:8px!important;}.xs-main-call-record-list{display:grid!important;gap:8px!important;max-height:170px!important;overflow:auto!important;}.xs-main-call-record{display:flex!important;align-items:center!important;gap:10px!important;background:#f7f7f7!important;border-radius:16px!important;padding:10px 12px!important;}.xs-main-call-record i{font-size:15px!important;color:#333!important;width:18px!important;text-align:center!important;}.xs-main-call-record-main{flex:1!important;min-width:0!important;}.xs-main-call-record-kind{font-size:14px!important;font-weight:800!important;color:#111!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;}.xs-main-call-record-time{font-size:12px!important;color:#777!important;margin-top:2px!important;}.xs-main-call-record-status{font-size:12px!important;font-weight:800!important;color:#555!important;white-space:nowrap!important;}.xs-main-call-active{width:min(420px,94vw)!important;height:min(620px,82vh)!important;background:#070707!important;color:#fff!important;border-radius:30px!important;overflow:hidden!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:space-between!important;padding:24px 20px!important;box-shadow:0 24px 70px rgba(0,0,0,.34)!important;position:relative!important;}.xs-main-call-active.video{background:#050505!important;}.xs-main-call-active .xs-main-call-profile{flex:1 1 auto!important;width:100%!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;padding:44px 0 28px!important;}.xs-main-call-active .xs-main-call-avatar{background:#333!important;color:#fff!important;margin:0 0 16px!important;box-shadow:0 10px 36px rgba(255,255,255,.05)!important;}.xs-main-call-active .xs-main-call-name{color:#fff!important;font-size:28px!important;}.xs-main-call-active .xs-main-call-sub{color:#bdbdbd!important;font-size:14px!important;}.xs-main-call-timer{font-size:18px!important;font-weight:850!important;color:#f2f2f2!important;margin-top:14px!important;letter-spacing:.04em!important;}.xs-main-call-topbar{position:absolute!important;top:18px!important;left:18px!important;right:18px!important;display:flex!important;justify-content:flex-end!important;align-items:center!important;z-index:2!important;pointer-events:none!important;}.xs-main-call-mini-btn{pointer-events:auto!important;border:0!important;border-radius:18px!important;padding:8px 13px!important;background:rgba(255,255,255,.13)!important;color:#fff!important;font-size:13px!important;font-weight:850!important;display:flex!important;align-items:center!important;gap:6px!important;}.xs-main-call-controls{display:flex!important;align-items:center!important;justify-content:center!important;gap:18px!important;width:100%!important;margin-top:auto!important;padding-top:18px!important;}.xs-main-call-control{width:66px!important;height:66px!important;border-radius:50%!important;border:0!important;background:rgba(255,255,255,.14)!important;color:#fff!important;font-size:22px!important;display:flex!important;align-items:center!important;justify-content:center!important;}.xs-main-call-control.end{background:#ff3b30!important;color:#fff!important;}#xiaoshu-call-mini-window{position:fixed!important;right:14px!important;bottom:calc(100px + env(safe-area-inset-bottom,0px))!important;z-index:1000003!important;width:112px!important;height:58px!important;min-width:112px!important;max-width:112px!important;min-height:58px!important;max-height:58px!important;border-radius:29px!important;background:rgba(8,8,8,.94)!important;color:#fff!important;box-shadow:0 14px 38px rgba(0,0,0,.32)!important;display:none!important;align-items:center!important;justify-content:center!important;gap:8px!important;padding:7px 10px!important;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif!important;touch-action:none!important;-webkit-tap-highlight-color:transparent!important;backdrop-filter:blur(12px)!important;-webkit-backdrop-filter:blur(12px)!important;overflow:hidden!important;resize:none!important;user-select:none!important;-webkit-user-select:none!important;transform:none!important;}#xiaoshu-call-mini-window.show{display:flex!important;}#xiaoshu-call-mini-window *{box-sizing:border-box!important;pointer-events:none!important;}.xs-call-mini-avatar{width:42px!important;height:42px!important;border-radius:50%!important;background:#303030!important;color:#fff!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important;flex:0 0 42px!important;}.xs-call-mini-avatar img{width:100%!important;height:100%!important;object-fit:cover!important;display:block!important;}.xs-call-mini-time{font-size:15px!important;font-weight:900!important;color:#fff!important;line-height:1!important;letter-spacing:.02em!important;min-width:42px!important;text-align:left!important;}html[data-theme="dark"] #xiaoshu-call-home-host{background:rgba(0,0,0,.55)!important;}html[data-theme="dark"] .xs-main-call-sheet{background:#1b1b1b!important;color:#f5f5f5!important;}html[data-theme="dark"] .xs-main-call-title,html[data-theme="dark"] .xs-main-call-name,html[data-theme="dark"] .xs-main-call-record-kind{color:#f5f5f5!important;}html[data-theme="dark"] .xs-main-call-close,html[data-theme="dark"] .xs-main-call-option.video,html[data-theme="dark"] .xs-main-call-record{background:#2a2a2a!important;color:#f5f5f5!important;}html[data-theme="dark"] .xs-main-call-records{border-top-color:#333!important;}@media(max-width:390px){.xs-main-call-sheet{border-radius:24px!important;padding:16px!important;}.xs-main-call-options{gap:10px!important;}.xs-main-call-option{min-height:106px!important;border-radius:19px!important;}#xiaoshu-call-mini-window{width:104px!important;min-width:104px!important;max-width:104px!important;height:54px!important;min-height:54px!important;max-height:54px!important;right:10px!important;}.xs-call-mini-avatar{width:38px!important;height:38px!important;flex-basis:38px!important;}.xs-call-mini-time{font-size:14px!important;min-width:38px!important;}}</style>
 <div aria-label="电话" id="xiaoshu-call-home-host" role="dialog"></div>
 <div aria-label="通话小窗" id="xiaoshu-call-mini-window" role="button"></div>
-<script id="xiaoshu-main-phone-entry-js-v3">(function(){
-'use strict';
-if(window.__xiaoshuMainPhoneEntryV4) return;
-window.__xiaoshuMainPhoneEntryV4=true;
-var CALL_KEY='xiaoshu_call_records_v1';
-var CALL_KEYS=[CALL_KEY,'ta_phone_call_records','xiaoshu_ta_phone_call_records_v1'];
-var timer=null, startedAt=0, activeRecord=null, activeKind='voice', connected=false, miniDrag=null;
-function $(id){return document.getElementById(id);}
-function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-  function readJSONFrom(store,k,fb){try{var v=store&&store.getItem&&store.getItem(k);return v?JSON.parse(v):fb;}catch(e){return fb;}}
-  function writeJSONTo(store,k,v){try{if(store&&store.setItem)store.setItem(k,JSON.stringify(v));return true;}catch(e){return false;}}
-  function settings(){try{return (typeof window.settings==='object'&&window.settings)||{};}catch(e){return {};}}
-  function isBadDefaultAvatar(src){src=String(src||'');return !src||/dicebear|avataaars|api\.dicebear/i.test(src)||(/data:image\/svg\+xml/i.test(src)&&/xs-neutral-avatar|<svg/i.test(decodeURIComponent(src).slice(0,600)));}
-  function safeAvatarURL(v){v=String(v||'').trim();if(isBadDefaultAvatar(v))return'';try{if(typeof window.xsSafeResourceUrl==='function')return window.xsSafeResourceUrl(v,'image');}catch(e){}return /^(https?:\/\/|data:image\/|blob:|file:|content:)/i.test(v)?v:'';}
-  function getStored(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
-  function getProfile(who){return readJSONFrom(localStorage,who==='me'?'profile_me':'profile_partner',{})||{};}
-  function myName(){return '我';}
-  function partnerName(){return '对方';}
-  function domAvatar(sel){try{var el=document.querySelector(sel); if(el&&el.tagName==='IMG'&&el.src&&!isBadDefaultAvatar(el.src)) return el.src; var img=el&&el.querySelector&&el.querySelector('img'); if(img&&img.src&&!isBadDefaultAvatar(img.src)) return img.src;}catch(e){} return '';}
-  function myAvatar(){var p=getProfile('me'), st=settings();return safeAvatarURL((p&&p.avatar)||st.myAvatar||getStored('home_avatar_me')||getStored('my_avatar')||domAvatar('#my-avatar img,#avatar-me,.my-message .avatar img'))||'';}
-  function partnerAvatar(){var p=getProfile('partner'), st=settings();return safeAvatarURL((p&&p.avatar)||st.partnerAvatar||getStored('home_avatar_partner')||getStored('partner_avatar')||domAvatar('#partner-avatar img,#avatar-partner,.their-message .avatar img'))||'';}
-  function neutralAvatar(who){var bg=who==='me'?'#f1f1f1':'#eeeeee', fg='#333333';var svg='<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" class="xs-neutral-avatar"><rect width="120" height="120" rx="60" fill="'+bg+'"/><circle cx="60" cy="43" r="20" fill="'+fg+'" opacity="0.88"/><path d="M25 101c5-25 20-38 35-38s30 13 35 38" fill="'+fg+'" opacity="0.88"/></svg>';return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);}
-function avatarHTML(mode){var a=partnerAvatar()||neutralAvatar('partner');var cls=mode==='mini'?'xs-call-mini-avatar':'xs-main-call-avatar';return '<div class="'+cls+'"><img src="'+esc(a)+'" alt=""></div>';}
-function fmtTime(ts){var d=ts?new Date(ts):new Date();function p(n){return String(n).padStart(2,'0');}return p(d.getMonth()+1)+'/'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());}
-function dur(ms){ms=Math.max(0,Math.floor(ms/1000));var m=Math.floor(ms/60),s=ms%60;return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');}
-function normalizeRecord(c){
-if(!c||typeof c!=='object')return null;
-var t=Number(c.startedAt||c.time||c.createdAt||Date.now());
-var id=String(c.id||('call_'+t+'_'+(c.type||'通话')));
-return {
-id:id,
-type:String(c.type||c.kind||'通话'),
-time:t,
-startedAt:t,
-endedAt:c.endedAt||null,
-duration:Number(c.duration||0),
-status:String(c.status||c.state||'拨出'),
-direction:String(c.direction||'outgoing'),
-partner:String(c.partner||partnerName())
-};
-}
-function mergeRecords(){
-var map=Object.create(null), out=[];
-function addList(list){
-if(!Array.isArray(list))return;
-list.forEach(function(item){var c=normalizeRecord(item); if(!c)return; var old=map[c.id]; if(!old || Number(c.endedAt||0)>Number(old.endedAt||0) || String(c.status||'').indexOf('已结束')!==-1){map[c.id]=c;}});
-}
-addList(window.__xiaoshuCallRecordsMemory||[]);
-CALL_KEYS.forEach(function(k){addList(readJSONFrom(localStorage,k,[]));addList(readJSONFrom(sessionStorage,k,[]));});
-Object.keys(map).forEach(function(k){out.push(map[k]);});
-out.sort(function(a,b){return Number(b.startedAt||b.time||0)-Number(a.startedAt||a.time||0);});
-return out.slice(0,100);
-}
-function persistRecords(arr){
-arr=Array.isArray(arr)?arr.slice(0,100):[];
-window.__xiaoshuCallRecordsMemory=arr;
-CALL_KEYS.forEach(function(k){writeJSONTo(localStorage,k,arr);writeJSONTo(sessionStorage,k,arr);});
-try{if(window.localforage&&typeof window.localforage.setItem==='function'){CALL_KEYS.forEach(function(k){window.localforage.setItem(k,arr).catch(function(){});});}}catch(e){}
-try{window.dispatchEvent(new CustomEvent('xiaoshu-call-records-updated',{detail:{records:arr}}));}catch(e){}
-}
-function records(){var arr=mergeRecords();window.__xiaoshuCallRecordsMemory=arr;return arr;}
-function saveRecord(rec){var arr=records();var c=normalizeRecord(rec);if(!c)return;arr=arr.filter(function(x){return String(x.id)!==String(c.id);});arr.unshift(c);persistRecords(arr);}
-function updateRecord(rec){saveRecord(rec);}
-function hydrateAsyncRecords(){
-try{
-if(!window.localforage||typeof window.localforage.getItem!=='function')return;
-Promise.all(CALL_KEYS.map(function(k){return window.localforage.getItem(k).catch(function(){return [];});})).then(function(lists){
-var before=records();
-window.__xiaoshuCallRecordsMemory=before;
-lists.forEach(function(list){if(Array.isArray(list))window.__xiaoshuCallRecordsMemory=window.__xiaoshuCallRecordsMemory.concat(list);});
-persistRecords(mergeRecords());
-}).catch(function(){});
-}catch(e){}
-}
-window.xiaoshuGetCallRecords=records;
-window.xiaoshuSaveCallRecords=function(list){persistRecords(Array.isArray(list)?list:[]);return records();};
-function recordsHTML(){var arr=records().slice(0,5);if(!arr.length)return '<div class="xs-main-call-record"><i class="fas fa-clock"></i><div class="xs-main-call-record-main"><div class="xs-main-call-record-kind">暂无通话记录</div><div class="xs-main-call-record-time">打一次语音或视频后会在这里显示</div></div></div>';return arr.map(function(c){var isVideo=String(c.type||'').indexOf('视频')!==-1;var detail=c.status||((c.duration?('已结束 '+dur(c.duration)):'拨出'));return '<div class="xs-main-call-record"><i class="fas '+(isVideo?'fa-video':'fa-phone')+'"></i><div class="xs-main-call-record-main"><div class="xs-main-call-record-kind">'+esc(c.type||'通话')+'</div><div class="xs-main-call-record-time">'+esc(fmtTime(c.time||c.startedAt))+'</div></div><div class="xs-main-call-record-status">'+esc(detail)+'</div></div>';}).join('');}
-function ensureHost(){var h=$('xiaoshu-call-home-host');if(!h){h=document.createElement('div');h.id='xiaoshu-call-home-host';document.body.appendChild(h);}return h;}
-function ensureMini(){var m=$('xiaoshu-call-mini-window');if(!m){m=document.createElement('div');m.id='xiaoshu-call-mini-window';document.body.appendChild(m);}return m;}
-function openChoice(){if(activeRecord) return restoreCall();hydrateAsyncRecords();var h=ensureHost(), m=ensureMini(), name=partnerName();m.classList.remove('show');m.innerHTML='';h.innerHTML='<div class="xs-main-call-sheet"><div class="xs-main-call-head"><button type="button" class="xs-main-call-close" data-call-close>×</button><div class="xs-main-call-title">电话</div><div class="xs-main-call-spacer"></div></div><div class="xs-main-call-profile">'+avatarHTML()+'<div class="xs-main-call-name">'+esc(name)+'</div><div class="xs-main-call-sub">选择要打给 '+esc(name)+' 的通话方式</div></div><div class="xs-main-call-options"><button type="button" class="xs-main-call-option voice" data-call-start="voice"><i class="fas fa-phone"></i><span>语音通话</span></button><button type="button" class="xs-main-call-option video" data-call-start="video"><i class="fas fa-video"></i><span>视频通话</span></button></div><div class="xs-main-call-records"><div class="xs-main-call-record-title">最近通话</div><div class="xs-main-call-record-list">'+recordsHTML()+'</div></div></div>';h.classList.add('show');document.body.classList.add('xiaoshu-main-phone-open');return false;}
-function closeAll(){var h=ensureHost(), m=ensureMini();h.classList.remove('show');h.innerHTML='';m.classList.remove('show');m.innerHTML='';document.body.classList.remove('xiaoshu-main-phone-open');return false;}
-function renderActive(){if(!activeRecord) return openChoice();var h=ensureHost(), m=ensureMini(), name=partnerName(), isVideo=activeKind==='video';m.classList.remove('show');m.innerHTML='';h.innerHTML='<div class="xs-main-call-active '+(isVideo?'video':'voice')+'"><div class="xs-main-call-topbar"><button type="button" class="xs-main-call-mini-btn" data-call-mini><i class="fas fa-compress-alt"></i><span>小窗</span></button></div><div class="xs-main-call-profile">'+avatarHTML()+'<div class="xs-main-call-name">'+esc(name)+'</div><div class="xs-main-call-sub" id="xs-main-call-state">'+(connected?'通话中':'正在呼叫……')+'</div><div class="xs-main-call-timer" id="xs-main-call-timer">'+dur(Date.now()-startedAt)+'</div></div><div class="xs-main-call-controls"><button type="button" class="xs-main-call-control" data-call-toggle><i class="fas fa-microphone"></i></button><button type="button" class="xs-main-call-control" data-call-speaker><i class="fas fa-volume-up"></i></button><button type="button" class="xs-main-call-control" data-call-mini title="小窗"><i class="fas fa-compress-alt"></i></button><button type="button" class="xs-main-call-control end" data-call-end><i class="fas fa-phone-slash"></i></button></div></div>';h.classList.add('show');document.body.classList.add('xiaoshu-main-phone-open');}
-function renderMini(){if(!activeRecord) return;var m=ensureMini();m.innerHTML=avatarHTML('mini')+'<div class="xs-call-mini-time" id="xs-mini-call-timer">'+dur(Date.now()-startedAt)+'</div>';m.classList.add('show');}
-function minimizeCall(){if(!activeRecord)return false;var h=ensureHost();h.classList.remove('show');h.innerHTML='';document.body.classList.remove('xiaoshu-main-phone-open');renderMini();return false;}
-function restoreCall(){if(!activeRecord)return false;ensureMini().classList.remove('show');renderActive();return false;}
-function showActive(kind){activeKind=kind==='video'?'video':'voice';connected=false;startedAt=Date.now();activeRecord={id:startedAt+'_'+Math.random().toString(36).slice(2),type:activeKind==='video'?'视频通话':'语音通话',time:startedAt,startedAt:startedAt,status:'拨出',direction:'outgoing',partner:partnerName()};saveRecord(activeRecord);renderActive();if(timer) clearInterval(timer);timer=setInterval(function(){var elapsed=Date.now()-startedAt;var t=$('xs-main-call-timer');if(t)t.textContent=dur(elapsed);var mt=$('xs-mini-call-timer');if(mt)mt.textContent=dur(elapsed);if(!connected&&elapsed>1200){connected=true;var s=$('xs-main-call-state');if(s)s.textContent='通话中';}},300);}
-function endCall(){if(!activeRecord){closeAll();return false;}var elapsed=Date.now()-startedAt;if(timer){clearInterval(timer);timer=null;}activeRecord.endedAt=Date.now();activeRecord.duration=elapsed;activeRecord.status='已结束 '+dur(elapsed);updateRecord(activeRecord);var finalRecord=activeRecord;activeRecord=null;connected=false;startedAt=0;closeAll();setTimeout(function(){saveRecord(finalRecord);},50);return false;}
-function exposePhoneAPI(){window.xiaoshuOpenMainPhone=openChoice;window.xiaoshuCloseMainPhone=closeAll;window.xiaoshuMinimizeMainCall=minimizeCall;window.xiaoshuRestoreMainCall=restoreCall;window.xiaoshuEndMainCall=endCall;}
-function setupMiniDrag(){var m=ensureMini();if(m.__xsMiniDragV4)return;m.__xsMiniDragV4=true;m.addEventListener('pointerdown',function(e){if(!m.classList.contains('show'))return;e.preventDefault();e.stopPropagation();var r=m.getBoundingClientRect();miniDrag={x:e.clientX,y:e.clientY,left:r.left,top:r.top};try{m.setPointerCapture(e.pointerId);}catch(_e){}},true);m.addEventListener('pointermove',function(e){if(!miniDrag)return;e.preventDefault();e.stopPropagation();var dx=e.clientX-miniDrag.x,dy=e.clientY-miniDrag.y;var nl=Math.max(6,Math.min(window.innerWidth-m.offsetWidth-6,miniDrag.left+dx));var nt=Math.max(6,Math.min(window.innerHeight-m.offsetHeight-6,miniDrag.top+dy));m.style.left=nl+'px';m.style.top=nt+'px';m.style.right='auto';m.style.bottom='auto';m.style.width=m.offsetWidth+'px';m.style.height=m.offsetHeight+'px';},true);m.addEventListener('pointerup',function(e){if(!miniDrag)return;e.preventDefault();e.stopPropagation();miniDrag=null;},true);m.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();},true);}
-function enterTaApp(){var home=$('xs-clean-phone-home'), app=$('xs-clean-phone-app'); if(!home||!app)return null; home.hidden=true; app.hidden=false; app.className='xs-clean-app xs-phone-call-records-app'; app.innerHTML=''; return app;}
-function renderTaPhoneCalls(){
-var t=enterTaApp(); if(!t)return false;
-var arr=records();
-if(!arr.length){t.innerHTML='<div class="xs-call-record-clean-empty">暂无通话记录</div>';return false;}
-t.innerHTML='<div class="xs-call-record-clean-list">'+arr.map(function(c){var isVideo=String(c.type||'').indexOf('视频')!==-1;var status=c.status||((c.duration?('已结束 '+dur(c.duration)):'拨出'));return '<div class="xs-call-record-clean-item"><div class="xs-call-record-clean-left"><div class="xs-call-record-clean-icon"><i class="fas '+(isVideo?'fa-video':'fa-phone')+'"></i></div><div class="xs-call-record-clean-main"><div class="xs-call-record-clean-kind">'+esc(c.type||'通话')+'</div><div class="xs-call-record-clean-time">'+esc(fmtTime(c.time||c.startedAt))+'</div></div></div><div class="xs-call-record-clean-status">'+esc(status)+'</div></div>';}).join('')+'</div>';
-return false;
-}
-function registerTaPhoneCallRecords(){
-if(!window.TaPhoneApp) return false;
-window.TaPhoneApp.renderCallRecords=renderTaPhoneCalls;
-return true;
-}
-document.addEventListener('click',function(e){var c=e.target.closest&&e.target.closest('[data-call-close]');if(c){e.preventDefault();return closeAll();}var st=e.target.closest&&e.target.closest('[data-call-start]');if(st){e.preventDefault();showActive(st.getAttribute('data-call-start'));return false;}var end=e.target.closest&&e.target.closest('[data-call-end]');if(end){e.preventDefault();return endCall();}var mini=e.target.closest&&e.target.closest('[data-call-mini]');if(mini){e.preventDefault();return minimizeCall();}var toggle=e.target.closest&&e.target.closest('[data-call-toggle],[data-call-speaker]');if(toggle){e.preventDefault();toggle.classList.toggle('active');toggle.style.background=toggle.classList.contains('active')?'rgba(255,255,255,.34)':'rgba(255,255,255,.14)';return false;}},true);
-window.addEventListener('xiaoshu-call-records-updated',function(){try{var app=$('xs-clean-phone-app'); if(app && !app.hidden && app.classList.contains('xs-phone-call-records-app')) renderTaPhoneCalls();}catch(e){};},false);
-function boot(){hydrateAsyncRecords();exposePhoneAPI();setupMiniDrag();registerTaPhoneCallRecords();}
-if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot,{once:true}); else boot();
-})();
-</script>
 <script id="xiaoshu-builtin-sticker-packs-data-v1" type="application/json">[{"name":"全部本地表情","items":[{"src":"assets/stickers/embedded/embedded_001.gif","label":"哭的泪流满面"},{"src":"assets/stickers/embedded/embedded_002.gif","label":"开心大笑"},{"src":"assets/stickers/embedded/embedded_003.gif","label":"疑问/疑惑/无语"},{"src":"assets/stickers/embedded/embedded_005.gif","label":"生气！"},{"src":"assets/stickers/embedded/embedded_006.gif","label":"咬你耳朵"},{"src":"assets/stickers/embedded/embedded_007.gif","label":"吃饭吃饭"},{"src":"assets/stickers/embedded/embedded_008.gif","label":"大哭，泪像水一样喷出"},{"src":"assets/stickers/embedded/embedded_009.gif","label":"数秒等待中"},{"src":"assets/stickers/embedded/embedded_010.gif","label":"很热，扇扇子"},{"src":"assets/stickers/embedded/embedded_011.gif","label":"大眼睛盯着你，撒娇卖萌"},{"src":"assets/stickers/embedded/embedded_012.gif","label":"原地转圈"},{"src":"assets/stickers/embedded/embedded_013.gif","label":"你跑我追"},{"src":"assets/stickers/embedded/embedded_014.gif","label":"努力锻炼举哑铃中"},{"src":"assets/stickers/embedded/embedded_015.gif","label":"哼歌左右摇屁股（愉悦）"},{"src":"assets/stickers/embedded/embedded_016.gif","label":"被看扁"},{"src":"assets/stickers/embedded/embedded_017.gif","label":"生气"},{"src":"assets/stickers/embedded/embedded_018.gif","label":"哭哭"},{"src":"assets/stickers/embedded/embedded_019.gif","label":"？？？疑惑"},{"src":"assets/stickers/embedded/embedded_020.gif","label":"点赞"},{"src":"assets/stickers/embedded/embedded_021.gif","label":"骄傲的扭屁股"},{"src":"assets/stickers/embedded/embedded_022.gif","label":"躺下哭哭"},{"src":"assets/stickers/embedded/embedded_023.gif","label":"拍拍安慰"},{"src":"assets/stickers/embedded/embedded_024.gif","label":"委屈的想哭"},{"src":"assets/stickers/embedded/embedded_025.gif","label":"上床躺着"},{"src":"assets/stickers/embedded/embedded_026.gif","label":"半夜窝在被窝看手机消息"},{"src":"assets/stickers/embedded/embedded_027.gif","label":"捏捏脸"},{"src":"assets/stickers/embedded/embedded_030.gif","label":"吃零食"},{"src":"assets/stickers/embedded/embedded_031.gif","label":"摸着吃饱的肚子发呆"},{"src":"assets/stickers/embedded/embedded_032.gif","label":"拿着保龄球棒阴阴看着你"},{"src":"assets/stickers/embedded/embedded_033.gif","label":"震惊/惊掉下巴"},{"src":"assets/stickers/embedded/embedded_034.gif","label":"扮鬼脸吐舌头"},{"src":"assets/stickers/embedded/embedded_035.gif","label":"冒爱心开心跳起来"},{"src":"assets/stickers/embedded/embedded_036.gif","label":"点头乖巧"},{"src":"assets/stickers/embedded/embedded_037.jpg","label":"崩溃/哈哈，我不信"},{"src":"assets/stickers/embedded/embedded_038.jpg","label":"玩味"},{"src":"assets/stickers/embedded/embedded_039.jpg","label":"只跟坏的学"},{"src":"assets/stickers/embedded/embedded_040.jpg","label":"赔笑"},{"src":"assets/stickers/embedded/embedded_041.jpg","label":"我鸟都不鸟你"},{"src":"assets/stickers/embedded/embedded_042.jpg","label":"就让我坠落（想死）"},{"src":"assets/stickers/embedded/embedded_043.jpg","label":"世界第一贱"},{"src":"assets/stickers/embedded/embedded_044.jpg","label":"像狗一样求你"},{"src":"assets/stickers/embedded/embedded_045.jpg","label":"心里竟生出一丝异样的感觉"},{"src":"assets/stickers/embedded/embedded_046.jpg","label":"哭着笑来着"},{"src":"assets/stickers/embedded/embedded_047.jpg","label":"笑得肚子疼"},{"src":"assets/stickers/embedded/embedded_048.png","label":"卡通白色小狗穿着婚纱，拿着手捧花，手捧花挡着脸移开"},{"src":"assets/stickers/embedded/embedded_049.png","label":"卡通白色小狗抱着腿撒手不放，一整只卡通白色小狗全都悬挂在腿上"},{"src":"assets/stickers/embedded/embedded_050.png","label":"卡通白色小狗抱着一只白色小熊玩具正在用脸颊蹭着，头上冒爱心"},{"src":"assets/stickers/embedded/embedded_051.png","label":"卡通白色小狗双手本来捂着，突然散开，身后冒出来一颗粉色大爱心"},{"src":"assets/stickers/embedded/embedded_052.png","label":"卡通白色小狗和卡通黄色小狗两只小狗正在互相追逐，转圈玩闹"},{"src":"assets/stickers/embedded/embedded_053.png","label":"卡通白色小狗和卡通黄色小狗手拉手正在开心的跳舞"},{"src":"assets/stickers/embedded/embedded_054.png","label":"卡通黄色小狗正在生气，卡通白色小狗拿了一个戳子，正在戳卡通黄色小狗"},{"src":"assets/stickers/embedded/embedded_055.png","label":"卡通白色小狗拿了一个网兜，一网下去就会冒出来好几个爱心"},{"src":"assets/stickers/embedded/embedded_056.jpg","label":"小猫邪恶笑"},{"src":"assets/stickers/embedded/embedded_057.jpg","label":"小猫惊讶【咪的天】"},{"src":"assets/stickers/embedded/embedded_058.jpg","label":"【无力】配文，蓝色气泡"},{"src":"assets/stickers/embedded/embedded_059.jpg","label":"无语小人，配文省略号【…】"},{"src":"assets/stickers/embedded/embedded_060.jpg","label":"神秘男子，配文省略号"},{"src":"assets/stickers/embedded/embedded_061.jpg","label":"神秘男子配文【忽然沉默】"},{"src":"assets/stickers/embedded/embedded_062.jpg","label":"小猫惊呆了"},{"src":"assets/stickers/embedded/embedded_063.jpg","label":"校霸女孩态度嚣张命令弱气男孩，说【你必须做我男朋友，从今天开始你不准跟任何女生说话！】"},{"src":"assets/stickers/embedded/embedded_064.jpg","label":"黑白漫画对话框截图，里面写着【这孩子疯了】"},{"src":"assets/stickers/embedded/embedded_065.jpg","label":"尼克呆滞失语"},{"src":"assets/stickers/embedded/embedded_066.jpg","label":"黑白漫画对话框截图，里面写着【你们就放心大胆地串稀吧】"},{"src":"assets/stickers/embedded/embedded_067.jpg","label":"小学生军训摆军姿【军方已经介入】"},{"src":"assets/stickers/embedded/embedded_068.jpg","label":"黑白漫画对话框截图，里面写着【你自首吧】"},{"src":"assets/stickers/embedded/embedded_069.jpg","label":"无语苦笑扶额"},{"src":"assets/stickers/embedded/embedded_070.jpg","label":"潦草狗，淡淡的死感"},{"src":"assets/stickers/embedded/embedded_071.jpg","label":"猫嫌恶捂鼻"},{"src":"assets/stickers/embedded/embedded_072.jpg","label":"瘟疫公司游戏截图【性压抑即将毁灭全人类】【虽然人类已经尽了全力，但是性压抑还是摧毁了全世界。仅存的幸存者意识到这是人类历史的终结。】"},{"src":"assets/stickers/embedded/embedded_073.jpg","label":"绿色青蛙大叫【我操，恶俗啊】"},{"src":"assets/stickers/embedded/embedded_074.jpg","label":"网络警察提醒文明上网"},{"src":"assets/stickers/embedded/embedded_075.jpg","label":"一只手比心，一只人比问号"},{"src":"assets/stickers/embedded/embedded_076.jpg","label":"抽象小人激动的憋红脸，眼泪口水鼻涕都流出来，握着拳"},{"src":"assets/stickers/embedded/embedded_077.jpg","label":"【哇塞。？】一言难尽的表情"},{"src":"assets/stickers/embedded/embedded_078.jpg","label":"配文【老实人放手一搏】，人物起跳跳楼"},{"src":"assets/stickers/embedded/embedded_079.jpg","label":"纯文字图片【色鬼着急（尖叫跑来跑去）】"},{"src":"assets/stickers/embedded/embedded_080.jpg","label":"伤感黑化动漫男头像嚎啕大哭"},{"src":"assets/stickers/embedded/embedded_081.jpg","label":"纯文字图片，大写的【爽】"},{"src":"assets/stickers/embedded/embedded_082.jpg","label":"纯文字图片，大写的【好硬】小字在上面补充【我的几把】"},{"src":"assets/stickers/embedded/embedded_083.jpg","label":"纯文字图片【请你自重。】"},{"src":"assets/stickers/embedded/embedded_084.jpg","label":"警察抓嫌疑人，配文【坏男人罪】"},{"src":"assets/stickers/embedded/embedded_085.jpg","label":"纯文字图片【我的素质消失了】"},{"src":"assets/stickers/embedded/embedded_086.jpg","label":"纯文字图片【听不懂想亲嘴】"},{"src":"assets/stickers/embedded/embedded_087.jpg","label":"美羊羊心虚低头抬眼在小心翼翼观察反应"},{"src":"assets/stickers/embedded/embedded_088.jpg","label":"抽象小猫哭脸，配文【我完蛋了】"},{"src":"assets/stickers/embedded/embedded_089.jpg","label":"油腻帅哥比着手指堵起嘴巴撒娇"},{"src":"assets/stickers/embedded/embedded_090.jpg","label":"黑白漫画对话框截图，里面写着【明明还没到春天呢，你的身体就开始痒了吗】"},{"src":"assets/stickers/embedded/embedded_091.jpg","label":"纯文字图片，【造成破防100%】"},{"src":"assets/stickers/embedded/embedded_092.jpg","label":"猪猪侠死死瞪着一对秀恩爱的情侣"},{"src":"assets/stickers/embedded/embedded_093.jpg","label":"用小爱心围成一个大爱心包围着一个大字【萎】"},{"src":"assets/stickers/embedded/embedded_094.jpg","label":"神秘男子目瞪口呆看呆了，表情夸张抽象，嘴巴能塞一个鸡蛋"},{"src":"assets/stickers/embedded/embedded_095.jpg","label":"小熊眉头紧锁，眼神凶狠，嘴角下撇，配文【我操】"},{"src":"assets/stickers/embedded/embedded_096.jpg","label":"十分失落的低清抽象黄豆人梗图"},{"src":"assets/stickers/embedded/embedded_097.jpg","label":"黑人男子躺在游戏【我的世界】的床里面闭眼睡觉，配文【goodnight】"},{"src":"assets/stickers/embedded/embedded_098.jpg","label":"金发女人无语摆手"},{"src":"assets/stickers/embedded/embedded_099.jpg","label":"贱兮兮吉娃娃吐舌头身前还被p了两个🤘"},{"src":"assets/stickers/embedded/embedded_100.jpg","label":"贱猫表情^0^配文【关我屁事】"},{"src":"assets/stickers/embedded/embedded_101.jpg","label":"猪惊掉下巴"},{"src":"assets/stickers/embedded/embedded_102.jpg","label":"神秘男子憋尿姿势"},{"src":"assets/stickers/embedded/embedded_103.jpg","label":"金发女人握拳加油鼓舞"},{"src":"assets/stickers/embedded/embedded_104.jpg","label":"企鹅瞪大眼睛惊讶"},{"src":"assets/stickers/embedded/embedded_105.jpg","label":"QQ宠物游戏提示框【宝宝已经去世了！】"},{"src":"assets/stickers/embedded/embedded_106.jpg","label":"【我真的没时间陪你闹了】"},{"src":"assets/stickers/embedded/embedded_107.jpg","label":"喜羊羊美羊羊沸羊羊集体看屏幕面无表情瞪大眼睛无语中，头顶上一堆省略号"},{"src":"assets/stickers/embedded/embedded_108.jpg","label":"猪猪侠眼睛微微眯起一言不发看着"},{"src":"assets/stickers/embedded/embedded_109.jpg","label":"抽象搞笑熊猫人憋笑，十分嘲讽"},{"src":"assets/stickers/embedded/embedded_110.jpg","label":"扁扁的可爱小白熊指着屏幕，配文【你少看扁我！】"},{"src":"assets/stickers/embedded/embedded_111.jpg","label":"可爱小猫崽低头流泪"},{"src":"assets/stickers/embedded/embedded_112.jpg","label":"可爱小熊歪头，配文【怎？】萌萌挑衅"},{"src":"assets/stickers/embedded/embedded_113.jpg","label":"卡通潦草笔触稚嫩小狗们周围一堆爱心，配文【大スキ|超喜欢】"},{"src":"assets/stickers/embedded/embedded_114.jpg","label":"猫猫闪闪发光眼睛，背景爱心，四个大字占据图片四角【永远爱你】"},{"src":"assets/stickers/embedded/embedded_115.jpg","label":"萌萌小熊配文【视奸你】"},{"src":"assets/stickers/embedded/embedded_116.jpg","label":"配文“立马要了你”的小QQ企鹅"},{"src":"assets/stickers/embedded/embedded_117.jpg","label":"绿豆蛙歪头冒问号❓，配文“一直在挑衅”"},{"src":"assets/stickers/embedded/embedded_118.jpg","label":"无语/绝望的人，脖子上套个绳被拖着走"},{"src":"assets/stickers/embedded/embedded_119.jpg","label":"瞪眼张嘴很震惊的猫"},{"src":"assets/stickers/embedded/embedded_120.png","label":"【穿着皇帝衣服的龙图，配文“我是小皇帝”。】"},{"src":"assets/stickers/embedded/embedded_121.gif","label":"【瞪大眼睛很震惊左看右看的猫。】"},{"src":"assets/stickers/embedded/embedded_122.jpg","label":"【震惊目瞪口呆低清黄豆】"},{"src":"assets/stickers/document_003.gif","label":"暗示"},{"src":"assets/stickers/document_004.gif","label":"哼"},{"src":"assets/stickers/document_005.gif","label":"好棒"},{"src":"assets/stickers/document_008.gif","label":"哇哇哇"},{"src":"assets/stickers/document_010.gif","label":"不对不对"},{"src":"assets/stickers/document_011.gif","label":"花花"},{"src":"assets/stickers/document_023.gif","label":"委屈"},{"src":"assets/stickers/document_024.gif","label":"开心"},{"src":"assets/stickers/document_025.gif","label":"戳手手"},{"src":"assets/stickers/document_026.gif","label":"喜欢"},{"src":"assets/stickers/document_027.gif","label":"防备"},{"src":"assets/stickers/document_028.gif","label":"嗯嗯"},{"src":"assets/stickers/document_029.gif","label":"鄙视"},{"src":"assets/stickers/document_030.gif","label":"歪头"},{"src":"assets/stickers/document_031.gif","label":"呆滞"},{"src":"assets/stickers/document_032.gif","label":"惊"},{"src":"assets/stickers/document_033.jpg","label":"喜"},{"src":"assets/stickers/document_034.jpg","label":"惊了"},{"src":"assets/stickers/document_035.jpg","label":"困"},{"src":"assets/stickers/document_036.jpg","label":"哭"},{"src":"assets/stickers/document_037.jpg","label":"一杯泪水"},{"src":"assets/stickers/document_038.jpg","label":"懵"},{"src":"assets/stickers/document_039.jpg","label":"捂住头"},{"src":"assets/stickers/document_040.jpg","label":"极恶"},{"src":"assets/stickers/document_041.jpg","label":"自嘲熊01"},{"src":"assets/stickers/document_042.jpg","label":"自嘲熊02"},{"src":"assets/stickers/document_043.jpg","label":"心"},{"src":"assets/stickers/document_044.jpg","label":"指着头"},{"src":"assets/stickers/document_045.jpg","label":"舔了手机"},{"src":"assets/stickers/document_046.jpg","label":"爆冲"},{"src":"assets/stickers/document_049.jpg","label":"白眼"},{"src":"assets/stickers/document_050.jpg","label":"看哭"},{"src":"assets/stickers/document_053.jpg","label":"自嘲熊08"},{"src":"assets/stickers/document_054.jpg","label":"自嘲熊06"},{"src":"assets/stickers/document_055.jpg","label":"自嘲熊11"},{"src":"assets/stickers/document_056.jpg","label":"自嘲熊04"},{"src":"assets/stickers/document_057.jpg","label":"自嘲熊10"},{"src":"assets/stickers/document_058.jpg","label":"自嘲熊03"},{"src":"assets/stickers/document_059.jpg","label":"自嘲熊09"},{"src":"assets/stickers/document_060.jpg","label":"自嘲熊05"},{"src":"assets/stickers/document_061.jpg","label":"自嘲熊13"},{"src":"assets/stickers/document_062.jpg","label":"自嘲熊14"},{"src":"assets/stickers/document_063.jpg","label":"自嘲熊15"},{"src":"assets/stickers/document_064.jpg","label":"自嘲熊16"},{"src":"assets/stickers/document_065.jpg","label":"自嘲熊19"},{"src":"assets/stickers/document_066.jpg","label":"自嘲熊20"},{"src":"assets/stickers/document_067.jpg","label":"自嘲熊22"},{"src":"assets/stickers/document_068.jpg","label":"自嘲熊17"},{"src":"assets/stickers/document_069.jpg","label":"自嘲熊18"},{"src":"assets/stickers/document_070.jpg","label":"自嘲熊21"},{"src":"assets/stickers/document_071.jpg","label":"自嘲熊24"},{"src":"assets/stickers/document_072.jpg","label":"自嘲熊23"},{"src":"assets/stickers/document_073.jpg","label":"自嘲熊25"},{"src":"assets/stickers/document_074.jpg","label":"自嘲熊26"},{"src":"assets/stickers/phone_001.jpg","label":"相册表情001"},{"src":"assets/stickers/phone_002.jpg","label":"相册表情002"},{"src":"assets/stickers/phone_003.jpg","label":"相册表情003"},{"src":"assets/stickers/phone_004.gif","label":"相册表情004"},{"src":"assets/stickers/phone_005.jpg","label":"相册表情005"},{"src":"assets/stickers/phone_006.jpg","label":"相册表情006"},{"src":"assets/stickers/phone_007.gif","label":"相册表情007"},{"src":"assets/stickers/phone_008.jpg","label":"相册表情008"},{"src":"assets/stickers/phone_009.jpg","label":"相册表情009"},{"src":"assets/stickers/phone_010.jpg","label":"相册表情010"},{"src":"assets/stickers/phone_011.jpg","label":"相册表情011"},{"src":"assets/stickers/phone_012.gif","label":"相册表情012"},{"src":"assets/stickers/phone_013.gif","label":"相册表情013"},{"src":"assets/stickers/phone_014.jpg","label":"相册表情014"},{"src":"assets/stickers/phone_015.jpg","label":"相册表情015"},{"src":"assets/stickers/phone_016.jpg","label":"相册表情016"},{"src":"assets/stickers/phone_017.gif","label":"相册表情017"},{"src":"assets/stickers/phone_018.jpg","label":"相册表情018"},{"src":"assets/stickers/phone_019.jpg","label":"相册表情019"},{"src":"assets/stickers/phone_020.gif","label":"相册表情020"},{"src":"assets/stickers/phone_021.gif","label":"相册表情021"},{"src":"assets/stickers/phone_022.gif","label":"相册表情022"},{"src":"assets/stickers/phone_023.jpg","label":"相册表情023"},{"src":"assets/stickers/phone_024.jpg","label":"相册表情024"},{"src":"assets/stickers/phone_025.gif","label":"相册表情025"},{"src":"assets/stickers/phone_026.gif","label":"相册表情026"},{"src":"assets/stickers/phone_027.jpg","label":"相册表情027"},{"src":"assets/stickers/phone_028.gif","label":"相册表情028"},{"src":"assets/stickers/phone_029.jpg","label":"相册表情029"},{"src":"assets/stickers/phone_030.jpg","label":"相册表情030"},{"src":"assets/stickers/phone_031.jpg","label":"相册表情031"},{"src":"assets/stickers/phone_032.gif","label":"相册表情032"},{"src":"assets/stickers/phone_033.jpg","label":"相册表情033"},{"src":"assets/stickers/phone_034.gif","label":"相册表情034"},{"src":"assets/stickers/phone_035.gif","label":"相册表情035"},{"src":"assets/stickers/phone_036.jpg","label":"相册表情036"},{"src":"assets/stickers/phone_037.gif","label":"相册表情037"},{"src":"assets/stickers/phone_038.gif","label":"相册表情038"},{"src":"assets/stickers/phone_039.gif","label":"相册表情039"},{"src":"assets/stickers/phone_040.gif","label":"相册表情040"},{"src":"assets/stickers/phone_041.gif","label":"相册表情041"},{"src":"assets/stickers/phone_042.gif","label":"相册表情042"},{"src":"assets/stickers/phone_043.gif","label":"相册表情043"},{"src":"assets/stickers/phone_044.gif","label":"相册表情044"},{"src":"assets/stickers/phone_045.gif","label":"相册表情045"},{"src":"assets/stickers/phone_046.gif","label":"相册表情046"},{"src":"assets/stickers/phone_047.gif","label":"相册表情047"},{"src":"assets/stickers/phone_048.gif","label":"相册表情048"},{"src":"assets/stickers/phone_049.gif","label":"相册表情049"},{"src":"assets/stickers/phone_050.gif","label":"相册表情050"},{"src":"assets/stickers/phone_051.gif","label":"相册表情051"},{"src":"assets/stickers/phone_052.gif","label":"相册表情052"},{"src":"assets/stickers/phone_053.gif","label":"相册表情053"},{"src":"assets/stickers/phone_054.gif","label":"相册表情054"},{"src":"assets/stickers/phone_055.gif","label":"相册表情055"},{"src":"assets/stickers/phone_056.gif","label":"相册表情056"},{"src":"assets/stickers/phone_057.gif","label":"相册表情057"},{"src":"assets/stickers/phone_058.gif","label":"相册表情058"},{"src":"assets/stickers/phone_059.gif","label":"相册表情059"},{"src":"assets/stickers/phone_060.jpg","label":"相册表情060"},{"src":"assets/stickers/phone_061.gif","label":"相册表情061"},{"src":"assets/stickers/phone_062.gif","label":"相册表情062"},{"src":"assets/stickers/phone_063.gif","label":"相册表情063"},{"src":"assets/stickers/phone_064.jpg","label":"相册表情064"},{"src":"assets/stickers/phone_065.jpg","label":"相册表情065"},{"src":"assets/stickers/phone_066.jpg","label":"相册表情066"},{"src":"assets/stickers/phone_067.jpg","label":"相册表情067"},{"src":"assets/stickers/phone_068.jpg","label":"相册表情068"},{"src":"assets/stickers/phone_069.jpg","label":"相册表情069"},{"src":"assets/stickers/phone_070.jpg","label":"相册表情070"},{"src":"assets/stickers/phone_071.jpg","label":"相册表情071"},{"src":"assets/stickers/phone_072.gif","label":"相册表情072"},{"src":"assets/stickers/phone_073.gif","label":"相册表情073"},{"src":"assets/stickers/phone_074.gif","label":"相册表情074"},{"src":"assets/stickers/phone_075.gif","label":"相册表情075"},{"src":"assets/stickers/phone_076.gif","label":"相册表情076"},{"src":"assets/stickers/phone_077.jpg","label":"相册表情077"},{"src":"assets/stickers/phone_078.jpg","label":"相册表情078"},{"src":"assets/stickers/phone_079.gif","label":"相册表情079"},{"src":"assets/stickers/phone_080.jpg","label":"相册表情080"},{"src":"assets/stickers/phone_081.jpg","label":"相册表情081"},{"src":"assets/stickers/phone_082.jpg","label":"相册表情082"},{"src":"assets/stickers/phone_083.jpg","label":"相册表情083"},{"src":"assets/stickers/phone_084.jpg","label":"相册表情084"},{"src":"assets/stickers/phone_085.jpg","label":"相册表情085"},{"src":"assets/stickers/phone_086.gif","label":"相册表情086"},{"src":"assets/stickers/phone_087.jpg","label":"相册表情087"},{"src":"assets/stickers/phone_088.gif","label":"相册表情088"},{"src":"assets/stickers/phone_089.jpg","label":"相册表情089"},{"src":"assets/stickers/phone_090.gif","label":"相册表情090"},{"src":"assets/stickers/phone_091.gif","label":"相册表情091"},{"src":"assets/stickers/phone_092.gif","label":"相册表情092"},{"src":"assets/stickers/phone_093.gif","label":"相册表情093"},{"src":"assets/stickers/phone_094.gif","label":"相册表情094"},{"src":"assets/stickers/phone_095.gif","label":"相册表情095"},{"src":"assets/stickers/phone_096.jpg","label":"相册表情096"},{"src":"assets/stickers/phone_097.jpg","label":"相册表情097"},{"src":"assets/stickers/phone_098.gif","label":"相册表情098"},{"src":"assets/stickers/phone_099.gif","label":"相册表情099"},{"src":"assets/stickers/phone_100.gif","label":"相册表情100"},{"src":"assets/stickers/phone_101.jpg","label":"相册表情101"},{"src":"assets/stickers/phone_102.jpg","label":"相册表情102"},{"src":"assets/stickers/phone_103.jpg","label":"相册表情103"},{"src":"assets/stickers/phone_104.jpg","label":"相册表情104"},{"src":"assets/stickers/phone_105.jpg","label":"相册表情105"},{"src":"assets/stickers/phone_106.gif","label":"相册表情106"},{"src":"assets/stickers/phone_107.gif","label":"相册表情107"},{"src":"assets/stickers/phone_108.gif","label":"相册表情108"},{"src":"assets/stickers/phone_109.gif","label":"相册表情109"},{"src":"assets/stickers/phone_110.gif","label":"相册表情110"},{"src":"assets/stickers/phone_111.gif","label":"相册表情111"},{"src":"assets/stickers/phone_112.gif","label":"相册表情112"},{"src":"assets/stickers/phone_113.jpg","label":"相册表情113"},{"src":"assets/stickers/phone_114.jpg","label":"相册表情114"},{"src":"assets/stickers/phone_115.jpg","label":"相册表情115"},{"src":"assets/stickers/phone_116.jpg","label":"相册表情116"},{"src":"assets/stickers/phone_117.jpg","label":"相册表情117"},{"src":"assets/stickers/phone_118.jpg","label":"相册表情118"},{"src":"assets/stickers/phone_119.gif","label":"相册表情119"},{"src":"assets/stickers/phone_120.jpg","label":"相册表情120"},{"src":"assets/stickers/phone_121.jpg","label":"相册表情121"},{"src":"assets/stickers/phone_122.jpg","label":"相册表情122"},{"src":"assets/stickers/phone_123.jpg","label":"相册表情123"},{"src":"assets/stickers/phone_124.jpg","label":"相册表情124"},{"src":"assets/stickers/phone_125.jpg","label":"相册表情125"},{"src":"assets/stickers/phone_126.jpg","label":"相册表情126"},{"src":"assets/stickers/phone_127.jpg","label":"相册表情127"},{"src":"assets/stickers/phone_128.jpg","label":"相册表情128"},{"src":"assets/stickers/phone_129.jpg","label":"相册表情129"},{"src":"assets/stickers/phone_130.jpg","label":"相册表情130"},{"src":"assets/stickers/phone_131.jpg","label":"相册表情131"},{"src":"assets/stickers/phone_132.jpg","label":"相册表情132"},{"src":"assets/stickers/phone_133.jpg","label":"相册表情133"},{"src":"assets/stickers/phone_134.jpg","label":"相册表情134"},{"src":"assets/stickers/phone_135.gif","label":"相册表情135"},{"src":"assets/stickers/phone_136.gif","label":"相册表情136"},{"src":"assets/stickers/phone_138.gif","label":"相册表情138"},{"src":"assets/stickers/phone_139.gif","label":"相册表情139"},{"src":"assets/stickers/phone_140.jpg","label":"相册表情140"},{"src":"assets/stickers/phone_143.gif","label":"相册表情143"},{"src":"assets/stickers/phone_144.gif","label":"相册表情144"},{"src":"assets/stickers/phone_145.gif","label":"相册表情145"},{"src":"assets/stickers/phone_146.gif","label":"相册表情146"},{"src":"assets/stickers/phone_147.gif","label":"相册表情147"},{"src":"assets/stickers/phone_148.jpg","label":"相册表情148"},{"src":"assets/stickers/phone_149.jpg","label":"相册表情149"},{"src":"assets/stickers/phone_150.jpg","label":"相册表情150"},{"src":"assets/stickers/phone_151.jpg","label":"相册表情151"},{"src":"assets/stickers/phone_152.jpg","label":"相册表情152"},{"src":"assets/stickers/phone_153.jpg","label":"相册表情153"},{"src":"assets/stickers/phone_154.jpg","label":"相册表情154"},{"src":"assets/stickers/phone_155.jpg","label":"相册表情155"},{"src":"assets/stickers/phone_156.jpg","label":"相册表情156"},{"src":"assets/stickers/phone_157.jpg","label":"相册表情157"},{"src":"assets/stickers/phone_158.jpg","label":"相册表情158"},{"src":"assets/stickers/phone_159.jpg","label":"相册表情159"},{"src":"assets/stickers/phone_160.jpg","label":"相册表情160"},{"src":"assets/stickers/phone_161.jpg","label":"相册表情161"},{"src":"assets/stickers/phone_162.jpg","label":"相册表情162"},{"src":"assets/stickers/phone_164.jpg","label":"相册表情164"},{"src":"assets/stickers/phone_165.jpg","label":"相册表情165"},{"src":"assets/stickers/phone_166.jpg","label":"相册表情166"},{"src":"assets/stickers/phone_167.jpg","label":"相册表情167"},{"src":"assets/stickers/phone_168.jpg","label":"相册表情168"},{"src":"assets/stickers/phone_169.jpg","label":"相册表情169"},{"src":"assets/stickers/phone_170.gif","label":"相册表情170"},{"src":"assets/stickers/phone_171.gif","label":"相册表情171"},{"src":"assets/stickers/phone_172.gif","label":"相册表情172"},{"src":"assets/stickers/phone_173.gif","label":"相册表情173"},{"src":"assets/stickers/phone_174.gif","label":"相册表情174"},{"src":"assets/stickers/phone_175.gif","label":"相册表情175"},{"src":"assets/stickers/phone_176.gif","label":"相册表情176"},{"src":"assets/stickers/phone_177.gif","label":"相册表情177"},{"src":"assets/stickers/phone_178.gif","label":"相册表情178"},{"src":"assets/stickers/phone_179.gif","label":"相册表情179"},{"src":"assets/stickers/phone_180.gif","label":"相册表情180"},{"src":"assets/stickers/phone_181.gif","label":"相册表情181"},{"src":"assets/stickers/phone_182.gif","label":"相册表情182"},{"src":"assets/stickers/phone_183.gif","label":"相册表情183"},{"src":"assets/stickers/phone_187.gif","label":"相册表情187"},{"src":"assets/stickers/phone_188.gif","label":"相册表情188"},{"src":"assets/stickers/phone_189.gif","label":"相册表情189"},{"src":"assets/stickers/phone_190.gif","label":"相册表情190"},{"src":"assets/stickers/phone_191.gif","label":"相册表情191"},{"src":"assets/stickers/phone_192.gif","label":"相册表情192"},{"src":"assets/stickers/phone_193.jpg","label":"相册表情193"},{"src":"assets/stickers/phone_194.jpg","label":"相册表情194"},{"src":"assets/stickers/phone_195.jpg","label":"相册表情195"},{"src":"assets/stickers/phone_196.jpg","label":"相册表情196"},{"src":"assets/stickers/phone_197.jpg","label":"相册表情197"},{"src":"assets/stickers/phone_198.jpg","label":"相册表情198"},{"src":"assets/stickers/phone_199.jpg","label":"相册表情199"},{"src":"assets/stickers/phone_200.jpg","label":"相册表情200"},{"src":"assets/stickers/phone_201.jpg","label":"相册表情201"},{"src":"assets/stickers/phone_202.jpg","label":"相册表情202"},{"src":"assets/stickers/phone_203.jpg","label":"相册表情203"},{"src":"assets/stickers/phone_204.jpg","label":"相册表情204"},{"src":"assets/stickers/phone_205.jpg","label":"相册表情205"},{"src":"assets/stickers/phone_206.jpg","label":"相册表情206"},{"src":"assets/stickers/phone_207.jpg","label":"相册表情207"},{"src":"assets/stickers/phone_208.jpg","label":"相册表情208"},{"src":"assets/stickers/phone_209.jpg","label":"相册表情209"},{"src":"assets/stickers/phone_210.jpg","label":"相册表情210"},{"src":"assets/stickers/phone_211.jpg","label":"相册表情211"},{"src":"assets/stickers/phone_212.jpg","label":"相册表情212"},{"src":"assets/stickers/phone_213.jpg","label":"相册表情213"},{"src":"assets/stickers/phone_214.jpg","label":"相册表情214"},{"src":"assets/stickers/phone_215.jpg","label":"相册表情215"},{"src":"assets/stickers/phone_216.jpg","label":"相册表情216"},{"src":"assets/stickers/phone_217.jpg","label":"相册表情217"},{"src":"assets/stickers/phone_218.jpg","label":"相册表情218"},{"src":"assets/stickers/phone_219.jpg","label":"相册表情219"},{"src":"assets/stickers/phone_220.jpg","label":"相册表情220"},{"src":"assets/stickers/phone_221.jpg","label":"相册表情221"},{"src":"assets/stickers/phone_222.jpg","label":"相册表情222"},{"src":"assets/stickers/phone_223.jpg","label":"相册表情223"},{"src":"assets/stickers/phone_224.jpg","label":"相册表情224"},{"src":"assets/stickers/phone_225.jpg","label":"相册表情225"},{"src":"assets/stickers/phone_226.jpg","label":"相册表情226"},{"src":"assets/stickers/phone_227.jpg","label":"相册表情227"},{"src":"assets/stickers/phone_228.jpg","label":"相册表情228"},{"src":"assets/stickers/phone_229.jpg","label":"相册表情229"},{"src":"assets/stickers/phone_230.jpg","label":"相册表情230"},{"src":"assets/stickers/phone_231.jpg","label":"相册表情231"},{"src":"assets/stickers/phone_232.jpg","label":"相册表情232"},{"src":"assets/stickers/phone_233.jpg","label":"相册表情233"},{"src":"assets/stickers/phone_234.jpg","label":"相册表情234"},{"src":"assets/stickers/phone_235.jpg","label":"相册表情235"},{"src":"assets/stickers/phone_236.jpg","label":"相册表情236"},{"src":"assets/stickers/phone_237.jpg","label":"相册表情237"},{"src":"assets/stickers/phone_238.jpg","label":"相册表情238"},{"src":"assets/stickers/phone_239.jpg","label":"相册表情239"},{"src":"assets/stickers/phone_240.jpg","label":"相册表情240"},{"src":"assets/stickers/phone_241.jpg","label":"相册表情241"},{"src":"assets/stickers/phone_242.jpg","label":"相册表情242"},{"src":"assets/stickers/phone_243.jpg","label":"相册表情243"},{"src":"assets/stickers/phone_244.jpg","label":"相册表情244"},{"src":"assets/stickers/phone_245.jpg","label":"相册表情245"},{"src":"assets/stickers/phone_246.jpg","label":"相册表情246"},{"src":"assets/stickers/phone_247.jpg","label":"相册表情247"},{"src":"assets/stickers/phone_248.jpg","label":"相册表情248"},{"src":"assets/stickers/phone_249.jpg","label":"相册表情249"},{"src":"assets/stickers/phone_250.jpg","label":"相册表情250"},{"src":"assets/stickers/phone_251.jpg","label":"相册表情251"},{"src":"assets/stickers/phone_252.jpg","label":"相册表情252"},{"src":"assets/stickers/phone_253.jpg","label":"相册表情253"},{"src":"assets/stickers/phone_254.jpg","label":"相册表情254"},{"src":"assets/stickers/phone_255.jpg","label":"相册表情255"},{"src":"assets/stickers/phone_256.jpg","label":"相册表情256"},{"src":"assets/stickers/phone_257.jpg","label":"相册表情257"},{"src":"assets/stickers/phone_258.jpg","label":"相册表情258"},{"src":"assets/stickers/phone_259.jpg","label":"相册表情259"},{"src":"assets/stickers/phone_260.jpg","label":"相册表情260"},{"src":"assets/stickers/phone_261.jpg","label":"相册表情261"},{"src":"assets/stickers/phone_262.jpg","label":"相册表情262"},{"src":"assets/stickers/phone_263.jpg","label":"相册表情263"},{"src":"assets/stickers/phone_264.jpg","label":"相册表情264"},{"src":"assets/stickers/phone_265.jpg","label":"相册表情265"},{"src":"assets/stickers/phone_266.jpg","label":"相册表情266"},{"src":"assets/stickers/phone_267.jpg","label":"相册表情267"},{"src":"assets/stickers/phone_268.jpg","label":"相册表情268"},{"src":"assets/stickers/phone_269.jpg","label":"相册表情269"},{"src":"assets/stickers/phone_270.jpg","label":"相册表情270"},{"src":"assets/stickers/phone_271.jpg","label":"相册表情271"},{"src":"assets/stickers/phone_272.jpg","label":"相册表情272"},{"src":"assets/stickers/phone_273.jpg","label":"相册表情273"},{"src":"assets/stickers/phone_274.jpg","label":"相册表情274"},{"src":"assets/stickers/phone_275.jpg","label":"相册表情275"},{"src":"assets/stickers/phone_276.jpg","label":"相册表情276"},{"src":"assets/stickers/phone_277.jpg","label":"相册表情277"},{"src":"assets/stickers/phone_278.jpg","label":"相册表情278"},{"src":"assets/stickers/phone_279.jpg","label":"相册表情279"},{"src":"assets/stickers/phone_280.jpg","label":"相册表情280"},{"src":"assets/stickers/phone_281.jpg","label":"相册表情281"},{"src":"assets/stickers/phone_282.jpg","label":"相册表情282"},{"src":"assets/stickers/phone_283.jpg","label":"相册表情283"},{"src":"assets/stickers/phone_284.jpg","label":"相册表情284"},{"src":"assets/stickers/phone_285.jpg","label":"相册表情285"},{"src":"assets/stickers/phone_286.jpg","label":"相册表情286"},{"src":"assets/stickers/phone_287.jpg","label":"相册表情287"},{"src":"assets/stickers/phone_288.jpg","label":"相册表情288"},{"src":"assets/stickers/phone_289.jpg","label":"相册表情289"},{"src":"assets/stickers/phone_290.jpg","label":"相册表情290"},{"src":"assets/stickers/phone_291.jpg","label":"相册表情291"},{"src":"assets/stickers/phone_292.jpg","label":"相册表情292"},{"src":"assets/stickers/phone_293.jpg","label":"相册表情293"},{"src":"assets/stickers/phone_294.jpg","label":"相册表情294"},{"src":"assets/stickers/phone_295.jpg","label":"相册表情295"},{"src":"assets/stickers/phone_296.jpg","label":"相册表情296"},{"src":"assets/stickers/phone_297.jpg","label":"相册表情297"},{"src":"assets/stickers/phone_298.jpg","label":"相册表情298"},{"src":"assets/stickers/phone_299.jpg","label":"相册表情299"},{"src":"assets/stickers/phone_300.jpg","label":"相册表情300"},{"src":"assets/stickers/phone_301.jpg","label":"相册表情301"},{"src":"assets/stickers/phone_302.jpg","label":"相册表情302"},{"src":"assets/stickers/phone_303.jpg","label":"相册表情303"},{"src":"assets/stickers/phone_304.jpg","label":"相册表情304"},{"src":"assets/stickers/phone_305.jpg","label":"相册表情305"},{"src":"assets/stickers/phone_306.jpg","label":"相册表情306"},{"src":"assets/stickers/phone_307.jpg","label":"相册表情307"},{"src":"assets/stickers/phone_308.jpg","label":"相册表情308"},{"src":"assets/stickers/phone_309.jpg","label":"相册表情309"},{"src":"assets/stickers/phone_310.jpg","label":"相册表情310"},{"src":"assets/stickers/phone_311.jpg","label":"相册表情311"},{"src":"assets/stickers/phone_312.jpg","label":"相册表情312"},{"src":"assets/stickers/phone_313.gif","label":"相册表情313"},{"src":"assets/stickers/phone_314.gif","label":"相册表情314"},{"src":"assets/stickers/phone_315.gif","label":"相册表情315"},{"src":"assets/stickers/phone_316.gif","label":"相册表情316"},{"src":"assets/stickers/phone_317.gif","label":"相册表情317"},{"src":"assets/stickers/phone_318.gif","label":"相册表情318"},{"src":"assets/stickers/phone_319.gif","label":"相册表情319"},{"src":"assets/stickers/phone_320.jpg","label":"相册表情320"},{"src":"assets/stickers/phone_321.gif","label":"相册表情321"},{"src":"assets/stickers/phone_322.gif","label":"相册表情322"},{"src":"assets/stickers/phone_323.gif","label":"相册表情323"},{"src":"assets/stickers/phone_324.gif","label":"相册表情324"},{"src":"assets/stickers/phone_325.gif","label":"相册表情325"},{"src":"assets/stickers/phone_326.gif","label":"相册表情326"},{"src":"assets/stickers/phone_327.gif","label":"相册表情327"},{"src":"assets/stickers/phone_328.gif","label":"相册表情328"},{"src":"assets/stickers/phone_329.gif","label":"相册表情329"},{"src":"assets/stickers/phone_330.gif","label":"相册表情330"}]}]</script>
 <script id="xiaoshu-builtin-sticker-packs-v2">(function(){
 if(window.__xiaoshuBuiltinStickerPacksV2) return;
@@ -29421,16 +29051,13 @@ return loading;
 <script id="xiaoshu-app-drawer-v1-js">(function(){
 if(window.__xiaoshuAppDrawerV3) return;
 window.__xiaoshuAppDrawerV3=true;
-var DRAWER_VERSION='v3-chat2-big-keyboard';
+var DRAWER_VERSION='v4-chat-integrated-calls';
 var SECTIONS=[
 {title:'日常',items:[
 ['chat','聊天1','fas fa-comment-alt'],
 ['chat2-big-keyboard','聊天2','fas fa-keyboard'],
 ['moments','朋友圈','fas fa-users'],
-['mailbox','信箱','fas fa-envelope'],
-['shop','商城','fas fa-store'],
-['phone','电话','fas fa-phone'],
-['map','家门','fas fa-door-open']
+['mailbox','信箱','fas fa-envelope']
 ]},
 {title:'互动',items:[
 ['interaction-tools','互动工具','fas fa-leaf']
@@ -31770,5 +31397,113 @@ function boot(){bind();queueState(function(){return load(true).then(updateBadges
 window.xiaoshuMailbox={open:open,close:close,openLetterById:function(id){return open(String(id||''))},checkNow:checkDueFresh,reload:function(){loadedKey='';return checkDueFresh().then(function(){renderList();updateBadges()})},getState:function(){return JSON.parse(JSON.stringify(state))}};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();</script>
-<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v117-mail-card-count-settings';</script>
+<style id="kkk35g-v118-chat-calls-css">
+#xs-chat-call-button{width:44px;height:44px;margin:3px 10px 3px auto;border:1px solid var(--border-color);border-radius:50%;background:var(--secondary-bg);color:var(--text-primary);display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;box-shadow:var(--shadow);-webkit-tap-highlight-color:transparent}
+#xs-chat-call-button:active{transform:scale(.94);background:var(--primary-bg)}
+#xs-chat-call-button[hidden]{display:none!important}
+.xs-call-incoming{position:fixed;inset:0;z-index:1000005;display:none;align-items:flex-start;justify-content:center;padding:calc(18px + env(safe-area-inset-top,0px)) 12px calc(18px + env(safe-area-inset-bottom,0px));background:rgba(0,0,0,.46);font-family:var(--font-family)}
+.xs-call-incoming.show{display:flex}
+.xs-call-incoming-card{width:min(420px,calc(100vw - 24px));margin-top:min(12vh,86px);padding:22px;border:1px solid var(--border-color);border-radius:26px;background:var(--secondary-bg);color:var(--text-primary);box-shadow:0 22px 65px rgba(0,0,0,.3);text-align:center}
+.xs-call-incoming-avatar{width:84px;height:84px;margin:0 auto 12px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--primary-bg);color:var(--text-secondary);font-size:30px}
+.xs-call-incoming-avatar img{width:100%;height:100%;object-fit:cover}
+.xs-call-incoming-name{font-size:22px;font-weight:850;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xs-call-incoming-kind{margin-top:5px;color:var(--text-secondary);font-size:14px}
+.xs-call-incoming-actions{display:flex;justify-content:center;gap:44px;margin-top:24px}
+.xs-call-incoming-action{width:64px;height:64px;border:0;border-radius:50%;color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.xs-call-incoming-action.accept{background:#34c759}.xs-call-incoming-action.reject{background:#ff3b30}
+.xs-call-setting-overlay{position:fixed;inset:0;z-index:1000004;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.45)}
+.xs-call-setting-overlay.show{display:flex}
+.xs-call-setting-card{width:min(440px,100%);max-height:88dvh;overflow:auto;padding:20px;border:1px solid var(--border-color);border-radius:24px;background:var(--secondary-bg);color:var(--text-primary);box-shadow:0 22px 65px rgba(0,0,0,.28)}
+.xs-call-setting-title{font-size:20px;font-weight:850;margin-bottom:16px}.xs-call-setting-row{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:58px;padding:10px 0;border-bottom:1px solid var(--border-color)}
+.xs-call-setting-row label{font-size:14px;font-weight:700}.xs-call-setting-row small{display:block;margin-top:3px;color:var(--text-secondary)}
+.xs-call-setting-row input{width:22px;height:22px;accent-color:var(--accent-color)}.xs-call-setting-row select{min-width:130px;height:42px;padding:0 12px;border:1px solid var(--border-color);border-radius:12px;background:var(--primary-bg);color:var(--text-primary)}
+.xs-call-setting-actions{display:flex;gap:10px;margin-top:18px}.xs-call-setting-actions button{flex:1;min-height:44px;border:1px solid var(--border-color);border-radius:14px;background:var(--primary-bg);color:var(--text-primary);font-weight:800}.xs-call-setting-actions .primary{background:var(--accent-color);border-color:var(--accent-color);color:var(--accent-contrast,#fff)}
+.xs-main-call-sheet,.xs-main-call-record,.xs-main-call-option.video{background:var(--secondary-bg)!important;color:var(--text-primary)!important}.xs-main-call-sheet .xs-main-call-title,.xs-main-call-sheet .xs-main-call-name,.xs-main-call-sheet .xs-main-call-record-kind{color:var(--text-primary)!important}.xs-main-call-close{background:var(--primary-bg)!important;color:var(--text-primary)!important;border:1px solid var(--border-color)!important}.xs-main-call-records{border-color:var(--border-color)!important}.xs-main-call-record{border:1px solid var(--border-color)!important}.xs-main-call-sheet .xs-main-call-record-time,.xs-main-call-sheet .xs-main-call-record-title,.xs-main-call-sheet .xs-main-call-record-status,.xs-main-call-sheet .xs-main-call-sub{color:var(--text-secondary)!important}
+@media(max-width:380px){#xs-chat-call-button{width:42px;height:42px;margin-right:8px}.xs-call-incoming-card{padding:18px}.xs-call-incoming-actions{gap:36px}}
+</style>
+<script id="kkk35g-v118-chat-integrated-calls-js">(function(){
+'use strict';
+if(window.__kkk35gV118ChatCalls)return;window.__kkk35gV118ChatCalls=true;
+var RECORD_SUFFIX='callRecordsV2',SETTINGS_SUFFIX='callSettingsV2',LEGACY_KEYS=['xiaoshu_call_records_v1','ta_phone_call_records','xiaoshu_ta_phone_call_records_v1'];
+var recordCache=Object.create(null),settingsCache=Object.create(null),active=null,incoming=null,dialTimer=null,tickTimer=null,incomingTimer=null,incomingExpiry=null,miniDragging=false;
+function $(id){return document.getElementById(id)}
+function sid(){try{return String(window.SESSION_ID||(typeof SESSION_ID!=='undefined'&&SESSION_ID)||'')}catch(e){return String(window.SESSION_ID||'')}}
+function prefix(){try{return String(window.APP_PREFIX||(typeof APP_PREFIX!=='undefined'&&APP_PREFIX)||'CHAT_APP_V3_')}catch(e){return 'CHAT_APP_V3_'}}
+function keyFor(sessionId,suffix){return prefix()+String(sessionId||'')+'_'+suffix}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function readLS(k,fb){try{var v=localStorage.getItem(k);return v?JSON.parse(v):fb}catch(e){return fb}}
+function writeLS(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+function clone(v){try{return JSON.parse(JSON.stringify(v))}catch(e){return v}}
+function currentSettingsObject(){try{if(typeof settings!=='undefined'&&settings)return settings}catch(e){}return window.settings||{}}
+function domText(id){var n=$(id);return n&&String(n.textContent||'').trim()}
+function imageFrom(id){var n=$(id),img=n&&n.querySelector&&n.querySelector('img');return img&&img.src||''}
+function profile(sessionId){var s=currentSettingsObject(),isCurrent=String(sessionId)===sid(),my='',partner='';
+if(isCurrent){my=String(s.myName||domText('my-name')||'我').trim()||'我';partner=String(s.partnerName||domText('partner-name')||domText('xs-stable-title')||'对方').trim()||'对方'}else{my='我';partner='对方'}
+var myAvatar=String(s.myAvatar||s.myAvatarSrc||'')||imageFrom('my-avatar'),partnerAvatar=String(s.partnerAvatar||s.partnerAvatarSrc||'')||imageFrom('partner-avatar');
+try{myAvatar=myAvatar||localStorage.getItem(keyFor(sessionId,'myAvatar'))||'';partnerAvatar=partnerAvatar||localStorage.getItem(keyFor(sessionId,'partnerAvatar'))||''}catch(e){}
+return {myName:my,partnerName:partner,myAvatar:myAvatar,partnerAvatar:partnerAvatar}}
+function avatarHTML(url,cls){return '<div class="'+cls+'">'+(url?'<img alt="" src="'+esc(url)+'">':'<i class="fas fa-user"></i>')+'</div>'}
+function duration(ms){var sec=Math.max(0,Math.floor(Number(ms||0)/1000)),m=Math.floor(sec/60),s=sec%60;return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')}
+function timeText(v){var d=new Date(v||Date.now());return d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}
+function normalizeRecords(raw){var list=Array.isArray(raw)?raw:(raw&&Array.isArray(raw.records)?raw.records:[]),seen=Object.create(null);return list.map(function(r){if(!r)return null;var t=Number(r.startedAt||r.time||Date.now()),x=Object.assign({},r,{id:String(r.id||('call_'+t)),startedAt:t,time:t});if(seen[x.id])return null;seen[x.id]=1;return x}).filter(Boolean).sort(function(a,b){return b.startedAt-a.startedAt}).slice(0,100)}
+function recordsFor(sessionId){sessionId=String(sessionId||sid());if(!recordCache[sessionId])recordCache[sessionId]=normalizeRecords(readLS(keyFor(sessionId,RECORD_SUFFIX),[]));return recordCache[sessionId]}
+function publishRecords(sessionId){if(String(sessionId)===sid())try{window.dispatchEvent(new CustomEvent('xiaoshu-call-records-updated',{detail:{sessionId:sessionId,records:clone(recordsFor(sessionId))}}))}catch(e){}}
+function saveRecords(sessionId,list){sessionId=String(sessionId);list=normalizeRecords(list);recordCache[sessionId]=list;var state={version:2,sessionId:sessionId,records:list};writeLS(keyFor(sessionId,RECORD_SUFFIX),state);try{if(window.localforage)localforage.setItem(keyFor(sessionId,RECORD_SUFFIX),state).catch(function(){})}catch(e){}publishRecords(sessionId);return list}
+function upsertRecord(rec){var list=recordsFor(rec.sessionId).filter(function(x){return String(x.id)!==String(rec.id)});list.unshift(clone(rec));saveRecords(rec.sessionId,list)}
+async function hydrateRecords(sessionId){sessionId=String(sessionId||sid());var scoped=null;try{if(window.localforage)scoped=await localforage.getItem(keyFor(sessionId,RECORD_SUFFIX))}catch(e){}var list=normalizeRecords(scoped||readLS(keyFor(sessionId,RECORD_SUFFIX),[]));
+if(!list.length){var claimKey=prefix()+'callRecordsV2LegacyClaim',claim='';try{claim=localStorage.getItem(claimKey)||''}catch(e){}if(!claim||claim===sessionId){var legacy=[];LEGACY_KEYS.forEach(function(k){legacy=legacy.concat(normalizeRecords(readLS(k,[])))});if(window.localforage)for(var i=0;i<LEGACY_KEYS.length;i++){try{legacy=legacy.concat(normalizeRecords(await localforage.getItem(LEGACY_KEYS[i])))}catch(e){}}list=normalizeRecords(legacy).map(function(x){x.sessionId=sessionId;x.migratedFromLegacy=true;return x});if(list.length){try{localStorage.setItem(claimKey,sessionId)}catch(e){}saveRecords(sessionId,list)}}}
+recordCache[sessionId]=list;publishRecords(sessionId);return list}
+function defaultSettings(){return {version:2,enabled:true,allowIncoming:true,frequency:'low',nextIncomingAt:0,plannedSessionId:''}}
+function validSettings(v){var d=defaultSettings(),x=v&&typeof v==='object'?v:{};d.enabled=x.enabled!==false;d.allowIncoming=x.allowIncoming!==false;d.frequency=/^(low|medium|high)$/.test(x.frequency)?x.frequency:'low';d.nextIncomingAt=Math.max(0,Number(x.nextIncomingAt||0));d.plannedSessionId=String(x.plannedSessionId||'');return d}
+function settingsFor(sessionId){sessionId=String(sessionId||sid());if(!settingsCache[sessionId])settingsCache[sessionId]=validSettings(readLS(keyFor(sessionId,SETTINGS_SUFFIX),null));return settingsCache[sessionId]}
+function saveSettings(sessionId,value){sessionId=String(sessionId);var v=validSettings(value);settingsCache[sessionId]=v;writeLS(keyFor(sessionId,SETTINGS_SUFFIX),v);try{if(window.localforage)localforage.setItem(keyFor(sessionId,SETTINGS_SUFFIX),v).catch(function(){})}catch(e){}if(sessionId===sid()){updateCallButton();scheduleIncoming(false)}return v}
+async function hydrateSettings(sessionId){sessionId=String(sessionId||sid());var v=null;try{if(window.localforage)v=await localforage.getItem(keyFor(sessionId,SETTINGS_SUFFIX))}catch(e){}settingsCache[sessionId]=validSettings(v||readLS(keyFor(sessionId,SETTINGS_SUFFIX),null));updateCallButton();scheduleIncoming(false);return settingsCache[sessionId]}
+function toast(text,type){try{if(typeof showNotification==='function')return showNotification(text,type||'success',2800)}catch(e){}try{if(window.showNotification)return window.showNotification(text,type||'success',2800)}catch(e){}}
+function addEventFor(sessionId,icon,label,detail,eventId){if(!sessionId||!label)return;var msg={id:eventId||('call_event_'+Date.now()+'_'+Math.random().toString(36).slice(2)),sender:'system',text:label+(detail?' · '+detail:''),timestamp:new Date().toISOString(),status:'received',type:'call-event',callIcon:icon||'fa-phone',callDetail:detail||null,favorited:false,note:null};
+if(String(sessionId)===sid()&&typeof window._addCallEvent==='function'){window._addCallEvent(msg.callIcon,label,detail);return}
+try{if(window.localforage)localforage.getItem(keyFor(sessionId,'chatMessages')).then(function(list){list=Array.isArray(list)?list:[];if(!list.some(function(x){return String(x.id)===String(msg.id)})){list.push(msg);return localforage.setItem(keyFor(sessionId,'chatMessages'),list)}}).catch(function(e){console.warn('[call-event] 保存失败',e)})}catch(e){console.warn('[call-event] 保存失败',e)}}
+function writeEventOnce(call,icon,label,detail){if(!call||call.eventWritten)return;call.eventWritten=true;addEventFor(call.sessionId,icon,label,detail,'call_event_'+call.id)}
+function host(){var h=$('xiaoshu-call-home-host');if(!h){h=document.createElement('div');h.id='xiaoshu-call-home-host';h.setAttribute('role','dialog');document.body.appendChild(h)}return h}
+function mini(){var m=$('xiaoshu-call-mini-window');if(!m){m=document.createElement('div');m.id='xiaoshu-call-mini-window';m.setAttribute('role','button');document.body.appendChild(m)}return m}
+function clearRuntime(){if(dialTimer){clearTimeout(dialTimer);dialTimer=null}if(tickTimer){clearInterval(tickTimer);tickTimer=null}}
+function hidePhone(){host().classList.remove('show');host().innerHTML='';mini().classList.remove('show');mini().innerHTML='';document.body.classList.remove('xiaoshu-main-phone-open')}
+function recordStatus(call,status,durationMs){call.endedAt=Date.now();call.duration=Math.max(0,Number(durationMs||0));call.status=status;upsertRecord(call)}
+function completeCall(reason){if(!active){hidePhone();return false}var call=active;clearRuntime();var elapsed=call.connectedAt?Date.now()-call.connectedAt:0;
+if(reason==='normal'&&call.connectedAt&&elapsed>=2000){var dt=duration(elapsed);recordStatus(call,'已结束 '+dt,elapsed);writeEventOnce(call,call.kind==='video'?'fa-video':'fa-phone',(call.kind==='video'?'视频':'语音')+'通话已结束',dt)}else if(reason==='disabled'&&call.connectedAt){var dd=duration(elapsed);recordStatus(call,'已结束 '+dd,elapsed);writeEventOnce(call,call.kind==='video'?'fa-video':'fa-phone',(call.kind==='video'?'视频':'语音')+'通话已结束',dd)}else{recordStatus(call,'已取消',0);writeEventOnce(call,'fa-phone-slash',(call.kind==='video'?'视频':'语音')+'通话已取消','')}
+active=null;hidePhone();return false}
+function failOutgoing(code){if(!active)return;var call=active,labels={unanswered:'对方未接听',busy:'对方正在忙',rejected:'对方拒绝通话'},label=labels[code]||'通话已取消';clearRuntime();recordStatus(call,label,0);writeEventOnce(call,'fa-phone-slash',label,'');active=null;hidePhone();toast(label,'info')}
+function tick(){if(!active)return;var text=active.connectedAt?duration(Date.now()-active.connectedAt):'00:00',a=$('xs-v118-call-timer'),b=$('xs-v118-mini-timer');if(a)a.textContent=text;if(b)b.textContent=text}
+function renderActive(){if(!active)return false;var h=host(),p=active.profile,kindText=active.kind==='video'?'视频通话':'语音通话';h.innerHTML='<div class="xs-main-call-active '+(active.kind==='video'?'video':'')+'"><div class="xs-main-call-topbar"><button type="button" class="xs-main-call-mini-btn" data-v118-call-mini><i class="fas fa-window-minimize"></i> 小窗</button></div><div class="xs-main-call-profile">'+avatarHTML(p.partnerAvatar,'xs-main-call-avatar')+'<div class="xs-main-call-name">'+esc(p.partnerName)+'</div><div class="xs-main-call-sub" id="xs-v118-call-state">'+(active.connectedAt?kindText+' · 通话中':kindText+' · 正在呼叫……')+'</div><div class="xs-main-call-timer" id="xs-v118-call-timer">'+(active.connectedAt?duration(Date.now()-active.connectedAt):'00:00')+'</div></div><div class="xs-main-call-controls"><button type="button" class="xs-main-call-control" data-v118-call-toggle title="模拟麦克风"><i class="fas fa-microphone"></i></button><button type="button" class="xs-main-call-control end" data-v118-call-end title="挂断"><i class="fas fa-phone-slash"></i></button><button type="button" class="xs-main-call-control" data-v118-call-toggle title="模拟扬声器"><i class="fas fa-volume-up"></i></button></div></div>';h.classList.add('show');mini().classList.remove('show');document.body.classList.add('xiaoshu-main-phone-open');tick();return false}
+function renderMini(){if(!active)return false;var m=mini();m.innerHTML=avatarHTML(active.profile.partnerAvatar,'xs-call-mini-avatar')+'<div class="xs-call-mini-time" id="xs-v118-mini-timer">'+(active.connectedAt?duration(Date.now()-active.connectedAt):'00:00')+'</div>';m.classList.add('show');host().classList.remove('show');document.body.classList.remove('xiaoshu-main-phone-open');return false}
+function startConnected(){if(!active)return;active.connectedAt=Date.now();active.status='通话中';upsertRecord(active);renderActive();if(tickTimer)clearInterval(tickTimer);tickTimer=setInterval(tick,500)}
+function chooseOutcome(){var n=Math.random();return n<.75?'connected':n<.85?'unanswered':n<.95?'busy':'rejected'}
+function startOutgoing(kind){if(active||incoming)return restoreOrOpen();var sessionId=sid(),cfg=settingsFor(sessionId);if(!cfg.enabled)return false;var p=profile(sessionId),now=Date.now();active={id:'call_'+now+'_'+Math.random().toString(36).slice(2),sessionId:sessionId,kind:kind==='video'?'video':'voice',type:kind==='video'?'视频通话':'语音通话',direction:'outgoing',startedAt:now,time:now,status:'正在呼叫',duration:0,profile:p,eventWritten:false};upsertRecord(active);renderActive();dialTimer=setTimeout(function(){dialTimer=null;var outcome=chooseOutcome();if(outcome==='connected')startConnected();else failOutgoing(outcome)},1600);return false}
+function recordRows(){var arr=recordsFor(sid()).slice(0,6);if(!arr.length)return '<div class="xs-main-call-record"><i class="fas fa-clock"></i><div class="xs-main-call-record-main"><div class="xs-main-call-record-kind">暂无通话记录</div><div class="xs-main-call-record-time">通话结果会按当前会话保存在这里</div></div></div>';return arr.map(function(r){var video=r.kind==='video'||String(r.type||'').indexOf('视频')>=0;return '<div class="xs-main-call-record"><i class="fas '+(video?'fa-video':'fa-phone')+'"></i><div class="xs-main-call-record-main"><div class="xs-main-call-record-kind">'+esc(r.type||'通话')+'</div><div class="xs-main-call-record-time">'+esc(timeText(r.startedAt))+'</div></div><div class="xs-main-call-record-status">'+esc(r.status||'')+'</div></div>'}).join('')}
+function openChoice(){var cfg=settingsFor(sid());if(!cfg.enabled)return false;if(active){renderActive();return false}if(incoming)return false;var p=profile(sid()),h=host();h.innerHTML='<div class="xs-main-call-sheet"><div class="xs-main-call-head"><button type="button" class="xs-main-call-close" data-v118-call-close aria-label="关闭">×</button><div class="xs-main-call-title">发起通话</div><span class="xs-main-call-spacer"></span></div><div class="xs-main-call-profile">'+avatarHTML(p.partnerAvatar,'xs-main-call-avatar')+'<div class="xs-main-call-name">'+esc(p.partnerName)+'</div><div class="xs-main-call-sub">选择模拟通话方式，不会调用摄像头或麦克风</div></div><div class="xs-main-call-options"><button type="button" class="xs-main-call-option voice" data-v118-call-start="voice"><i class="fas fa-phone"></i><span>语音通话</span></button><button type="button" class="xs-main-call-option video" data-v118-call-start="video"><i class="fas fa-video"></i><span>视频通话</span></button></div><div class="xs-main-call-records"><div class="xs-main-call-record-title">最近通话</div><div class="xs-main-call-record-list">'+recordRows()+'</div></div></div>';h.classList.add('show');document.body.classList.add('xiaoshu-main-phone-open');hydrateRecords(sid()).then(function(){if(h.classList.contains('show')&&!active)openChoice()});return false}
+function restoreOrOpen(){if(active)return renderActive();return openChoice()}
+function closeChoice(){if(active)return renderMini();hidePhone();return false}
+function incomingHost(){var h=$('xs-call-incoming');if(!h){h=document.createElement('div');h.id='xs-call-incoming';h.className='xs-call-incoming';h.setAttribute('aria-live','assertive');document.body.appendChild(h)}return h}
+function clearIncoming(){if(incomingExpiry){clearTimeout(incomingExpiry);incomingExpiry=null}incomingHost().classList.remove('show');incomingHost().innerHTML='';incoming=null}
+function showIncoming(kind,sessionId){if(active||incoming)return false;sessionId=String(sessionId||sid());if(sessionId!==sid())return false;var cfg=settingsFor(sessionId);if(!cfg.enabled||!cfg.allowIncoming)return false;var p=profile(sessionId),now=Date.now();incoming={id:'incoming_'+now+'_'+Math.random().toString(36).slice(2),sessionId:sessionId,kind:kind==='video'?'video':'voice',profile:p,startedAt:now,eventWritten:false};var h=incomingHost();h.innerHTML='<div class="xs-call-incoming-card">'+avatarHTML(p.partnerAvatar,'xs-call-incoming-avatar')+'<div class="xs-call-incoming-name">'+esc(p.partnerName)+'</div><div class="xs-call-incoming-kind">'+(incoming.kind==='video'?'视频通话':'语音通话')+'</div><div class="xs-call-incoming-actions"><button type="button" class="xs-call-incoming-action reject" data-v118-incoming-reject aria-label="拒绝"><i class="fas fa-phone-slash"></i></button><button type="button" class="xs-call-incoming-action accept" data-v118-incoming-accept aria-label="接听"><i class="fas fa-phone"></i></button></div></div>';h.classList.add('show');incomingExpiry=setTimeout(function(){if(!incoming)return;var call=incoming;writeEventOnce(call,'fa-phone-slash','未接'+(call.kind==='video'?'视频':'语音')+'来电','');recordStatus(Object.assign(call,{type:call.kind==='video'?'视频通话':'语音通话',direction:'incoming'}),'未接来电',0);clearIncoming();scheduleIncoming(true)},22000);return false}
+function acceptIncoming(){if(!incoming||active)return false;var call=incoming;clearIncoming();active={id:call.id,sessionId:call.sessionId,kind:call.kind,type:call.kind==='video'?'视频通话':'语音通话',direction:'incoming',startedAt:call.startedAt,time:call.startedAt,status:'通话中',duration:0,profile:call.profile,eventWritten:false,connectedAt:Date.now()};upsertRecord(active);renderActive();tickTimer=setInterval(tick,500);scheduleIncoming(true);return false}
+function rejectIncoming(){if(!incoming)return false;var call=incoming;writeEventOnce(call,'fa-phone-slash','已拒绝'+(call.kind==='video'?'视频':'语音')+'来电','');recordStatus(Object.assign(call,{type:call.kind==='video'?'视频通话':'语音通话',direction:'incoming'}),'已拒绝',0);clearIncoming();scheduleIncoming(true);return false}
+function frequencyDelay(f){var range=f==='high'?[10,30]:f==='medium'?[30,90]:[60,180];return (range[0]+Math.random()*(range[1]-range[0]))*60000}
+function scheduleIncoming(force){if(incomingTimer){clearTimeout(incomingTimer);incomingTimer=null}var sessionId=sid();if(!sessionId)return;var cfg=settingsFor(sessionId);if(!cfg.enabled||!cfg.allowIncoming)return;if(force||cfg.plannedSessionId!==sessionId||!cfg.nextIncomingAt){cfg.plannedSessionId=sessionId;cfg.nextIncomingAt=Date.now()+frequencyDelay(cfg.frequency);saveSettingsQuiet(sessionId,cfg)}var wait=Math.max(0,cfg.nextIncomingAt-Date.now());incomingTimer=setTimeout(function(){incomingTimer=null;if(document.hidden)return;if(sid()!==cfg.plannedSessionId){scheduleIncoming(true);return}if(active||incoming){scheduleIncoming(true);return}cfg.nextIncomingAt=0;saveSettingsQuiet(sessionId,cfg);showIncoming(Math.random()<.25?'video':'voice',sessionId)},Math.min(wait,2147483000))}
+function saveSettingsQuiet(sessionId,v){settingsCache[sessionId]=validSettings(v);writeLS(keyFor(sessionId,SETTINGS_SUFFIX),settingsCache[sessionId]);try{if(window.localforage)localforage.setItem(keyFor(sessionId,SETTINGS_SUFFIX),settingsCache[sessionId]).catch(function(){})}catch(e){}}
+function ensureCallButton(){var right=$('xs-stable-right');if(!right)return null;var b=$('xs-chat-call-button');if(!b){b=document.createElement('button');b.id='xs-chat-call-button';b.type='button';b.setAttribute('aria-label','发起通话');b.setAttribute('title','发起通话');b.innerHTML='<i class="fas fa-phone"></i>';right.appendChild(b)}return b}
+function updateCallButton(){var b=ensureCallButton();if(b)b.hidden=!settingsFor(sid()).enabled}
+function ensureSettingsEntry(){var body=document.querySelector('#xiaoshu-settings-hub-modal .xs-settings-body');if(!body||body.querySelector('[data-call-settings-open]'))return;var section=document.createElement('section');section.className='xs-settings-section';section.innerHTML='<div class="xs-settings-section-title">模拟通话</div><div class="xs-settings-list"><button class="xs-settings-row" type="button" data-call-settings-open><span class="xs-settings-icon"><i class="fas fa-phone"></i></span><span class="xs-settings-copy"><span class="xs-settings-name">模拟通话</span><span class="xs-settings-desc">通话开关、主动来电与来电频率</span></span><i class="fas fa-chevron-right xs-settings-chevron"></i></button></div>';body.appendChild(section)}
+function settingsPanel(){var h=$('xs-call-setting-overlay');if(!h){h=document.createElement('div');h.id='xs-call-setting-overlay';h.className='xs-call-setting-overlay';document.body.appendChild(h)}return h}
+function openSettings(){var c=settingsFor(sid()),h=settingsPanel();h.innerHTML='<div class="xs-call-setting-card" role="dialog" aria-label="模拟通话设置"><div class="xs-call-setting-title">模拟通话</div><div class="xs-call-setting-row"><div><label for="xs-call-enabled">启用模拟通话</label><small>关闭后隐藏聊天顶部电话按钮</small></div><input id="xs-call-enabled" type="checkbox" '+(c.enabled?'checked':'')+'></div><div class="xs-call-setting-row"><div><label for="xs-call-incoming-enabled">允许对方主动来电</label><small>全局显示模拟来电浮层</small></div><input id="xs-call-incoming-enabled" type="checkbox" '+(c.allowIncoming?'checked':'')+'></div><div class="xs-call-setting-row"><div><label for="xs-call-frequency">来电频率</label><small>低 60～180 分钟 · 中 30～90 分钟 · 高 10～30 分钟</small></div><select id="xs-call-frequency"><option value="low" '+(c.frequency==='low'?'selected':'')+'>低</option><option value="medium" '+(c.frequency==='medium'?'selected':'')+'>中</option><option value="high" '+(c.frequency==='high'?'selected':'')+'>高</option></select></div><div class="xs-call-setting-actions"><button type="button" data-v118-settings-cancel>取消</button><button type="button" class="primary" data-v118-settings-save>保存</button></div></div>';h.classList.add('show');return false}
+function closeSettings(){settingsPanel().classList.remove('show');settingsPanel().innerHTML='';return false}
+function saveSettingsFromPanel(){var sessionId=sid(),old=settingsFor(sessionId),enabled=$('xs-call-enabled').checked,allow=$('xs-call-incoming-enabled').checked,f=$('xs-call-frequency').value;saveSettings(sessionId,{version:2,enabled:enabled,allowIncoming:allow,frequency:f,nextIncomingAt:(old.frequency===f?old.nextIncomingAt:0),plannedSessionId:(old.frequency===f?old.plannedSessionId:'')});closeSettings();if(!enabled){if(incoming)rejectIncoming();if(active)completeCall('disabled');if(incomingTimer){clearTimeout(incomingTimer);incomingTimer=null}}toast('模拟通话设置已保存');return false}
+function renderTaPhoneCalls(){var home=$('xs-clean-phone-home'),app=$('xs-clean-phone-app');if(!home||!app)return false;home.hidden=true;app.hidden=false;app.className='xs-clean-app xs-phone-call-records-app';var arr=recordsFor(sid());app.innerHTML=arr.length?'<div class="xs-call-record-clean-list">'+arr.map(function(r){var video=r.kind==='video'||String(r.type||'').indexOf('视频')>=0;return '<div class="xs-call-record-clean-item"><div class="xs-call-record-clean-left"><div class="xs-call-record-clean-icon"><i class="fas '+(video?'fa-video':'fa-phone')+'"></i></div><div class="xs-call-record-clean-main"><div class="xs-call-record-clean-kind">'+esc(r.type||'通话')+'</div><div class="xs-call-record-clean-time">'+esc(timeText(r.startedAt))+'</div></div></div><div class="xs-call-record-clean-status">'+esc(r.status||'')+'</div></div>'}).join('')+'</div>':'<div class="xs-call-record-clean-empty">暂无通话记录</div>';return false}
+function setupMiniDrag(){var m=mini(),drag=null;m.addEventListener('pointerdown',function(e){if(!active)return;var r=m.getBoundingClientRect();drag={id:e.pointerId,x:e.clientX-r.left,y:e.clientY-r.top,moved:false};miniDragging=false;try{m.setPointerCapture(e.pointerId)}catch(_e){}});m.addEventListener('pointermove',function(e){if(!drag||drag.id!==e.pointerId)return;var left=Math.max(6,Math.min(innerWidth-m.offsetWidth-6,e.clientX-drag.x)),top=Math.max(6,Math.min(innerHeight-m.offsetHeight-6,e.clientY-drag.y));if(Math.abs(left-m.getBoundingClientRect().left)>3||Math.abs(top-m.getBoundingClientRect().top)>3)drag.moved=true;m.style.left=left+'px';m.style.top=top+'px';m.style.right='auto';m.style.bottom='auto'});function done(e){if(!drag||e.pointerId!==drag.id)return;miniDragging=drag.moved;drag=null;setTimeout(function(){miniDragging=false},100)}m.addEventListener('pointerup',done);m.addEventListener('pointercancel',done)}
+function bind(){document.addEventListener('click',function(e){var t=e.target&&e.target.closest;if(!t)return;var b=t.call(e.target,'#xs-chat-call-button');if(b){e.preventDefault();return restoreOrOpen()}if(t.call(e.target,'[data-v118-call-close]'))return closeChoice();var s=t.call(e.target,'[data-v118-call-start]');if(s){e.preventDefault();return startOutgoing(s.getAttribute('data-v118-call-start'))}if(t.call(e.target,'[data-v118-call-end]'))return completeCall('normal');if(t.call(e.target,'[data-v118-call-mini]'))return renderMini();var tog=t.call(e.target,'[data-v118-call-toggle]');if(tog){tog.classList.toggle('active');tog.style.background=tog.classList.contains('active')?'rgba(255,255,255,.34)':'rgba(255,255,255,.14)';return false}if(t.call(e.target,'[data-v118-incoming-accept]'))return acceptIncoming();if(t.call(e.target,'[data-v118-incoming-reject]'))return rejectIncoming();if(t.call(e.target,'[data-call-settings-open]')){e.preventDefault();e.stopPropagation();try{window.xiaoshuCloseSettingsHub&&window.xiaoshuCloseSettingsHub()}catch(_e){}return openSettings()}if(t.call(e.target,'[data-v118-settings-cancel]'))return closeSettings();if(t.call(e.target,'[data-v118-settings-save]'))return saveSettingsFromPanel()},true);
+mini().addEventListener('click',function(){if(!miniDragging&&active)renderActive()});document.addEventListener('visibilitychange',function(){if(!document.hidden){var c=settingsFor(sid());if(c.nextIncomingAt&&c.nextIncomingAt<=Date.now()&&!active&&!incoming)showIncoming(Math.random()<.25?'video':'voice',sid());else scheduleIncoming(false)}});window.addEventListener('xiaoshu-session-data-ready',function(){hydrateRecords(sid());hydrateSettings(sid());ensureCallButton();ensureSettingsEntry()});window.addEventListener('xiaoshu-call-records-updated',function(){var app=$('xs-clean-phone-app');if(app&&!app.hidden&&app.classList.contains('xs-phone-call-records-app'))renderTaPhoneCalls()})}
+function expose(){window.xiaoshuOpenMainPhone=restoreOrOpen;window.xiaoshuCloseMainPhone=closeChoice;window.xiaoshuMinimizeMainCall=renderMini;window.xiaoshuRestoreMainCall=renderActive;window.xiaoshuEndMainCall=function(){return completeCall('normal')};window.xiaoshuGetCallRecords=function(){return clone(recordsFor(sid()))};window.xiaoshuSaveCallRecords=function(list){return clone(saveRecords(sid(),list))};window.xiaoshuSimulateIncomingCall=function(kind){return showIncoming(kind||'voice',sid())};window.xiaoshuCallTest={incoming:window.xiaoshuSimulateIncomingCall,start:startOutgoing,fail:failOutgoing,end:completeCall,getActive:function(){return clone(active)},getSettings:function(){return clone(settingsFor(sid()))}};if(window.TaPhoneApp)window.TaPhoneApp.renderCallRecords=renderTaPhoneCalls}
+function boot(){ensureCallButton();ensureSettingsEntry();bind();setupMiniDrag();expose();hydrateRecords(sid());hydrateSettings(sid());updateCallButton()}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+})();</script>
+<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v118-chat-integrated-calls';</script>
 </body></html>

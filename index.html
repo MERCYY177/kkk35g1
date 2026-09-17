@@ -1725,7 +1725,7 @@ function stringErr(e) { return String(e && (e.message || e) || '未知错误'); 
 var ACTIVE_BACKUP_REGISTRY = [
   {
     id:'chat', label:'聊天记录 / 会话 / 基础设置', flag:'chat',
-    lfNeedles:['chatMessages','sessionList','lastSessionId','chatSettings','showPartnerNameInChat','partnerPersonas','mailboxLettersV1','callRecordsV2','callSettingsV2'],
+    lfNeedles:['chatMessages','sessionList','lastSessionId','chatSettings','showPartnerNameInChat','partnerPersonas','mailboxLettersV1'],
     lsExact:[], lsPrefixes:[]
   },
   {
@@ -1782,8 +1782,8 @@ var ACTIVE_BACKUP_REGISTRY = [
   },
   {
     id:'call', label:'通话设置与记录', flag:'call',
-    lfExact:['xiaoshu_call_records_v1','ta_phone_call_records','xiaoshu_ta_phone_call_records_v1'], lfNeedles:[],
-    lsExact:['xiaoshu_call_records_v1','ta_phone_call_records','xiaoshu_ta_phone_call_records_v1'], lsPrefixes:[]
+    lfExact:['xiaoshu_call_records_v1','ta_phone_call_records','xiaoshu_ta_phone_call_records_v1'], lfNeedles:[], lfSuffixes:['_callRecordsV2','_callSettingsV2'],
+    lsExact:['xiaoshu_call_records_v1','ta_phone_call_records','xiaoshu_ta_phone_call_records_v1'], lsPrefixes:[], lsSuffixes:['_callRecordsV2','_callSettingsV2']
   },
   {
     id:'coreExtra', label:'颜文字 / 语音 / 转账等扩展数据', flag:'coreExtra',
@@ -1804,7 +1804,7 @@ var RETIRED_DATA_PATTERNS = [
   'accountingRecords','accountingLabels','envelopeData','pending_envelope','moodCalendar','customMoodOptions','moodTrash',
   'diviHistory','customTarotDeck','customTarotEnabled','groupChatSettings','gca_','chat_streak_data',
   'tiSettings_showAvatar','tiSettings_customText','splashPledgeSigned_v3',
-  'callFeatureEnabled','callWindowPos','callWindowSize','callPillPos','callBgImageData','callRecords',
+  'callFeatureEnabled','callWindowPos','callWindowSize','callPillPos','callBgImageData',
   'moments_data','moments_visitor_records','moments_friends','moments_reply_speed','moments_reply_count_min','moments_reply_count_max','moments_cover','moments_visitor_last_online','moments_visitor_last_viewed_count'
 ];
 var RETIRED_PATTERNS = NEVER_BACKUP_INTERNAL_PATTERNS.concat(RETIRED_DATA_PATTERNS);
@@ -1813,11 +1813,14 @@ function publicRegistry(){
   return ACTIVE_BACKUP_REGISTRY.map(function(c){ return { id:c.id, label:c.label }; });
 }
 function matchesPatternList(key,list){return list.some(function(p){return key.indexOf(p)!==-1;});}
-function isRetiredDataKey(key){key=String(key||'');return !!key&&matchesPatternList(key,RETIRED_DATA_PATTERNS);}
+function isCurrentCallV2Key(key){return /^CHAT_APP_V3_.+_(?:callRecordsV2|callSettingsV2)$/.test(String(key||''));}
+function isLegacyCallDataKey(key){return /(?:^|_)(?:callRecords|xiaoshu_call_records_v1|ta_phone_call_records|xiaoshu_ta_phone_call_records_v1)$/.test(String(key||''));}
+function isRetiredDataKey(key){key=String(key||'');if(!key||isCurrentCallV2Key(key))return false;return matchesPatternList(key,RETIRED_DATA_PATTERNS)||isLegacyCallDataKey(key);}
 function shouldNeverPersistKey(key){
   key=String(key||'');
   if(!safeKey(key)) return true;
-  return matchesPatternList(key,RETIRED_PATTERNS);
+  if(isCurrentCallV2Key(key)) return false;
+  return matchesPatternList(key,RETIRED_PATTERNS)||isLegacyCallDataKey(key);
 }
 function hasNeedle(key, arr){
   if(!arr) return false;
@@ -1830,16 +1833,23 @@ function hasPrefix(key, arr){
   for(var i=0;i<arr.length;i++) if(key.indexOf(arr[i])===0) return true;
   return false;
 }
+function hasSuffix(key, arr){
+  if(!arr) return false;
+  for(var i=0;i<arr.length;i++) if(key.slice(-arr[i].length)===arr[i]) return true;
+  return false;
+}
 function excluded(cat,key){ return !!(cat && cat.excludeExact && cat.excludeExact.indexOf(key)!==-1); }
 function matchLfCategory(key,cat,incoming){
   if(!cat || excluded(cat,key)) return false;
   if(inExact(key,cat.lfExact)) return true;
+  if(hasSuffix(key,cat.lfSuffixes)) return true;
   if(hasNeedle(key,cat.lfNeedles)) return true;
   return false;
 }
 function matchLsCategory(key,cat,incoming){
   if(!cat || excluded(cat,key)) return false;
   if(inExact(key,cat.lsExact)) return true;
+  if(hasSuffix(key,cat.lsSuffixes)) return true;
   if(hasPrefix(key,cat.lsPrefixes)) return true;
   if(incoming && cat.legacyLsRegex && cat.legacyLsRegex.test(key)) return true;
   return false;
@@ -1892,7 +1902,7 @@ function inferBackupSessionId(lfKeys, appPrefix){
     var sk=String(lfKeys[i]||'');
     if(!sk || sk.indexOf(pfx)!==0) continue;
     var m=sk.match(/_([^_]+)$/);
-    var suffixes=['chatMessages','chatSettings','mailboxLettersV1','customReplies','customPokes','customStatuses','customMottos','customIntros','customEmojis','customReplyGroups','customPokeGroups','customStatusGroups','recentDrawnRepliesV1','myStickerLibrary','stickerMessageResourcesV1','backgroundGallery','chatBackground','partnerAvatar','myAvatar','showPartnerNameInChat','partnerPersonas','kaomojiGroups','kaomojiLibrary','customVoices','customVoiceGroups','transferData'];
+    var suffixes=['chatMessages','chatSettings','mailboxLettersV1','callRecordsV2','callSettingsV2','customReplies','customPokes','customStatuses','customMottos','customIntros','customEmojis','customReplyGroups','customPokeGroups','customStatusGroups','recentDrawnRepliesV1','myStickerLibrary','stickerMessageResourcesV1','backgroundGallery','chatBackground','partnerAvatar','myAvatar','showPartnerNameInChat','partnerPersonas','kaomojiGroups','kaomojiLibrary','customVoices','customVoiceGroups','transferData'];
     for(var j=0;j<suffixes.length;j++){
       var tail='_'+suffixes[j];
       if(sk.slice(-tail.length)===tail){
@@ -2331,8 +2341,8 @@ async function verifyWritten(expectedLf,expectedLs,expectedShop){
   if(errors.length)throw new Error(errors.join('\n'));
 }
 async function cleanupRetired(){
-  try{var keys=await localforage.keys();for(var i=0;i<keys.length;i++)if(isRetiredDataKey(keys[i]))await localforage.removeItem(keys[i]);}catch(e){}
-  try{var l=[];for(var j=0;j<localStorage.length;j++){var k=localStorage.key(j);if(k)l.push(k);}l.forEach(function(k){if(isRetiredDataKey(k))try{localStorage.removeItem(k);}catch(e){}});}catch(e2){}
+  try{var keys=await localforage.keys();for(var i=0;i<keys.length;i++)if(!isCurrentCallV2Key(keys[i])&&isRetiredDataKey(keys[i]))await localforage.removeItem(keys[i]);}catch(e){}
+  try{var l=[];for(var j=0;j<localStorage.length;j++){var k=localStorage.key(j);if(k)l.push(k);}l.forEach(function(k){if(!isCurrentCallV2Key(k)&&isRetiredDataKey(k))try{localStorage.removeItem(k);}catch(e){}});}catch(e2){}
 }
 async function applyBackupToStorage(data,opt){
   opt=opt||{};
@@ -2402,7 +2412,7 @@ global.ChatBackup={
   loadBackupFromFile:loadBackupFromFile,loadBackupFromArrayBuffer:loadBackupFromArrayBuffer,
   preflightBackup:preflightBackup,applyBackupToStorage:applyBackupToStorage,
   isFullBackupShape:isFullBackupShape,getLfSource:getLfSource,
-  shouldNeverPersistKey:shouldNeverPersistKey,buildModuleSkipPatterns:buildModuleSkipPatterns,
+  shouldNeverPersistKey:shouldNeverPersistKey,isRetiredDataKey:isRetiredDataKey,buildModuleSkipPatterns:buildModuleSkipPatterns,
   shouldSkipKeyGroupChat:shouldSkipKeyGroupChat,
   extractMediaTree:extractMediaTree,inlineMediaTree:inlineMediaTreeStrict,serializeBackupV4:serializeBackupV4
 };
@@ -31064,7 +31074,7 @@ if(global.ChatBackup)global.ChatBackup.exportBackupToFile=v99ExportBackupToFile;
 
 // ---------- 正式恢复：非破坏性先写、后删；所有异步存储均有超时；超时后的迟到写入会触发二次修复 ----------
 function normalizeV99BackupKey(key,sourcePrefix,targetPrefix){key=String(key||'');sourcePrefix=String(sourcePrefix||'');targetPrefix=String(targetPrefix||'');if(sourcePrefix&&targetPrefix&&sourcePrefix!==targetPrefix&&key.indexOf(sourcePrefix)===0)return targetPrefix+key.slice(sourcePrefix.length);return key;}
-function inferSid(clean){if(clean&&clean.sessionId)return String(clean.sessionId);var p=clean&&clean.appPrefix||currentPrefix(),keys=Object.keys(clean&&clean.localforage||{}).concat(Object.keys(clean&&clean.localStorage||{}));var suffixes=['chatMessages','chatSettings','customReplies','customIntros','myStickerLibrary','stickerMessageResourcesV1','backgroundGallery','chatBackground','partnerAvatar','myAvatar','little_home_state_v8','little_home_state_v8_backup'];for(var i=0;i<keys.length;i++){var k=String(keys[i]);if(k.indexOf(p)!==0)continue;for(var j=0;j<suffixes.length;j++){var tail='_'+suffixes[j];if(k.slice(-tail.length)===tail)return k.slice(p.length,k.length-tail.length)||null;}}return null;}
+function inferSid(clean){if(clean&&clean.sessionId)return String(clean.sessionId);var p=clean&&clean.appPrefix||currentPrefix(),keys=Object.keys(clean&&clean.localforage||{}).concat(Object.keys(clean&&clean.localStorage||{}));var suffixes=['chatMessages','chatSettings','callRecordsV2','callSettingsV2','customReplies','customIntros','myStickerLibrary','stickerMessageResourcesV1','backgroundGallery','chatBackground','partnerAvatar','myAvatar','little_home_state_v8','little_home_state_v8_backup'];for(var i=0;i<keys.length;i++){var k=String(keys[i]);if(k.indexOf(p)!==0)continue;for(var j=0;j<suffixes.length;j++){var tail='_'+suffixes[j];if(k.slice(-tail.length)===tail)return k.slice(p.length,k.length-tail.length)||null;}}return null;}
 function importLsValue(str,store){if(str==null||typeof str!=='string')return str;try{var parsed=JSON.parse(str);if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed)&&parsed.__mRef&&typeof parsed.__mRef==='string'){if(!own(store,parsed.__mRef))throw new Error('备份缺少媒体：'+parsed.__mRef);return store[parsed.__mRef];}return JSON.stringify(ChatBackup.inlineMediaTree(parsed,store));}catch(e){if(/备份缺少媒体/.test(errText(e)))throw e;return str;}}
 function selectedSet(ids){var o={};ids.forEach(function(id){o[id]=1;});return o;}
 async function lfKeysStrict(){return timeoutPromise(localforage.keys(),V99.readTimeout,'IndexedDB键列表读取');}
@@ -31078,9 +31088,11 @@ async function shopReadMap(){var db=await openShopV99();if(!db)return {products:
 async function shopReplaceMap(desired){desired=desired||{products:{},images:{}};var db=await openShopV99();if(!db)throw new Error('ShopDB不可用');try{for(var si=0;si<2;si++){let n=si===0?'products':'images',obj=desired[n]&&typeof desired[n]==='object'?desired[n]:{};if(!db.objectStoreNames.contains(n))throw new Error('ShopDB缺少仓库 '+n);await new Promise(function(resolve,reject){var done=false,tx=db.transaction(n,'readwrite'),store=tx.objectStore(n),timer=setTimeout(function(){if(done)return;done=true;try{tx.abort();}catch(e){}reject(new Error('ShopDB/'+n+'恢复事务超时'));},V99.shopTimeout);tx.oncomplete=function(){if(done)return;done=true;clearTimeout(timer);resolve();};tx.onabort=tx.onerror=function(){if(done)return;done=true;clearTimeout(timer);reject(tx.error||new Error('ShopDB/'+n+'恢复失败'));};try{var get=store.getAllKeys();get.onsuccess=function(){var old=get.result||[],want=new Set(Object.keys(obj).map(String));old.forEach(function(k){if(!want.has(String(k)))store.delete(k);});Object.keys(obj).forEach(function(k){var val=obj[k];if(n==='images'){var rec=val&&typeof val==='object'?Object.assign({},val):{productId:k,img:val};if(rec.productId===undefined)rec.productId=k;store.put(rec);}else store.put({key:k,value:val});});};get.onerror=function(){try{tx.abort();}catch(e){}};}catch(e){clearTimeout(timer);try{tx.abort();}catch(_e){}reject(e);}});}}finally{try{db.close();}catch(e){}}}
 async function snapshotSelected(ids){var sel=selectedSet(ids),lf={},ls={},lfKeys=await lfKeysStrict(),lsKeys=[];for(var i=0;i<lfKeys.length;i++){var k=lfKeys[i],c=ChatBackup.classifyKey(k,'lf');if(c&&sel[c]){var v=await lfGetStrict(k);if(v!==null&&v!==undefined)lf[k]=clone(v)===null?v:clone(v);}}try{for(var j=0;j<localStorage.length;j++){var x=localStorage.key(j);if(x)lsKeys.push(x);}}catch(e){throw new Error('localStorage列举失败: '+errText(e));}for(var q=0;q<lsKeys.length;q++){var y=lsKeys[q],cc=ChatBackup.classifyKey(y,'ls');if(cc&&sel[cc])ls[y]=localStorage.getItem(y);}var shop=sel.shop?await shopReadMap():null;return {lf:lf,ls:ls,shop:shop,lfKeys:lfKeys.filter(function(k){var c=ChatBackup.classifyKey(k,'lf');return c&&sel[c];}),lsKeys:lsKeys.filter(function(k){var c=ChatBackup.classifyKey(k,'ls');return c&&sel[c];})};}
 async function rollbackSnapshot(snap,ids){var sel=selectedSet(ids),now=await lfKeysStrict();for(var i=0;i<now.length;i++){var k=now[i],c=ChatBackup.classifyKey(k,'lf');if(c&&sel[c]&&!own(snap.lf,k))try{await timeoutPromise(localforage.removeItem(k),V99.writeTimeout,'回滚删除 '+k);}catch(e){}}for(var k2 of Object.keys(snap.lf)){await timeoutPromise(localforage.setItem(k2,snap.lf[k2]),V99.writeTimeout,'回滚写入 '+k2);}var lsNow=[];for(var j=0;j<localStorage.length;j++){var lk=localStorage.key(j);if(lk)lsNow.push(lk);}lsNow.forEach(function(k){var c=ChatBackup.classifyKey(k,'ls');if(c&&sel[c]&&!own(snap.ls,k))try{localStorage.removeItem(k);}catch(e){}});Object.keys(snap.ls).forEach(function(k){try{localStorage.setItem(k,snap.ls[k]);}catch(e){}});if(sel.shop&&snap.shop)await shopReplaceMap(snap.shop);}
-var V99_RETIRED_DATA_PATTERNS=['dg_custom_data','dg_status_pool','weekly_fortune','daily_fortune','customWeather_','dg_header_bg','dg_overlay_bg','dg_overlay_bg_tint','_dgUserSalt','dailyFortuneNotes_','moyuRecords','currentMoyuRecord','moyuWorkSession','moyuLocations','moyuActivities','moyuUnread','petGameState','pixelPetGame','diaryTodos','diaryHabits','diaryHabitRecords','diaryPeriodRecords','diaryAnniversaries','diaryTodoCategories','diaryPeriodLastReminderDate','accountingRecords','accountingLabels','envelopeData','pending_envelope','moodCalendar','customMoodOptions','moodTrash','diviHistory','customTarotDeck','customTarotEnabled','groupChatSettings','gca_','chat_streak_data','tiSettings_showAvatar','tiSettings_customText','splashPledgeSigned_v3','callFeatureEnabled','callWindowPos','callWindowSize','callPillPos','callBgImageData','callRecords','moments_data','moments_visitor_records','moments_friends','moments_reply_speed','moments_reply_count_min','moments_reply_count_max','moments_cover','moments_visitor_last_online','moments_visitor_last_viewed_count'];
-function isRetiredDataV99(k){k=String(k||'');return V99_RETIRED_DATA_PATTERNS.some(function(p){return k.indexOf(p)!==-1;});}
-async function cleanupRetiredV99(){try{var keys=await timeoutPromise(localforage.keys(),V99.readTimeout,'退休数据清理键列表');for(var i=0;i<keys.length;i++)if(isRetiredDataV99(keys[i]))try{await timeoutPromise(localforage.removeItem(keys[i]),V99.writeTimeout,'退休数据清理 '+keys[i]);}catch(e){}}catch(e){}try{var ls=[];for(var j=0;j<localStorage.length;j++){var k=localStorage.key(j);if(k)ls.push(k);}ls.forEach(function(k){if(isRetiredDataV99(k))try{localStorage.removeItem(k);}catch(e){}});}catch(e){}}
+var V99_RETIRED_DATA_PATTERNS=['dg_custom_data','dg_status_pool','weekly_fortune','daily_fortune','customWeather_','dg_header_bg','dg_overlay_bg','dg_overlay_bg_tint','_dgUserSalt','dailyFortuneNotes_','moyuRecords','currentMoyuRecord','moyuWorkSession','moyuLocations','moyuActivities','moyuUnread','petGameState','pixelPetGame','diaryTodos','diaryHabits','diaryHabitRecords','diaryPeriodRecords','diaryAnniversaries','diaryTodoCategories','diaryPeriodLastReminderDate','accountingRecords','accountingLabels','envelopeData','pending_envelope','moodCalendar','customMoodOptions','moodTrash','diviHistory','customTarotDeck','customTarotEnabled','groupChatSettings','gca_','chat_streak_data','tiSettings_showAvatar','tiSettings_customText','splashPledgeSigned_v3','callFeatureEnabled','callWindowPos','callWindowSize','callPillPos','callBgImageData','moments_data','moments_visitor_records','moments_friends','moments_reply_speed','moments_reply_count_min','moments_reply_count_max','moments_cover','moments_visitor_last_online','moments_visitor_last_viewed_count'];
+function isCurrentCallV2KeyV99(k){return /^CHAT_APP_V3_.+_(?:callRecordsV2|callSettingsV2)$/.test(String(k||''));}
+function isLegacyCallDataV99(k){return /(?:^|_)(?:callRecords|xiaoshu_call_records_v1|ta_phone_call_records|xiaoshu_ta_phone_call_records_v1)$/.test(String(k||''));}
+function isRetiredDataV99(k){k=String(k||'');if(!k||isCurrentCallV2KeyV99(k))return false;return V99_RETIRED_DATA_PATTERNS.some(function(p){return k.indexOf(p)!==-1;})||isLegacyCallDataV99(k);}
+async function cleanupRetiredV99(){try{var keys=await timeoutPromise(localforage.keys(),V99.readTimeout,'退休数据清理键列表');for(var i=0;i<keys.length;i++)if(!isCurrentCallV2KeyV99(keys[i])&&isRetiredDataV99(keys[i]))try{await timeoutPromise(localforage.removeItem(keys[i]),V99.writeTimeout,'退休数据清理 '+keys[i]);}catch(e){}}catch(e){}try{var ls=[];for(var j=0;j<localStorage.length;j++){var k=localStorage.key(j);if(k)ls.push(k);}ls.forEach(function(k){if(!isCurrentCallV2KeyV99(k)&&isRetiredDataV99(k))try{localStorage.removeItem(k);}catch(e){}});}catch(e){}}
 async function v99ApplyBackup(data,opt){
  opt=opt||{};ensureRegistryForData(data);
  var pre=opt.preflight&&opt.preflight.ok?opt.preflight:ChatBackup.preflightBackup(data);
@@ -31505,5 +31517,5 @@ function expose(){window.xiaoshuOpenMainPhone=restoreOrOpen;window.xiaoshuCloseM
 function boot(){ensureCallButton();ensureSettingsEntry();bind();setupMiniDrag();expose();hydrateRecords(sid());hydrateSettings(sid());updateCallButton()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();</script>
-<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v118-chat-integrated-calls';</script>
+<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v119-backup-call-records-fix';</script>
 </body></html>

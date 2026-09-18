@@ -37,7 +37,6 @@ for token, label in [
     ("b.setAttribute('aria-haspopup','menu')", 'menu: aria-haspopup missing'),
     ("b.setAttribute('aria-expanded','false')", 'menu: aria-expanded initialization missing'),
     ("h.setAttribute('role','menu')", 'menu: role=menu missing'),
-    ('role=\\"menuitem\\"', 'menu: role=menuitem missing'),
     ("e.key==='ArrowDown'", 'menu: ArrowDown handling missing'),
     ("e.key==='ArrowUp'", 'menu: ArrowUp handling missing'),
     ("e.key==='Home'", 'menu: Home handling missing'),
@@ -46,6 +45,7 @@ for token, label in [
     ('closeMoreMenu(true)', 'menu: Escape focus restoration missing'),
 ]:
     require(token in html, label)
+require(re.search(r'role=\\?"menuitem\\?"', html) is not None, 'menu: role=menuitem missing')
 
 # 5) Built-in theme assets: no third-party runtime dependency, no data-URI bloat.
 start = html.find('const BUILTIN_KEYBOARD_BEAUTY_STYLES=')
@@ -70,7 +70,7 @@ if start >= 0 and end > start:
 index_size = html_path.stat().st_size
 require(index_size < 2_500_000, f'performance: index.html too large ({index_size} bytes)')
 
-# 6) Known accidental placeholders / retired test artifacts must not leak into production HTML.
+# 6) Intentional placeholder must remain intact; it is text/plain source, not an error.
 require('__XIAOSHU_CIRCLE_SCRIPT_CLOSE__' in html, 'intentional circle text/plain placeholder unexpectedly removed')
 
 if failures:

@@ -1,0 +1,71 @@
+name: Fix behavior settings resync
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/fix-behavior-resync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Patch current index
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old="function boot(){mount()}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();window.addEventListener('xiaoshu-session-data-ready',function(){setTimeout(mount,0)})"
+          new="function resetAndMount(){var sticker=document.getElementById('xs-auto-sticker-toggle');if(sticker){var wrap=sticker.closest('.xs-behavior-inline');if(wrap)wrap.remove()}var combo=document.getElementById('xs-random-card-combo');if(combo){var label=combo.previousElementSibling;combo.remove();if(label&&label.classList.contains('cs-group-label')&&label.textContent==='字卡回复')label.remove()}mount()}\nfunction boot(){mount()}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();window.addEventListener('xiaoshu-session-data-ready',function(){setTimeout(resetAndMount,0)})"
+          if old not in s: raise SystemExit('behavior session handler source not found')
+          s=s.replace(old,new,1)
+          old2="if(!cfg.enabled||!cfg.allowIncoming||!pickIncomingKind(cfg))return;"
+          new2="if(!cfg.enabled||!cfg.allowIncoming||(!cfg.allowVoiceIncoming&&!cfg.allowVideoIncoming))return;"
+          if old2 not in s: raise SystemExit('call scheduler gate source not found')
+          s=s.replace(old2,new2,1)
+          p.write_text(s,encoding='utf-8')
+          print('BEHAVIOR_RESYNC_PATCH_OK')
+          PY
+      - name: Run behavior regression test
+        run: python tools/test_behavior_settings.py
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile, sys
+          text=Path('index.html').read_text(encoding='utf-8')
+          tags=re.findall(r'<script\b([^>]*)>(.*?)</script>',text,flags=re.I|re.S)
+          checked=0
+          for attrs,body in tags:
+            if re.search(r'\bsrc\s*=',attrs,flags=re.I): continue
+            m=re.search(r'\btype\s*=\s*["\']([^"\']+)',attrs,flags=re.I)
+            if m and m.group(1).lower() not in ('text/javascript','application/javascript','module'): continue
+            if not body.strip(): continue
+            with tempfile.NamedTemporaryFile('w',suffix='.js',encoding='utf-8',delete=False) as f:
+              f.write(body); name=f.name
+            r=subprocess.run(['node','--check',name],text=True,capture_output=True)
+            if r.returncode:
+              print(r.stderr); sys.exit(r.returncode)
+            checked+=1
+          print(f'INLINE_JS_SYNTAX_OK {checked}')
+          PY
+      - name: Commit index
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: resync behavior controls across sessions"
+          git push origin HEAD:main

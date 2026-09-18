@@ -9,6 +9,7 @@ def extract_function(name):
     start = html.find(marker)
     if start < 0:
         raise AssertionError(f'missing function: {name}')
+    return_start = start - 6 if start >= 6 and html[start-6:start] == 'async ' else start
     brace = html.find('{', start)
     depth = 0; quote = None; escaped = False
     for i in range(brace, len(html)):
@@ -22,7 +23,7 @@ def extract_function(name):
             elif ch == '{': depth += 1
             elif ch == '}':
                 depth -= 1
-                if depth == 0: return html[start:i+1]
+                if depth == 0: return html[return_start:i+1]
     raise AssertionError(f'unclosed function: {name}')
 
 normalize = extract_function('normalizeRecords')

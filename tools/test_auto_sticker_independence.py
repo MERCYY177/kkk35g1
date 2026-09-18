@@ -106,4 +106,5 @@ if result.returncode:
 
 assert '(settings.autoSendEnabled || settings.autoStickerEnabled)' in html, 'timer logic must recognize either proactive channel as active'
 assert 'autoSendControl.style.display = (settings.autoSendEnabled || settings.autoStickerEnabled) ? "flex" : "none";' in html, 'shared interval control must stay visible when sticker-only mode is enabled'
+assert "sharedInterval.style.display=(s.autoSendEnabled||s.autoStickerEnabled)?'flex':'none'" in html, 'toggling sticker-only mode must immediately refresh shared interval visibility'
 print('auto sticker independence regression checks passed')

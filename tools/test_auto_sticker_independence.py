@@ -89,9 +89,7 @@ s.fire();
 assert.strictEqual(s.sticker(), 1, 'combined mode should try sticker first');
 assert.strictEqual(s.text(), 0, 'successful sticker send should end that timer round');
 
-assert '(settings.autoSendEnabled || settings.autoStickerEnabled)' in html, 'timer/UI logic must recognize either proactive channel as active'
-assert 'autoSendControl.style.display = (settings.autoSendEnabled || settings.autoStickerEnabled) ? "flex" : "none";' in html, 'shared interval control must stay visible when sticker-only mode is enabled'
-print('auto sticker independence regression checks passed')
+console.log('auto sticker timer behavior checks passed');
 """
 
 with tempfile.NamedTemporaryFile('w', suffix='.js', encoding='utf-8', delete=False) as f:
@@ -103,4 +101,9 @@ if result.stdout:
     print(result.stdout, end='')
 if result.stderr:
     print(result.stderr, end='')
-raise SystemExit(result.returncode)
+if result.returncode:
+    raise SystemExit(result.returncode)
+
+assert '(settings.autoSendEnabled || settings.autoStickerEnabled)' in html, 'timer logic must recognize either proactive channel as active'
+assert 'autoSendControl.style.display = (settings.autoSendEnabled || settings.autoStickerEnabled) ? "flex" : "none";' in html, 'shared interval control must stay visible when sticker-only mode is enabled'
+print('auto sticker independence regression checks passed')

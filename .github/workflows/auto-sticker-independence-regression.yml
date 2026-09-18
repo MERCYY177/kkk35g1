@@ -1,0 +1,23 @@
+name: Auto sticker independence regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/auto-sticker-independence-regression.yml'
+      - 'tools/test_auto_sticker_independence.py'
+      - 'tools/fix_auto_sticker_independence.py'
+
+permissions:
+  contents: write
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run proactive sticker regression
+        run: python tools/test_auto_sticker_independence.py

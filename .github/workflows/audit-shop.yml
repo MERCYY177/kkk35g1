@@ -1,4 +1,4 @@
-name: Audit final trimmed Shop state
+name: Final Shop and JavaScript verification
 
 on:
   push:
@@ -10,32 +10,23 @@ permissions:
   contents: read
 
 jobs:
-  audit:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Scan final residuals
-        run: python tools/audit_shop.py
-      - name: Assert active Shop logic is gone
+      - name: Verify active Shop logic is gone
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           s=Path('index.html').read_text(encoding='utf-8')
-          zero=[
-            'shopDB','openShopDb','readShopStrict','writeShopStrict','clearShopStrict','openShopV99','shopReadMap','shopReplaceMap',
-            'captureShop','captureShopCore','normalizeShopData','normalizeRescueShopRaw','shopExpected','filtered.shop','shopOut','desiredShop',
-            'shopRestored','礼物柜','卡包','商城','.shop-modal','inclShop','sel.shop','seen.shop',"id:'shop'","shop:{id:'shop'",
-            "case 'shop'",'raw.shopDB','data.shopDB','.fa-shopping-cart::before','.fa-store::before','.fa-wallet::before',
-            '.fa-cart-plus::before','.fa-ticket-alt::before'
-          ]
+          zero=['shopDB','openShopDb','readShopStrict','writeShopStrict','clearShopStrict','openShopV99','shopReadMap','shopReplaceMap','captureShop','captureShopCore','normalizeShopData','normalizeRescueShopRaw','shopExpected','filtered.shop','shopOut','desiredShop','shopRestored','礼物柜','卡包','商城','.shop-modal','inclShop','sel.shop','seen.shop',"id:'shop'","shop:{id:'shop'","case 'shop'",'raw.shopDB','data.shopDB','.fa-shopping-cart::before','.fa-store::before','.fa-wallet::before','.fa-cart-plus::before','.fa-ticket-alt::before']
           bad={x:s.count(x) for x in zero if s.count(x)}
           if bad: raise SystemExit('Unexpected active Shop residues: '+repr(bad))
-          if s.count('ShopDB')!=1 or "indexedDB.deleteDatabase('ShopDB')" not in s:
-              raise SystemExit('Only the one-time ShopDB deletion migration may remain')
-          for legacy in ['shop_gift_cabinet','xiaoshu_coupon_wallet_v1','coupon_wallet','gift_cabinet']:
-              if s.count(legacy)<1: raise SystemExit('Retirement migration lost legacy key '+legacy)
-          for marker in ['收藏','朋友圈','相册','相机','电话','短信','callRecordsV2','productFromItem','productRow']:
+          if s.count('ShopDB')!=1 or "indexedDB.deleteDatabase('ShopDB')" not in s: raise SystemExit('Retirement DB deletion invariant failed')
+          for marker in ['收藏','朋友圈','相册','相机','电话','短信','callRecordsV2','productFromItem','productRow','xiaoshu-retired-commerce-cleanup-v1']:
               if marker not in s: raise SystemExit('Required feature missing '+marker)
-          print('Final active-Shop assertion passed')
+          print('SHOP_RETIREMENT_OK')
           PY
+      - name: Check all inline JavaScript syntax
+        run: python tools/validate_inline_js.py

@@ -22,6 +22,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Fix matcher for current call button id
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/apply_behavior_settings.py')
+          s = p.read_text(encoding='utf-8')
+          old = "function ensureCallButton(){var right=$('xs-stable-right');if(!right)return null;var b=$('xs-chat-more-button');if(!b){b=document.createElement('button');b.id='xs-chat-more-button';b.type='button';b.setAttribute('aria-label','发起通话');b.setAttribute('title','发起通话');b.innerHTML='<i class=\\\"fas fa-phone\\\"></i>';right.appendChild(b)}return b}"
+          new = "function ensureCallButton(){var right=$('xs-stable-right');if(!right)return null;var b=$('xs-chat-call-button');if(!b){b=document.createElement('button');b.id='xs-chat-call-button';b.type='button';b.setAttribute('aria-label','发起通话');b.setAttribute('title','发起通话');b.innerHTML='<i class=\\\"fas fa-phone\\\"></i>';right.appendChild(b)}return b}"
+          if old not in s:
+              raise SystemExit('matcher source not found in patcher')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          print('PATCHER_MATCHER_FIXED')
+          PY
       - name: Apply patch
         run: python tools/apply_behavior_settings.py
       - name: Run behavior regression test

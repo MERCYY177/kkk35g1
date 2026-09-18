@@ -31,5 +31,8 @@ assert 'state.autoReplyEnabled' in text, 'mail auto reply toggle is not wired in
 assert 'state.replyDelayMinMinutes' in text and 'state.replyDelayMaxMinutes' in text, 'mail reply delay range is not wired'
 assert 'state.incomingDelayMinMinutes' in text and 'state.incomingDelayMaxMinutes' in text, 'mail incoming delay range is not wired'
 assert "c.allowVoiceIncoming" in text and "c.allowVideoIncoming" in text, 'call type toggles are not wired into settings panel'
+assert 'function resetAndMount()' in text, 'chat behavior controls are not refreshed when the active session changes'
+assert "setTimeout(resetAndMount,0)" in text, 'session-ready handler does not refresh chat behavior controls'
+assert "(!cfg.allowVoiceIncoming&&!cfg.allowVideoIncoming)" in text, 'call scheduler should test enabled call types without consuming a random draw'
 
 print('BEHAVIOR_SETTINGS_TEST_OK')

@@ -1,4 +1,4 @@
-name: Audit Shop residuals
+name: Audit Shop residuals final
 
 on:
   push:
@@ -14,5 +14,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Scan residuals
+      - name: Scan final residuals
         run: python tools/audit_shop.py

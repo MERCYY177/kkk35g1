@@ -1,0 +1,46 @@
+name: Final size audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/final-size-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Measure index before and after theme localization
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE_REF=ed4e5e33b9a166a68817ecd934ae3f3dd10fecc9
+          git show "$BEFORE_REF:index.html" > /tmp/index-before.html
+          python - <<'PY'
+          from pathlib import Path
+          import re, base64
+          before = Path('/tmp/index-before.html').read_bytes()
+          after = Path('index.html').read_bytes()
+          text = after.decode('utf-8')
+          start = text.find('const BUILTIN_KEYBOARD_BEAUTY_STYLES=')
+          end = text.find('let editingKeyboardBeautyId', start)
+          region = text[start:end]
+          uris = re.findall(r'data:image/[^;]+;base64,[A-Za-z0-9+/=]+', region)
+          unique = list(dict.fromkeys(uris))
+          decoded_unique = sum(len(base64.b64decode(uri.split(',',1)[1])) for uri in unique)
+          print(f'BEFORE_BYTES={len(before)}')
+          print(f'AFTER_BYTES={len(after)}')
+          print(f'INCREASE_BYTES={len(after)-len(before)}')
+          print(f'INCREASE_PERCENT={(len(after)-len(before))*100/len(before):.2f}')
+          print(f'THEME_DATA_URI_REFERENCES={len(uris)}')
+          print(f'THEME_UNIQUE_DATA_URIS={len(unique)}')
+          print(f'THEME_UNIQUE_DECODED_BYTES={decoded_unique}')
+          print(f'THEME_DATA_URI_TEXT_BYTES={sum(len(x.encode("utf-8")) for x in uris)}')
+          print(f'THEME_UNIQUE_DATA_URI_TEXT_BYTES={sum(len(x.encode("utf-8")) for x in unique)}')
+          PY

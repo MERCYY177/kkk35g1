@@ -1,0 +1,54 @@
+name: Retire Shop leftovers v2
+
+on:
+  push:
+    paths:
+      - '.github/workflows/retire-shop-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: python tools/retire_shop.py
+      - name: Sanity checks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          forbidden=[
+            "btn('gift','礼物柜')",
+            "btn('wallet','卡包')",
+            "showGiftCabinetApp",
+            "var WALLET_KEY=",
+            "loadJSON('shop_gift_cabinet'",
+            "id:'shop', label:'历史订单 / 礼物柜数据（兼容）'",
+            "shop:{id:'shop',live:'historical-storage-only'"
+          ]
+          bad=[x for x in forbidden if x in s]
+          if bad:
+              raise SystemExit('Shop retirement sanity check failed: '+repr(bad))
+          required=['收藏','朋友圈','相册','相机','电话','短信','callRecordsV2','xiaoshu-retired-commerce-cleanup-v1']
+          missing=[x for x in required if x not in s]
+          if missing:
+              raise SystemExit('Required feature markers missing: '+repr(missing))
+          print('Sanity checks passed')
+          PY
+      - name: Commit patched index
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No index change to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'refactor: retire Shop remnants and TA gift wallet'
+          git push

@@ -1,0 +1,57 @@
+name: Apply mailbox letter style
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'tools/patch_mailbox_letter_style.py'
+      - '.github/workflows/apply-mailbox-letter-style.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply mailbox patch
+        run: python tools/patch_mailbox_letter_style.py
+      - name: Run mailbox style regression test
+        run: python tools/test_mailbox_letter_style.py
+      - name: Check inline JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile, sys
+          text=Path('index.html').read_text(encoding='utf-8')
+          tags=re.findall(r'<script\b([^>]*)>(.*?)</script>',text,flags=re.I|re.S)
+          checked=0
+          for attrs,body in tags:
+            if re.search(r'\bsrc\s*=',attrs,flags=re.I): continue
+            m=re.search(r'\btype\s*=\s*["\']([^"\']+)',attrs,flags=re.I)
+            if m and m.group(1).lower() not in ('text/javascript','application/javascript','module'): continue
+            if not body.strip(): continue
+            with tempfile.NamedTemporaryFile('w',suffix='.js',encoding='utf-8',delete=False) as f:
+              f.write(body); name=f.name
+            r=subprocess.run(['node','--check',name],text=True,capture_output=True)
+            if r.returncode:
+              print(r.stderr); sys.exit(r.returncode)
+            checked+=1
+          print(f'INLINE_JS_SYNTAX_OK {checked}')
+          PY
+      - name: Commit index
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: make mailbox letters card-only and punctuated"
+          git push origin HEAD:main

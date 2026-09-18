@@ -1864,7 +1864,6 @@ function flagsPermit(cat,flags){
     case 'stickers': return flags.inclStickers!==false;
     case 'themes': return flags.inclThemes!==false;
     case 'moments': return flags.inclMoments!==false;
-    case 'shop': return flags.inclShop!==false;
     case 'map': return flags.inclMap!==false;
     case 'taPhone': return flags.inclTaPhone!==false;
     case 'interactionHub': return flags.inclInteraction!==false;
@@ -2014,59 +2013,7 @@ function mediaMetaForStore(store){
   }); return out;
 }
 
-function openShopDb(){
-  return new Promise(function(resolve,reject){
-    if(typeof indexedDB==='undefined') return resolve(null);
-    var req=indexedDB.open('ShopDB',2);
-    req.onerror=function(){reject(req.error||new Error('无法打开 ShopDB'));};
-    req.onupgradeneeded=function(e){var db=e.target.result;if(!db.objectStoreNames.contains('products'))db.createObjectStore('products',{keyPath:'key'});if(!db.objectStoreNames.contains('images'))db.createObjectStore('images',{keyPath:'productId'});};
-    req.onsuccess=function(e){resolve(e.target.result);};
-  });
-}
-async function readShopStrict(){
-  var db=await openShopDb(); if(!db)return {};
-  var result={};
-  try{
-    var stores=['products','images'];
-    for(var i=0;i<stores.length;i++){
-      var n=stores[i]; if(!db.objectStoreNames.contains(n)){result[n]={};continue;}
-      result[n]=await new Promise(function(resolve,reject){
-        var storeName=n;
-        try{var tx=db.transaction(storeName,'readonly'),req=tx.objectStore(storeName).getAll();req.onerror=function(){reject(req.error||new Error('读取 ShopDB/'+storeName+' 失败'));};req.onsuccess=function(){var obj={};(req.result||[]).forEach(function(item){if(item.key!==undefined)obj[item.key]=item.value;else if(item.productId!==undefined)obj[item.productId]=item;});resolve(obj);};}catch(e){reject(e);}
-      });
-    }
-    return result;
-  }finally{try{db.close();}catch(e){}}
-}
-async function clearShopStrict(){
-  var db=await openShopDb(); if(!db)return;
-  try{
-    var names=['products','images'];
-    for(var i=0;i<names.length;i++){
-      var n=names[i]; if(!db.objectStoreNames.contains(n))continue;
-      await new Promise(function(resolve,reject){var storeName=n;try{var tx=db.transaction(storeName,'readwrite'),req=tx.objectStore(storeName).clear();req.onerror=function(){reject(req.error||new Error('清空 ShopDB/'+storeName+' 失败'));};req.onsuccess=function(){resolve();};}catch(e){reject(e);}});
-    }
-  }finally{try{db.close();}catch(e){}}
-}
-async function writeShopStrict(data){
-  data=data||{}; var db=await openShopDb(); if(!db){if(Object.keys(data).length)throw new Error('IndexedDB 不可用，无法恢复商城');return;}
-  try{
-    var names=Object.keys(data);
-    for(var i=0;i<names.length;i++){
-      var name=names[i]; if(!db.objectStoreNames.contains(name))throw new Error('ShopDB 缺少对象仓库：'+name);
-      var obj=data[name]||{}, keys=Object.keys(obj);
-      await new Promise(function(resolve,reject){
-        var storeName=name, source=obj, sourceKeys=keys;
-        try{
-          var tx=db.transaction(storeName,'readwrite'),store=tx.objectStore(storeName); tx.onabort=function(){reject(tx.error||new Error('写入 ShopDB/'+storeName+' 中止'));}; tx.onerror=function(){reject(tx.error||new Error('写入 ShopDB/'+storeName+' 失败'));}; tx.oncomplete=function(){resolve();};
-          sourceKeys.forEach(function(k){var val=source[k]; if(storeName==='images')store.put(val);else store.put({key:k,value:val});});
-        }catch(e){reject(e);}
-      });
-    }
-  }finally{try{db.close();}catch(e){}}
-}
-
-function categoryIdsPresent(lf,ls,shop){
+function categoryIdsPresent(lf,ls){
   var seen=Object.create(null);
   Object.keys(lf||{}).forEach(function(k){var c=categoryForKey(k,'lf',true);if(c)seen[c.id]=1;});
   Object.keys(ls||{}).forEach(function(k){var c=categoryForKey(k,'ls',true);if(c)seen[c.id]=1;});
@@ -2086,10 +2033,6 @@ function filterIncomingObject(obj,kind,selectedIds,stats){
   });
   return out;
 }
-function normalizeShopData(shop){
-  shop=shop&&typeof shop==='object'?shop:{};
-  return {products:shop.products&&typeof shop.products==='object'?shop.products:{},images:shop.images&&typeof shop.images==='object'?shop.images:{}};
-}
 function getLfSource(data){
   var out={}, a=(data&&data.indexedDB)||{}, b=(data&&data.localforage)||{};
   Object.keys(a).forEach(function(k){if(safeKey(k))out[k]=a[k];});
@@ -2100,7 +2043,7 @@ function legacyLooksLikeAppBackup(d){
   if(!d||typeof d!=='object')return false;
   if(!(d.type==='full'||(typeof d.type==='string'&&d.type.indexOf('full-backup')!==-1)))return false;
   var lf=getLfSource(d),ls=d.localStorage||{};
-  return Object.keys(lf).some(function(k){return !!categoryForKey(k,'lf',true);}) || Object.keys(ls).some(function(k){return !!categoryForKey(k,'ls',true);}) || !!d.shopDB;
+  return Object.keys(lf).some(function(k){return !!categoryForKey(k,'lf',true);}) || Object.keys(ls).some(function(k){return !!categoryForKey(k,'ls',true);});
 }
 function isFullBackupShape(d){
   if(!d||typeof d!=='object')return false;
@@ -2112,7 +2055,7 @@ function isFullBackupShape(d){
 
 function validateMedia(data,errors){
   var store=data.mediaStore||{}, refs=Object.create(null);
-  collectRefs(data.localforage||{},refs); collectRefs(data.localStorage||{},refs); collectRefs(data.shopDB||{},refs);
+  collectRefs(data.localforage||{},refs); collectRefs(data.localStorage||{},refs);
   Object.keys(refs).forEach(function(id){if(!own(store,id))errors.push('缺少媒体文件 '+id);});
   var meta=data.mediaMeta||{};
   Object.keys(meta).forEach(function(id){
@@ -2131,12 +2074,11 @@ function preflightBackup(data){
   var stats={ignored:0,retired:0};
   var lf=filterIncomingObject(getLfSource(data),'lf',null,stats);
   var ls=filterIncomingObject(data.localStorage||{},'ls',null,stats);
-  var shop=normalizeShopData((data.shopDB&&typeof data.shopDB==='object')?cloneJson(data.shopDB):{});
   var clean={
     type:FORMAT_TYPE,formatVersion:FORMAT_VERSION,appName:APP_NAME,
     timestamp:data.timestamp||data.exportDate||null,sessionId:data.sessionId||null,
     appPrefix:data.appPrefix||(typeof APP_PREFIX!=='undefined'?APP_PREFIX:'CHAT_APP_V3_'),
-    localforage:lf,localStorage:ls,shopDB:shop,
+    localforage:lf,localStorage:ls,
     mediaStore:(data.mediaStore&&typeof data.mediaStore==='object')?data.mediaStore:{},
     mediaMeta:(data.mediaMeta&&typeof data.mediaMeta==='object')?data.mediaMeta:{},
     migratedFrom:data.formatVersion||data.version||'legacy'
@@ -2150,12 +2092,10 @@ function preflightBackup(data){
       var actualLfKeys=Object.keys(data.localforage||{}).sort(),actualLsKeys=Object.keys(data.localStorage||{}).sort();
       if(!Array.isArray(mf.localforageKeys)||mf.localforageKeys.slice().sort().join('|')!==actualLfKeys.join('|'))errors.push('manifest 的 IndexedDB 键清单不一致');
       if(!Array.isArray(mf.localStorageKeys)||mf.localStorageKeys.slice().sort().join('|')!==actualLsKeys.join('|'))errors.push('manifest 的 localStorage 键清单不一致');
-      var actualShopStores=Object.keys((data.shopDB&&typeof data.shopDB==='object')?data.shopDB:{}).filter(safeKey).sort();
-      if(!Array.isArray(mf.shopStores)||mf.shopStores.slice().sort().join('|')!==actualShopStores.join('|'))errors.push('manifest 的 ShopDB 仓库清单不一致');
       if(mf.mediaCount!=null&&Number(mf.mediaCount)!==Object.keys(data.mediaStore||{}).length)errors.push('manifest 的媒体数量不一致');
       if(mf.mediaBytes!=null){var actualMediaBytes=Object.keys(data.mediaMeta||{}).reduce(function(n,id){return n+Number((data.mediaMeta[id]&&data.mediaMeta[id].size)||0);},0);if(Number(mf.mediaBytes)!==actualMediaBytes)errors.push('manifest 的媒体总大小不一致');}
       if(Array.isArray(mf.categories)){
-        var originalCats=categoryIdsPresent(data.localforage||{},data.localStorage||{},normalizeShopData(data.shopDB||{}));
+        var originalCats=categoryIdsPresent(data.localforage||{},data.localStorage||{});
         var a=mf.categories.slice().sort().join('|'),b=originalCats.slice().sort().join('|');
         if(a!==b)errors.push('manifest 的模块列表与数据内容不一致');
       }else errors.push('manifest 缺少模块列表');
@@ -2217,13 +2157,12 @@ async function buildBackupPayload(flags){
   }
   // 三个内嵌模块如果此刻已加载，以当前运行内存为最终备份源，避免“界面已更新但 localStorage 写失败”导致备出旧记录。
   overlayLiveFrameStatesForBackup(lsData,errors);
-  var shop={};
   if(errors.length)throw new Error('备份未生成，因为有数据读取失败：\n'+errors.slice(0,8).join('\n'));
-  var state={store:{},map:new Map(),n:0},lfOut={},lsOut={},shopOut={};
+  var state={store:{},map:new Map(),n:0},lfOut={},lsOut={};
   Object.keys(lfData).forEach(function(k){lfOut[k]=extractMediaTree(lfData[k],state);});
   Object.keys(lsData).forEach(function(k){lsOut[k]=processLsExport(lsData[k],state);});
     var mediaMeta=mediaMetaForStore(state.store);
-  var cats=categoryIdsPresent(lfOut,lsOut,shopOut);
+  var cats=categoryIdsPresent(lfOut,lsOut);
   var manifest={
     schema:'xiaoshu-backup-manifest-v1',createdAt:new Date().toISOString(),
     categories:cats,localforageKeys:Object.keys(lfOut).sort(),localStorageKeys:Object.keys(lsOut).sort(),
@@ -2318,7 +2257,7 @@ async function exportBackupToFile(flags){
 
 function filterForSelected(clean,ids){
   var stats={ignored:0,retired:0};
-  return {lf:filterIncomingObject(clean.localforage||{},'lf',ids,stats),ls:filterIncomingObject(clean.localStorage||{},'ls',ids,stats),shop:(ids.indexOf('shop')!==-1?normalizeShopData(cloneJson(clean.shopDB||{})):normalizeShopData({})),stats:stats};
+  return {lf:filterIncomingObject(clean.localforage||{},'lf',ids,stats),ls:filterIncomingObject(clean.localStorage||{},'ls',ids,stats),stats:stats};
 }
 async function snapshotCurrent(ids){
   var sel=selectedSet(ids),lf={},ls={},errors=[];
@@ -2326,16 +2265,14 @@ async function snapshotCurrent(ids){
   for(var i=0;i<keys.length;i++){var k=keys[i],c=categoryForKey(k,'lf',false);if(!c||!sel[c.id])continue;try{var v=await localforage.getItem(k);if(v!==null&&v!==undefined)lf[k]=cloneJson(v);}catch(e){errors.push('无法建立回滚点 '+k+': '+stringErr(e));}}
   var lkeys=[];try{for(var j=0;j<localStorage.length;j++){var lk=localStorage.key(j);if(lk)lkeys.push(lk);}}catch(e0){errors.push('无法列举 localStorage: '+stringErr(e0));}
   for(var q=0;q<lkeys.length;q++){var x=lkeys[q],cc=categoryForKey(x,'ls',false);if(!cc||!sel[cc.id])continue;try{var lv=localStorage.getItem(x);if(lv!==null)ls[x]=lv;}catch(e1){errors.push('无法建立回滚点 '+x+': '+stringErr(e1));}}
-  var shop={};if(sel.shop){try{shop=await readShopStrict();}catch(e2){errors.push('无法建立商城回滚点: '+stringErr(e2));}}
   if(errors.length)throw new Error(errors.join('\n'));
-  return {lf:lf,ls:ls,shop:shop};
+  return {lf:lf,ls:ls};
 }
 async function clearSelected(ids){
   var sel=selectedSet(ids),keys=await localforage.keys(),errors=[];
   for(var i=0;i<keys.length;i++){var k=keys[i],c=categoryForKey(k,'lf',false);if(c&&sel[c.id]){try{await localforage.removeItem(k);}catch(e){errors.push('清理失败 '+k+': '+stringErr(e));}}}
   var lkeys=[];for(var j=0;j<localStorage.length;j++){var lk=localStorage.key(j);if(lk)lkeys.push(lk);}
   for(var q=0;q<lkeys.length;q++){var x=lkeys[q],cc=categoryForKey(x,'ls',false);if(cc&&sel[cc.id]){try{localStorage.removeItem(x);}catch(e1){errors.push('清理失败 '+x+': '+stringErr(e1));}}}
-  if(sel.shop){try{await clearShopStrict();}catch(e2){errors.push('清理商城失败: '+stringErr(e2));}}
   if(errors.length)throw new Error(errors.join('\n'));
 }
 async function restoreSnapshot(snap,ids){
@@ -2343,14 +2280,12 @@ async function restoreSnapshot(snap,ids){
   var errors=[];
   for(var k of Object.keys(snap.lf||{})){try{await localforage.setItem(k,snap.lf[k]);}catch(e){errors.push(k+': '+stringErr(e));}}
   Object.keys(snap.ls||{}).forEach(function(k){try{localStorage.setItem(k,snap.ls[k]);}catch(e){errors.push(k+': '+stringErr(e));}});
-  if(ids.indexOf('shop')!==-1){try{await writeShopStrict(snap.shop||{});}catch(e2){errors.push('ShopDB: '+stringErr(e2));}}
   if(errors.length)throw new Error(errors.join('\n'));
 }
 async function verifyWritten(expectedLf,expectedLs,expectedShop){
   var errors=[];
   for(var k of Object.keys(expectedLf)){try{var got=await localforage.getItem(k);if(fingerprint(got)!==fingerprint(expectedLf[k]))errors.push('校验不一致 '+k);}catch(e){errors.push('无法复读 '+k);}}
   Object.keys(expectedLs).forEach(function(k){try{if(localStorage.getItem(k)!==expectedLs[k])errors.push('校验不一致 '+k);}catch(e){errors.push('无法复读 '+k);}});
-  if(expectedShop){try{var gotShop=await readShopStrict();if(fingerprint(gotShop)!==fingerprint(expectedShop))errors.push('商城数据库校验不一致');}catch(e2){errors.push('商城数据库无法复读');}}
   if(errors.length)throw new Error(errors.join('\n'));
 }
 async function cleanupRetired(){
@@ -2402,7 +2337,6 @@ async function applyBackupToStorage(data,opt){
     await clearSelected(ids);
     for(var k of Object.keys(desiredLf)){await localforage.setItem(k,desiredLf[k]);writtenLf[k]=desiredLf[k];}
     Object.keys(desiredLs).forEach(function(k){localStorage.setItem(k,desiredLs[k]);writtenLs[k]=desiredLs[k];});
-    if(ids.indexOf('shop')!==-1){shopExpected=normalizeShopData({});Object.keys(filtered.shop||{}).forEach(function(s){shopExpected[s]=inlineMediaTreeStrict(filtered.shop[s],mediaStore);});await writeShopStrict(shopExpected);}
     await verifyWritten(writtenLf,writtenLs,shopExpected);
     if(restoreMeta){
       var gotSl=await localforage.getItem(restoreMeta.sessionListKey),gotLast=await localforage.getItem(restoreMeta.lastSessionKey),gotMsgs=await localforage.getItem(restoreMeta.messageKey);
@@ -20953,13 +20887,6 @@ async function captureLocalForage(errors){
   await Promise.all(keys.map(function(k){return withTimeout(localforage.getItem(k),700,'IndexedDB读取 '+k,errors,undefined).then(function(v){if(v!==undefined)out[k]=strictClone('IndexedDB '+k,v,errors);});}));
   return out;
 }
-async function captureShopCore(errors){
-  var result={};if(!window.indexedDB)return result;
-  var db=await new Promise(function(resolve,reject){var r=indexedDB.open('ShopDB');r.onerror=function(){reject(r.error||new Error('ShopDB打开失败'))};r.onsuccess=function(){resolve(r.result)};r.onupgradeneeded=function(){try{r.transaction.abort()}catch(e){}};});
-  try{for(const n of ['products','images']){if(!db.objectStoreNames.contains(n))continue;result[n]=await new Promise(function(resolve,reject){var tx=db.transaction(n,'readonly'),req=tx.objectStore(n).getAll();req.onerror=function(){reject(req.error||new Error(n+'读取失败'))};req.onsuccess=function(){resolve(strictClone('ShopDB '+n,req.result||[],errors)||[])};});}}finally{try{db.close()}catch(e){}}
-  return result;
-}
-async function captureShop(errors){return withTimeout(captureShopCore(errors),1800,'ShopDB抢救读取',errors,{});}
 function captureMainMemory(errors){var o={};var defs=[
 ['sessionId',function(){return typeof SESSION_ID!=='undefined'?SESSION_ID:null}],['appPrefix',function(){return typeof APP_PREFIX!=='undefined'?APP_PREFIX:null}],
 ['sessionList',function(){return typeof sessionList!=='undefined'?sessionList:null}],['messages',function(){return typeof messages!=='undefined'?messages:(Array.isArray(window.messages)?window.messages:null)}],
@@ -20971,7 +20898,7 @@ function captureMainMemory(errors){var o={};var defs=[
 ];defs.forEach(function(x){o[x[0]]=take('内存 '+x[0],x[1],errors)});return o;}
 function buildRescueLegacy(data){
   var raw=data&&data.rawStorage||{},mm=data&&data.mainMemory||{},fm=data&&data.frameMemory||{};
-  var lf=strictClone('抢救包 IndexedDB',raw.localforage||{},[])||{},ls=strictClone('抢救包 localStorage',raw.localStorage||{},[])||{},shop=strictClone('抢救包 ShopDB',raw.shopDB||{},[])||{};
+  var lf=strictClone('抢救包 IndexedDB',raw.localforage||{},[])||{},ls=strictClone('抢救包 localStorage',raw.localStorage||{},[])||{};
   var pfx=mm.appPrefix||data.appPrefix||'CHAT_APP_V3_',sid=mm.sessionId||data.sessionId||null;
   if(fm.moments&&typeof fm.moments==='object'&&!fm.moments.__error)ls['moments_site_blank_v49_rebuild_baseline_same_layout']=JSON.stringify(fm.moments);
   if(fm.chat2&&typeof fm.chat2==='object'&&!fm.chat2.__error)ls['fullRealKeyboardChat_v2']=JSON.stringify(fm.chat2);
@@ -20979,7 +20906,7 @@ function buildRescueLegacy(data){
   if(mm.sessionList!=null)lf[pfx+'sessionList']=mm.sessionList;
   if(sid)lf[pfx+'lastSessionId']=sid;
   if(sid){var map={messages:'chatMessages',settings:'chatSettings',partnerPersonas:'partnerPersonas',showPartnerNameInChat:'showPartnerNameInChat',customReplies:'customReplies',recentDrawnRepliesV1:'recentDrawnRepliesV1',customReplyGroups:'customReplyGroups',customPokes:'customPokes',myPokes:'myPokes',customPokeGroups:'customPokeGroups',customEmojis:'customEmojis',kaomojiLibrary:'kaomojiLibrary',kaomojiGroups:'kaomojiGroups',customVoices:'customVoices',customVoiceGroups:'customVoiceGroups',myStickerLibrary:'myStickerLibrary',customThemes:'customThemes',themeSchemes:'themeSchemes',transferData:'transferData',savedBackgrounds:'backgroundGallery'};Object.keys(map).forEach(function(k){if(mm[k]!==null&&mm[k]!==undefined)lf[pfx+sid+'_'+map[k]]=mm[k];});}
-  return {type:'full',appName:'ChatApp',appPrefix:pfx,sessionId:sid,timestamp:data.exportedAt||null,localforage:lf,localStorage:ls,shopDB:shop};
+  return {type:'full',appName:'ChatApp',appPrefix:pfx,sessionId:sid,timestamp:data.exportedAt||null,localforage:lf,localStorage:ls};
 }
 window.xiaoshuVerifyEmergencyRescueData=async function(data,file){
   if(!data||typeof data.type!=='string'||data.type.indexOf('xiaoshu-emergency-rescue-v')!==0)throw new Error('不是传讯紧急抢救包');
@@ -21291,10 +21218,7 @@ function scheduleLateRepair(p,repair,label){Promise.resolve(p).then(function(){s
 function lfSetStrict(k,v,onLate){var p;try{p=localforage.setItem(k,v);}catch(e){return Promise.reject(e);}return timeoutPromise(p,V99.writeTimeout,'IndexedDB写入 '+k).catch(function(e){if(/超时/.test(errText(e))&&onLate)scheduleLateRepair(p,onLate,'set '+k);throw e;});}
 function lfRemoveStrict(k,onLate){var p;try{p=localforage.removeItem(k);}catch(e){return Promise.reject(e);}return timeoutPromise(p,V99.writeTimeout,'IndexedDB删除 '+k).catch(function(e){if(/超时/.test(errText(e))&&onLate)scheduleLateRepair(p,onLate,'remove '+k);throw e;});}
 function lsSetStrict(k,v){if(v==null){localStorage.removeItem(k);if(localStorage.getItem(k)!==null)throw new Error('localStorage删除校验失败 '+k);return;}localStorage.setItem(k,String(v));if(localStorage.getItem(k)!==String(v))throw new Error('localStorage写后校验失败 '+k);}
-function openShopV99(){return new Promise(function(resolve,reject){if(!global.indexedDB)return resolve(null);var done=false,r=indexedDB.open('ShopDB',2),timer=setTimeout(function(){if(done)return;done=true;reject(new Error('ShopDB打开超时'));},V99.shopTimeout);r.onerror=function(){if(done)return;done=true;clearTimeout(timer);reject(r.error||new Error('ShopDB打开失败'));};r.onupgradeneeded=function(e){var db=e.target.result;if(!db.objectStoreNames.contains('products'))db.createObjectStore('products',{keyPath:'key'});if(!db.objectStoreNames.contains('images'))db.createObjectStore('images',{keyPath:'productId'});};r.onsuccess=function(){if(done){try{r.result.close();}catch(e){}return;}done=true;clearTimeout(timer);resolve(r.result);};});}
-async function shopReadMap(){var db=await openShopV99();if(!db)return {products:{},images:{}};try{var result={};for(var si=0;si<2;si++){var n=si===0?'products':'images';if(!db.objectStoreNames.contains(n)){result[n]={};continue;}result[n]=await timeoutPromise(new Promise(function(resolve,reject){var storeName=n,tx=db.transaction(storeName,'readonly'),req=tx.objectStore(storeName).getAll(),done=false;req.onerror=function(){reject(req.error||new Error(storeName+'读取失败'));};req.onsuccess=function(){var out={};(req.result||[]).forEach(function(item){if(storeName==='images'&&item&&item.productId!==undefined)out[item.productId]=item;else if(item&&item.key!==undefined)out[item.key]=item.value;});resolve(out);};}),V99.shopTimeout,'ShopDB/'+n+'读取');}return result;}finally{try{db.close();}catch(e){}}}
-async function shopReplaceMap(desired){desired=desired||{products:{},images:{}};var db=await openShopV99();if(!db)throw new Error('ShopDB不可用');try{for(var si=0;si<2;si++){let n=si===0?'products':'images',obj=desired[n]&&typeof desired[n]==='object'?desired[n]:{};if(!db.objectStoreNames.contains(n))throw new Error('ShopDB缺少仓库 '+n);await new Promise(function(resolve,reject){var done=false,tx=db.transaction(n,'readwrite'),store=tx.objectStore(n),timer=setTimeout(function(){if(done)return;done=true;try{tx.abort();}catch(e){}reject(new Error('ShopDB/'+n+'恢复事务超时'));},V99.shopTimeout);tx.oncomplete=function(){if(done)return;done=true;clearTimeout(timer);resolve();};tx.onabort=tx.onerror=function(){if(done)return;done=true;clearTimeout(timer);reject(tx.error||new Error('ShopDB/'+n+'恢复失败'));};try{var get=store.getAllKeys();get.onsuccess=function(){var old=get.result||[],want=new Set(Object.keys(obj).map(String));old.forEach(function(k){if(!want.has(String(k)))store.delete(k);});Object.keys(obj).forEach(function(k){var val=obj[k];if(n==='images'){var rec=val&&typeof val==='object'?Object.assign({},val):{productId:k,img:val};if(rec.productId===undefined)rec.productId=k;store.put(rec);}else store.put({key:k,value:val});});};get.onerror=function(){try{tx.abort();}catch(e){}};}catch(e){clearTimeout(timer);try{tx.abort();}catch(_e){}reject(e);}});}}finally{try{db.close();}catch(e){}}}
-async function snapshotSelected(ids){var sel=selectedSet(ids),lf={},ls={},lfKeys=await lfKeysStrict(),lsKeys=[];for(var i=0;i<lfKeys.length;i++){var k=lfKeys[i],c=ChatBackup.classifyKey(k,'lf');if(c&&sel[c]){var v=await lfGetStrict(k);if(v!==null&&v!==undefined)lf[k]=clone(v)===null?v:clone(v);}}try{for(var j=0;j<localStorage.length;j++){var x=localStorage.key(j);if(x)lsKeys.push(x);}}catch(e){throw new Error('localStorage列举失败: '+errText(e));}for(var q=0;q<lsKeys.length;q++){var y=lsKeys[q],cc=ChatBackup.classifyKey(y,'ls');if(cc&&sel[cc])ls[y]=localStorage.getItem(y);}var shop=null;return {lf:lf,ls:ls,shop:shop,lfKeys:lfKeys.filter(function(k){var c=ChatBackup.classifyKey(k,'lf');return c&&sel[c];}),lsKeys:lsKeys.filter(function(k){var c=ChatBackup.classifyKey(k,'ls');return c&&sel[c];})};}
+async function snapshotSelected(ids){var sel=selectedSet(ids),lf={},ls={},lfKeys=await lfKeysStrict(),lsKeys=[];for(var i=0;i<lfKeys.length;i++){var k=lfKeys[i],c=ChatBackup.classifyKey(k,'lf');if(c&&sel[c]){var v=await lfGetStrict(k);if(v!==null&&v!==undefined)lf[k]=clone(v)===null?v:clone(v);}}try{for(var j=0;j<localStorage.length;j++){var x=localStorage.key(j);if(x)lsKeys.push(x);}}catch(e){throw new Error('localStorage列举失败: '+errText(e));}for(var q=0;q<lsKeys.length;q++){var y=lsKeys[q],cc=ChatBackup.classifyKey(y,'ls');if(cc&&sel[cc])ls[y]=localStorage.getItem(y);}return {lf:lf,ls:ls,lfKeys:lfKeys.filter(function(k){var c=ChatBackup.classifyKey(k,'lf');return c&&sel[c];}),lsKeys:lsKeys.filter(function(k){var c=ChatBackup.classifyKey(k,'ls');return c&&sel[c];})};}
 async function rollbackSnapshot(snap,ids){var sel=selectedSet(ids),now=await lfKeysStrict();for(var i=0;i<now.length;i++){var k=now[i],c=ChatBackup.classifyKey(k,'lf');if(c&&sel[c]&&!own(snap.lf,k))try{await timeoutPromise(localforage.removeItem(k),V99.writeTimeout,'回滚删除 '+k);}catch(e){}}for(var k2 of Object.keys(snap.lf)){await timeoutPromise(localforage.setItem(k2,snap.lf[k2]),V99.writeTimeout,'回滚写入 '+k2);}var lsNow=[];for(var j=0;j<localStorage.length;j++){var lk=localStorage.key(j);if(lk)lsNow.push(lk);}lsNow.forEach(function(k){var c=ChatBackup.classifyKey(k,'ls');if(c&&sel[c]&&!own(snap.ls,k))try{localStorage.removeItem(k);}catch(e){}});Object.keys(snap.ls).forEach(function(k){try{localStorage.setItem(k,snap.ls[k]);}catch(e){}});}
 var V99_RETIRED_DATA_PATTERNS=['dg_custom_data','dg_status_pool','weekly_fortune','daily_fortune','customWeather_','dg_header_bg','dg_overlay_bg','dg_overlay_bg_tint','_dgUserSalt','dailyFortuneNotes_','moyuRecords','currentMoyuRecord','moyuWorkSession','moyuLocations','moyuActivities','moyuUnread','petGameState','pixelPetGame','diaryTodos','diaryHabits','diaryHabitRecords','diaryPeriodRecords','diaryAnniversaries','diaryTodoCategories','diaryPeriodLastReminderDate','accountingRecords','accountingLabels','envelopeData','pending_envelope','moodCalendar','customMoodOptions','moodTrash','diviHistory','customTarotDeck','customTarotEnabled','groupChatSettings','gca_','chat_streak_data','tiSettings_showAvatar','tiSettings_customText','splashPledgeSigned_v3','callFeatureEnabled','callWindowPos','callWindowSize','callPillPos','callBgImageData','moments_data','moments_visitor_records','moments_friends','moments_reply_speed','moments_reply_count_min','moments_reply_count_max','moments_cover','moments_visitor_last_online','moments_visitor_last_viewed_count'];
 function isCurrentCallV2KeyV99(k){return /^CHAT_APP_V3_.+_(?:callRecordsV2|callSettingsV2)$/.test(String(k||''));}
@@ -21325,17 +21249,15 @@ async function v99ApplyBackup(data,opt){
    if(!Array.isArray(expectedMsgs))throw new Error('聊天恢复校验失败：备份当前会话 '+restoreSid+' 缺少 chatMessages');
    restoreMeta={restoreSessionId:restoreSid,sessionListKey:slKey,lastSessionKey:lastKey,messageKey:msgKey,messageCount:expectedMsgs.length,messageChecksum:checksum(expectedMsgs),sessionListChecksum:checksum(sl)};
  }
- var desiredShop=null,snap=await snapshotSelected(ids),writtenLf=[],writtenLs=[];
+ var snap=await snapshotSelected(ids),writtenLf=[],writtenLs=[];
  try{
    try{global.__xiaoshuRestoreInProgress=true;}catch(_e){}
    // 先写全部目标数据，不先删除旧数据；任何写失败都会回滚。
    for(var k of Object.keys(desiredLf)){let original=own(snap.lf,k)?snap.lf[k]:undefined;await lfSetStrict(k,desiredLf[k],async function(){try{if(original===undefined)await localforage.removeItem(k);else await localforage.setItem(k,original);}catch(e){}});writtenLf.push(k);}
    Object.keys(desiredLs).forEach(function(k){lsSetStrict(k,desiredLs[k]);writtenLs.push(k);});
-   if(sel.shop&&desiredShop)await shopReplaceMap(desiredShop);
    // 第一层：逐键写后复读。
    for(var r=0;r<writtenLf.length;r++){var g=await lfGetStrict(writtenLf[r]);if(checksum(g)!==checksum(desiredLf[writtenLf[r]]))throw new Error('IndexedDB写后校验不一致 '+writtenLf[r]);}
    for(var q=0;q<writtenLs.length;q++){if(localStorage.getItem(writtenLs[q])!==String(desiredLs[writtenLs[q]]))throw new Error('localStorage写后校验不一致 '+writtenLs[q]);}
-   if(sel.shop&&desiredShop){var gotShop=await shopReadMap();if(checksum(gotShop)!==checksum(desiredShop))throw new Error('商城数据库写后校验不一致');}
    // 第二层：聊天业务语义校验。必须确认启动会话和消息本体都还是备份里的那一份。
    if(restoreMeta){
      var gotSl=await lfGetStrict(restoreMeta.sessionListKey),gotLast=await lfGetStrict(restoreMeta.lastSessionKey),gotMsgs=await lfGetStrict(restoreMeta.messageKey);
@@ -21352,7 +21274,7 @@ async function v99ApplyBackup(data,opt){
      var finalSl=await lfGetStrict(restoreMeta.sessionListKey),finalLast=await lfGetStrict(restoreMeta.lastSessionKey),finalMsgs=await lfGetStrict(restoreMeta.messageKey);
      if(checksum(finalSl)!==restoreMeta.sessionListChecksum||String(finalLast||'')!==restoreMeta.restoreSessionId||!Array.isArray(finalMsgs)||finalMsgs.length!==restoreMeta.messageCount||checksum(finalMsgs)!==restoreMeta.messageChecksum)throw new Error('聊天恢复最终校验失败：清理旧键后状态发生变化');
    }
-   return {ok:true,selectedCategoryIds:ids,writtenLocalforage:writtenLf.length,writtenLocalStorage:writtenLs.length,shopRestored:!!sel.shop,warnings:pre.warnings||[],restoreSessionId:restoreMeta&&restoreMeta.restoreSessionId||null,restoredChatMessages:restoreMeta&&restoreMeta.messageCount||0,chatVerified:!!restoreMeta};
+   return {ok:true,selectedCategoryIds:ids,writtenLocalforage:writtenLf.length,writtenLocalStorage:writtenLs.length,warnings:pre.warnings||[],restoreSessionId:restoreMeta&&restoreMeta.restoreSessionId||null,restoredChatMessages:restoreMeta&&restoreMeta.messageCount||0,chatVerified:!!restoreMeta};
  }catch(e){
    try{await rollbackSnapshot(snap,ids);}catch(rb){try{global.__xiaoshuRestoreInProgress=false;}catch(_e){}throw new Error('恢复失败，而且自动回滚也失败。恢复错误：'+errText(e)+'；回滚错误：'+errText(rb));}
    try{global.__xiaoshuRestoreInProgress=false;}catch(_e){}
@@ -21367,15 +21289,14 @@ global.xiaoshuIsEmergencyRescueData=rescueTypesOk;
 function captureAllLocalStorage(errors){var out={};try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k!=null){try{out[k]=localStorage.getItem(k);}catch(e){errors.push('localStorage读取失败 '+k+': '+errText(e));}}}}catch(e){errors.push('localStorage列表读取失败: '+errText(e));}return out;}
 async function captureAllLf(errors){var out={};try{var keys=await timeoutPromise(localforage.keys(),1800,'IndexedDB键列表抢救');await Promise.all(keys.map(async function(k){try{var v=await timeoutPromise(localforage.getItem(k),900,'IndexedDB读取 '+k);if(v!==undefined)out[k]=clone(v)===null?v:clone(v);}catch(e){errors.push(errText(e));}}));}catch(e){errors.push(errText(e));}return out;}
 function rescueCorePayload(meta){var errors=[],main=captureMain(errors),frames=captureFrames(errors),mods=captureModuleMemory(errors),critical=captureCriticalLocalStorage(),ss=captureSessionStorage();return {type:'xiaoshu-emergency-rescue-v3',formatVersion:3,stage:'core',appName:'ChatApp',exportedAt:new Date().toISOString(),release:global.__kkk35gRelease||null,reason:meta&&meta.reason||'manual',failureDetail:meta&&meta.detail||null,priorityRule:'恢复时实时 mainMemory/frameMemory/moduleMemory 优先于 rawStorage 旧落盘状态',notice:'v99核心抢救包：同步抓取当前运行内存与关键WebStorage，不等待IndexedDB。',mainMemory:main,frameMemory:frames,moduleMemory:mods,rawStorage:{localStorage:critical,sessionStorage:ss,localforage:{}},liveCoverage:{main:true,moments:frames.moments!=null,chat2:frames.chat2!=null,interaction:frames.interaction!=null,interactionMedia:frames.interactionMedia!=null,stickers:mods.stickerMessageResources!=null,beautify:mods.beautify!=null,call:mods.callRecords!=null},errors:errors};}
-function normalizeRescueShopRaw(shop){shop=shop&&typeof shop==='object'?clone(shop)||{}:{};function toMap(storeName,v){if(!Array.isArray(v))return v&&typeof v==='object'?v:{};var out={};v.forEach(function(item){if(!item||typeof item!=='object')return;if(storeName==='images'&&item.productId!==undefined)out[String(item.productId)]=item;else if(item.key!==undefined)out[String(item.key)]=item.value;});return out;}return {products:toMap('products',shop.products),images:toMap('images',shop.images)};}
-function buildRescueLegacyV99(data){if(!rescueTypesOk(data))throw new Error('不是当前版本支持的紧急抢救包（仅支持v1/v2/v3）');var raw=data.rawStorage||{},mm=data.mainMemory||{},fm=data.frameMemory||{},mod=data.moduleMemory||{},lf=clone(raw.localforage||{})||{},ls=clone(raw.localStorage||{})||{},shop=normalizeRescueShopRaw(raw.shopDB||{}),pfx=mm.appPrefix||data.appPrefix||currentPrefix(),sid=mm.sessionId||data.sessionId||null;var ss=raw.sessionStorage||{};var fbp='__xs_lf__ChatApp_V3__chat_data__';Object.keys(ls).forEach(function(pk){if(String(pk).indexOf(fbp)!==0)return;try{var obj=JSON.parse(ls[pk]);if(obj&&Object.prototype.hasOwnProperty.call(obj,'v'))lf[String(pk).slice(fbp.length)]=obj.v;}catch(e){}delete ls[pk];});['xiaoshu_call_records_v1','ta_phone_call_records','xiaoshu_ta_phone_call_records_v1'].forEach(function(k){if(ss[k]&&!ls[k])ls[k]=ss[k];});
+function buildRescueLegacyV99(data){if(!rescueTypesOk(data))throw new Error('不是当前版本支持的紧急抢救包（仅支持v1/v2/v3）');var raw=data.rawStorage||{},mm=data.mainMemory||{},fm=data.frameMemory||{},mod=data.moduleMemory||{},lf=clone(raw.localforage||{})||{},ls=clone(raw.localStorage||{})||{},pfx=mm.appPrefix||data.appPrefix||currentPrefix(),sid=mm.sessionId||data.sessionId||null;var ss=raw.sessionStorage||{};var fbp='__xs_lf__ChatApp_V3__chat_data__';Object.keys(ls).forEach(function(pk){if(String(pk).indexOf(fbp)!==0)return;try{var obj=JSON.parse(ls[pk]);if(obj&&Object.prototype.hasOwnProperty.call(obj,'v'))lf[String(pk).slice(fbp.length)]=obj.v;}catch(e){}delete ls[pk];});['xiaoshu_call_records_v1','ta_phone_call_records','xiaoshu_ta_phone_call_records_v1'].forEach(function(k){if(ss[k]&&!ls[k])ls[k]=ss[k];});
  if(fm.moments)ls['moments_site_blank_v49_rebuild_baseline_same_layout']=JSON.stringify(fm.moments);if(fm.chat2)ls['fullRealKeyboardChat_v2']=JSON.stringify(fm.chat2);if(fm.interaction)ls['kkk35g_interaction_hub_v1']=JSON.stringify(fm.interaction);if(fm.interactionMedia&&typeof fm.interactionMedia==='object')Object.keys(fm.interactionMedia).forEach(function(ref){var data=fm.interactionMedia[ref];if(/^leafimg_[a-z0-9_]+$/i.test(String(ref))&&typeof data==='string'&&/^data:image\//i.test(data))lf['kkk35g_interaction_leaf_media_v1_'+ref]=data;});
  if(mm.sessionList!=null)lf[pfx+'sessionList']=mm.sessionList;
  if(!sid){var keys=Object.keys(lf).concat(Object.keys(ls));for(var i=0;i<keys.length&&!sid;i++){var k=String(keys[i]),m=k.match(new RegExp('^'+pfx.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(.+?)_(?:chatMessages|chatSettings|customReplies|little_home_state_v8)$'));if(m)sid=m[1];}if(!sid)sid=currentSid()||null;}
  if(sid)lf[pfx+'lastSessionId']=sid;if(sid&&mm.settings){if(mm.settings.myAvatar)lf[pfx+sid+'_myAvatar']=mm.settings.myAvatar;if(mm.settings.partnerAvatar)lf[pfx+sid+'_partnerAvatar']=mm.settings.partnerAvatar;}var map={messages:'chatMessages',settings:'chatSettings',partnerPersonas:'partnerPersonas',showPartnerNameInChat:'showPartnerNameInChat',customReplies:'customReplies',recentDrawnRepliesV1:'recentDrawnRepliesV1',customReplyGroups:'customReplyGroups',customPokes:'customPokes',myPokes:'myPokes',customPokeGroups:'customPokeGroups',customStatuses:'customStatuses',customMottos:'customMottos',customIntros:'customIntros',customStatusGroups:'customStatusGroups',customEmojis:'customEmojis',kaomojiLibrary:'kaomojiLibrary',kaomojiGroups:'kaomojiGroups',customVoices:'customVoices',customVoiceGroups:'customVoiceGroups',transferData:'transferData',myStickerLibrary:'myStickerLibrary',savedBackgrounds:'backgroundGallery',chatBackground:'chatBackground'};if(sid)Object.keys(map).forEach(function(k){if(mm[k]!=null)lf[pfx+sid+'_'+map[k]]=mm[k];});if(mm.customThemes!=null)lf[pfx+'customThemes']=mm.customThemes;if(mm.themeSchemes!=null)lf[pfx+'themeSchemes']=mm.themeSchemes;if(sid&&mod.stickerMessageResources)lf[pfx+sid+'_stickerMessageResourcesV1']=mod.stickerMessageResources;if(mod.beautify)Object.keys(mod.beautify).forEach(function(k){lf[k]=mod.beautify[k];});
  if(Array.isArray(mod.callRecords)){['xiaoshu_call_records_v1','ta_phone_call_records','xiaoshu_ta_phone_call_records_v1'].forEach(function(k){lf[k]=mod.callRecords;ls[k]=JSON.stringify(mod.callRecords);});}
  if(mod.taPhoneWallpaper){lf['xiaoshu_ta_phone_wallpaper_v5']=mod.taPhoneWallpaper;ls['xiaoshu_ta_phone_wallpaper_v5']=mod.taPhoneWallpaper;}
- return {type:'full',appName:'ChatApp',appPrefix:pfx,sessionId:sid,timestamp:data.exportedAt||null,localforage:lf,localStorage:ls,shopDB:shop};}
+ return {type:'full',appName:'ChatApp',appPrefix:pfx,sessionId:sid,timestamp:data.exportedAt||null,localforage:lf,localStorage:ls};}
 function rescuePanel(coreBlob,coreName,coreText){var old=document.getElementById('xiaoshu-rescue-download-offer');if(old){try{(old.__v99Urls||[]).forEach(function(u){URL.revokeObjectURL(u);});}catch(e){}old.remove();}var urls=[];function makeUrl(b){var u=URL.createObjectURL(b);urls.push(u);return u;}var overlay=document.createElement('div');overlay.id='xiaoshu-rescue-download-offer';overlay.style.cssText='position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.62);display:flex;align-items:flex-end;justify-content:center';var cu=makeUrl(coreBlob);overlay.innerHTML='<div style="width:100%;max-width:580px;max-height:90vh;overflow:auto;background:var(--secondary-bg,#fff);color:var(--text-primary,#111);border-radius:24px 24px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -16px 60px rgba(0,0,0,.35)"><div style="font-size:18px;font-weight:900">v99 数据急救：核心包已经生成</div><div style="font-size:12px;line-height:1.65;color:var(--text-secondary,#777);margin:7px 0 13px">这份核心包不等待 IndexedDB/ShopDB，先抓住当前内存。请至少先保存核心包；下面的“完整扩展包”会继续后台抢救，失败也不会影响核心包。</div><a id="v99-rescue-core-save" href="'+cu+'" download="'+coreName+'" style="display:flex;min-height:48px;align-items:center;justify-content:center;border-radius:14px;background:var(--accent-color,#4A90E2);color:#fff;text-decoration:none;font-weight:900">先保存核心抢救包 · '+humanBytes(coreBlob.size)+'</a><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><button id="v99-rescue-core-share" style="min-height:44px;border:1px solid #ddd;border-radius:13px;background:transparent;color:inherit">分享核心包</button><button id="v99-rescue-core-copy" style="min-height:44px;border:1px solid #ddd;border-radius:13px;background:transparent;color:inherit">复制核心JSON</button></div><div id="v99-rescue-full-slot" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-color,#ddd);font-size:12px">正在尝试完整扩展抢救：读取 IndexedDB…</div><button id="v99-rescue-close" style="width:100%;min-height:44px;margin-top:12px;border:1px solid #ddd;border-radius:13px;background:transparent;color:inherit">确认至少一份已拿到后关闭</button><div style="font-size:11px;color:#b15b20;margin-top:9px">在确认文件或复制文本已经离开当前网页前，不要刷新、清数据或重新部署。</div></div>';overlay.__v99Urls=urls;document.body.appendChild(overlay);var share=overlay.querySelector('#v99-rescue-core-share');share.onclick=async function(){try{var f=new File([coreBlob],coreName,{type:coreBlob.type});if(!navigator.share||navigator.canShare&&!navigator.canShare({files:[f]}))throw new Error('当前浏览器不支持文件分享');await navigator.share({files:[f],title:'传讯核心抢救包'});}catch(e){alert('分享没有完成：'+errText(e));}};overlay.querySelector('#v99-rescue-core-copy').onclick=async function(){try{if(!navigator.clipboard||!navigator.clipboard.writeText)throw new Error('剪贴板API不可用');await navigator.clipboard.writeText(coreText);alert('核心抢救JSON已复制，请立即粘贴到文本文件/笔记保存。');}catch(e){alert('复制失败：'+errText(e));}};overlay.querySelector('#v99-rescue-close').onclick=function(){urls.forEach(function(u){try{URL.revokeObjectURL(u);}catch(e){}});overlay.remove();};return {overlay:overlay,addFull:function(blob,name,text,errors){var u=makeUrl(blob),slot=overlay.querySelector('#v99-rescue-full-slot');if(!slot)return;slot.innerHTML='<div style="font-weight:900;margin-bottom:7px">完整扩展抢救包已生成'+(errors&&errors.length?'（有'+errors.length+'项读取异常）':'')+'</div><a href="'+u+'" download="'+name+'" style="display:flex;min-height:46px;align-items:center;justify-content:center;border-radius:13px;background:#111;color:#fff;text-decoration:none;font-weight:900">保存完整扩展包 · '+humanBytes(blob.size)+'</a><button id="v99-rescue-full-copy" style="width:100%;min-height:42px;margin-top:7px;border:1px solid #ddd;border-radius:12px;background:transparent;color:inherit">复制完整JSON</button>';slot.querySelector('#v99-rescue-full-copy').onclick=async function(){try{await navigator.clipboard.writeText(text);alert('完整抢救JSON已复制。');}catch(e){alert('复制失败：'+errText(e));}};},fullError:function(e){var slot=overlay.querySelector('#v99-rescue-full-slot');if(slot)slot.innerHTML='<b>完整扩展抢救没有完成。</b><br>'+errText(e)+'<br>核心包仍然有效，请先保存核心包。';}};}
 global.xiaoshuEmergencyRescueExport=function(meta){meta=meta||{};var core=rescueCorePayload(meta),coreText='\uFEFF'+JSON.stringify(core),coreBlob=new Blob([coreText],{type:'application/json;charset=utf-8'}),stamp=nowStamp(),coreName='chatapp-EMERGENCY-CORE-'+stamp+'.json',panel=rescuePanel(coreBlob,coreName,coreText);if(typeof showNotification==='function')showNotification('核心抢救包已立即生成；请先保存。正在后台读取完整存储…','warning',9000);var extended=(async function(){var errors=(core.errors||[]).slice(),lfP=captureAllLf(errors),parts=await Promise.all([lfP]),full=clone(core);full.stage='full';full.notice='v99完整扩展抢救包：核心实时内存 + 可读的全部 localStorage/sessionStorage/IndexedDB。';full.rawStorage={localStorage:captureAllLocalStorage(errors),sessionStorage:captureSessionStorage(),localforage:parts[0]||{}};full.errors=errors;var text='\uFEFF'+JSON.stringify(full),blob=new Blob([text],{type:'application/json;charset=utf-8'}),name='chatapp-EMERGENCY-FULL-'+stamp+'.json';panel.addFull(blob,name,text,errors);if(typeof showNotification==='function')showNotification('完整扩展抢救包已生成'+(errors.length?'，有'+errors.length+'项读取异常':'') ,errors.length?'warning':'success',8000);return {ok:true,name:name,size:blob.size,payload:full,errors:errors};})().catch(function(e){panel.fullError(e);if(typeof showNotification==='function')showNotification('完整扩展抢救失败，但核心抢救包已生成：'+errText(e),'warning',9000);return {ok:false,error:e};});return Promise.resolve({ok:true,coreName:coreName,coreSize:coreBlob.size,payload:core,extendedPromise:extended});};
 
@@ -21737,6 +21658,6 @@ try{if(localStorage.getItem(marker)==='1')return;}catch(e){}
 var keys=['shop_balance','shop_partner_balance','shop_search_history','shop_gift_cabinet','shop_products','shop_cart','shop_orders','shop_category','shop_category_page','coupon_wallet','xiaoshu_shop_current_category_v1','xiaoshu_shop_category_page_v1','xiaoshu_coupon_wallet_v1','xiaoshu_shop_deleted_defaults_v1','xiaoshu_shop_custom_tags_v1'];
 try{keys.forEach(function(k){localStorage.removeItem(k);});}catch(e){}
 try{if(window.localforage&&typeof localforage.removeItem==='function')keys.forEach(function(k){try{localforage.removeItem(k);}catch(_e){}});}catch(e){}
-try{if(window.indexedDB){var r=indexedDB.deleteDatabase('ShopDB');r.onsuccess=r.onerror=r.onblocked=function(){try{localStorage.setItem(marker,'1');}catch(e){}};}else localStorage.setItem(marker,'1');}catch(e){try{localStorage.setItem(marker,'1');}catch(_e){}}
+try{if(window.indexedDB){var r=indexedDB.deleteDatabase('ShopDB');r.onsuccess=function(){try{localStorage.setItem(marker,'1');}catch(e){}};r.onerror=r.onblocked=function(){};}else localStorage.setItem(marker,'1');}catch(e){}
 })();</script>
 </body></html>

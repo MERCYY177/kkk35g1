@@ -1,0 +1,165 @@
+name: Retire Shop leftovers
+
+on:
+  push:
+    paths:
+      - '.github/workflows/retire-shop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch index.html
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          original = s
+          changes = []
+
+          def exact(old, new, label, min_count=1, max_count=None):
+              global s
+              c = s.count(old)
+              if c < min_count:
+                  raise SystemExit(f'{label}: expected at least {min_count}, got {c}')
+              if max_count is not None and c > max_count:
+                  raise SystemExit(f'{label}: expected at most {max_count}, got {c}')
+              s = s.replace(old, new)
+              changes.append((label, c))
+
+          def rx(pattern, repl, label, min_count=1, max_count=None, flags=0):
+              global s
+              s2, c = re.subn(pattern, repl, s, flags=flags)
+              if c < min_count:
+                  raise SystemExit(f'{label}: expected at least {min_count}, got {c}')
+              if max_count is not None and c > max_count:
+                  raise SystemExit(f'{label}: expected at most {max_count}, got {c}')
+              s = s2
+              changes.append((label, c))
+
+          # 1-5: TA phone entry + dispatch cleanup
+          exact("+btn('gift','礼物柜')", "", 'remove gift home button')
+          exact("+btn('wallet','卡包')", "", 'remove wallet home button')
+          exact("if(key==='gift')return callApi('showGiftCabinetApp');", "", 'remove gift route')
+          exact("if(key==='wallet')return renderWallet();", "", 'remove wallet route')
+          exact("'收藏':'collect','礼物柜':'gift','卡包':'wallet','朋友圈':'moments'", "'收藏':'collect','朋友圈':'moments'", 'remove gift/wallet system map')
+
+          # 6-10: active gift/wallet data + album dependency
+          exact("var WALLET_KEY='xiaoshu_coupon_wallet_v1';\n", "", 'remove wallet key')
+          rx(r"\s*function giftsData\(\)\{var gifts=loadJSON\('shop_gift_cabinet',\[\]\)\|\|\[\];return Array\.isArray\(gifts\)\?gifts:\[\];\}", "", 'remove gift storage reader', max_count=1)
+          rx(r"\s*function renderWallet\(\)\{var t=enterApp\(\);if\(!t\)return false;var arr=loadJSON\(WALLET_KEY,\[\]\);if\(!Array\.isArray\(arr\)\)arr=\[\];t\.innerHTML=.*?;return false;\}", "", 'remove wallet renderer', max_count=1)
+          exact("giftsData().forEach(function(g){if(g.img)imgs.push(g.img);if(g.image)imgs.push(g.image);});", "", 'remove album gift dependency')
+          exact("if(t==='gifts')return callApi('showGiftCabinetApp');", "", 'remove legacy gifts tab route')
+
+          # 11-15: gift cabinet UI renderer + API export + backup registry/architecture
+          rx(r"\s*function giftTime\(g\)\{return g\.receivedAt\|\|g\.deliveredAt\|\|g\.completedAt\|\|g\.time\|\|g\.createdAt\|\|g\.boughtAt\|\|g\.orderTime\|\|0;\}\s*function renderGifts\(\)\{.*?return false;\}", "", 'remove gift cabinet renderer', max_count=1, flags=re.S)
+          exact("\napi.showGiftCabinetApp=renderGifts;", "", 'remove gift cabinet API export')
+          rx(r"\n\s*\{\n\s*id:'shop', label:'历史订单 / 礼物柜数据（兼容）', flag:'shop',\n\s*lfNeedles:\[\],\n\s*lsExact:\['shop_balance','shop_partner_balance','shop_search_history','shop_gift_cabinet','shop_products','shop_cart','shop_orders','shop_category','shop_category_page','coupon_wallet','xiaoshu_shop_current_category_v1','xiaoshu_shop_category_page_v1','xiaoshu_coupon_wallet_v1','xiaoshu_shop_deleted_defaults_v1','xiaoshu_shop_custom_tags_v1'\],\n\s*lsPrefixes:\[\], shopDB:true\n\s*\},", "", 'remove Shop backup registry entry', max_count=2)
+          exact("\n shop:{id:'shop',live:'historical-storage-only',stores:['shopDB','ls']},", "", 'remove Shop architecture entry')
+          exact("if(shop&&Object.keys(shop).some(function(s){return shop[s]&&Object.keys(shop[s]).length;}))seen.shop=1;\n", "", 'stop Shop category discovery')
+
+          # 16-20: normal backup no longer captures/emits ShopDB
+          rx(r"\n\s*var shop=\{\};\n\s*var shopCat=ACTIVE_BACKUP_REGISTRY\.filter\(function\(c\)\{return c\.id==='shop';\}\)\[0\];\n\s*if\(flagsPermit\(shopCat,flags\)\)\{\n\s*try\{shop=await readShopStrict\(\);\}catch\(e2\)\{errors\.push\('商城数据库读取失败: '\+stringErr\(e2\)\);\}\n\s*\}", "\n  var shop={};", 'disable normal ShopDB capture', max_count=2)
+          exact("Object.keys(shop).forEach(function(k){shopOut[k]=extractMediaTree(shop[k],state);});\n", "", 'remove Shop media extraction')
+          exact("categories:cats,localforageKeys:Object.keys(lfOut).sort(),localStorageKeys:Object.keys(lsOut).sort(),\n    shopStores:Object.keys(shopOut).sort(),mediaCount:", "categories:cats,localforageKeys:Object.keys(lfOut).sort(),localStorageKeys:Object.keys(lsOut).sort(),\n    mediaCount:", 'remove Shop stores from manifest')
+          exact(",localStorage:lsOut,shopDB:shopOut};", ",localStorage:lsOut};", 'remove ShopDB from normal backup payload')
+          exact(",localStorage:payload.localStorage,shopDB:payload.shopDB,mediaIndex:idx", ",localStorage:payload.localStorage,mediaIndex:idx", 'remove ShopDB from ZIP body')
+
+          # 21-25: V99/current backup no longer advertises or validates active Shop data
+          exact("if(payload.shopDB&&Object.keys(payload.shopDB).some(function(s){return payload.shopDB[s]&&Object.keys(payload.shopDB[s]).length;}))seen.shop=1;", "", 'remove v99 Shop category detection')
+          exact(",shop:flags.inclShop!==false", "", 'remove v99 Shop flag')
+          exact(";if(allowed.shop===false)payload.shopDB={products:{},images:{}};", ";", 'remove v99 Shop flag action')
+          exact("payload.manifest.shopStores=Object.keys(payload.shopDB||{}).sort();", "delete payload.manifest.shopStores;", 'remove v99 Shop stores manifest')
+          exact(",shopDB:checksum(payload.shopDB||{})", "", 'remove v99 Shop checksum generation')
+
+          # 26-30: v99 export/preflight + selective restore stop touching Shop
+          exact(",shopDB:payload.shopDB,mediaIndex:idx", ",mediaIndex:idx", 'remove v99 ZIP ShopDB field')
+          exact("if(pc.shopDB&&pc.shopDB!==checksum(data.shopDB||{}))pre.errors.push('普通数据校验失败：ShopDB 内容checksum不一致');", "", 'remove v99 Shop checksum verification')
+          exact("var desiredShop=sel.shop?ChatBackup.inlineMediaTree(clean.shopDB||{},store):null,", "var desiredShop=null,", 'disable v99 Shop restore target')
+          exact("var shop=sel.shop?await shopReadMap():null;", "var shop=null;", 'disable v99 Shop snapshot')
+          exact("if(sel.shop&&snap.shop)await shopReplaceMap(snap.shop);", "", 'disable v99 Shop rollback')
+
+          # 31-35: emergency rescue no longer waits for/captures ShopDB
+          exact("notice:'v99核心抢救包：同步抓取当前运行内存与关键WebStorage，不等待IndexedDB/ShopDB。'", "notice:'v99核心抢救包：同步抓取当前运行内存与关键WebStorage，不等待IndexedDB。'", 'update rescue core notice')
+          exact("rawStorage:{localStorage:critical,sessionStorage:ss,localforage:{},shopDB:{}}", "rawStorage:{localStorage:critical,sessionStorage:ss,localforage:{}}", 'remove ShopDB from rescue core payload')
+          exact("正在尝试完整扩展抢救：读取 IndexedDB / ShopDB…", "正在尝试完整扩展抢救：读取 IndexedDB…", 'update rescue panel status')
+          exact("var errors=(core.errors||[]).slice(),lfP=captureAllLf(errors),shopP=(async function(){try{return await shopReadMap();}catch(e){errors.push('ShopDB抢救读取失败: '+errText(e));return {};}})(),parts=await Promise.all([lfP,shopP]),full=clone(core);", "var errors=(core.errors||[]).slice(),lfP=captureAllLf(errors),parts=await Promise.all([lfP]),full=clone(core);", 'remove ShopDB emergency read')
+          exact("full.notice='v99完整扩展抢救包：核心实时内存 + 可读的全部 localStorage/sessionStorage/IndexedDB/ShopDB。';full.rawStorage={localStorage:captureAllLocalStorage(errors),sessionStorage:captureSessionStorage(),localforage:parts[0]||{},shopDB:parts[1]||{}};", "full.notice='v99完整扩展抢救包：核心实时内存 + 可读的全部 localStorage/sessionStorage/IndexedDB。';full.rawStorage={localStorage:captureAllLocalStorage(errors),sessionStorage:captureSessionStorage(),localforage:parts[0]||{}};", 'remove ShopDB emergency payload')
+
+          # 36-40: old rescue path + CSS + one-time physical storage cleanup
+          exact("var asyncParts=await Promise.all([captureLocalForage(errors),captureShop(errors)]);", "var asyncParts=await Promise.all([captureLocalForage(errors)]);", 'remove legacy rescue Shop capture')
+          exact("notice:'灾难抢救包。生成过程不调用 saveData、不清理、不迁移、不覆盖当前数据；IndexedDB/ShopDB读取均带超时。'", "notice:'灾难抢救包。生成过程不调用 saveData、不清理、不迁移、不覆盖当前数据；IndexedDB读取带超时。'", 'update legacy rescue notice')
+          exact("rawStorage:{localStorage:ls,localforage:asyncParts[0]||{},shopDB:asyncParts[1]||{}}", "rawStorage:{localStorage:ls,localforage:asyncParts[0]||{}}", 'remove ShopDB from legacy rescue payload')
+          exact(",.shop-modal:not(.active):not(.open)", "", 'remove shop-modal CSS compatibility', min_count=1)
+
+          cleanup = r'''
+<script id="xiaoshu-retired-commerce-cleanup-v1">(function(){
+'use strict';
+var marker='xiaoshu_retired_commerce_cleanup_v1';
+try{if(localStorage.getItem(marker)==='1')return;}catch(e){}
+var keys=['shop_balance','shop_partner_balance','shop_search_history','shop_gift_cabinet','shop_products','shop_cart','shop_orders','shop_category','shop_category_page','coupon_wallet','xiaoshu_shop_current_category_v1','xiaoshu_shop_category_page_v1','xiaoshu_coupon_wallet_v1','xiaoshu_shop_deleted_defaults_v1','xiaoshu_shop_custom_tags_v1'];
+try{keys.forEach(function(k){localStorage.removeItem(k);});}catch(e){}
+try{if(window.localforage&&typeof localforage.removeItem==='function')keys.forEach(function(k){try{localforage.removeItem(k);}catch(_e){}});}catch(e){}
+try{if(window.indexedDB){var r=indexedDB.deleteDatabase('ShopDB');r.onsuccess=r.onerror=r.onblocked=function(){try{localStorage.setItem(marker,'1');}catch(e){}};}else localStorage.setItem(marker,'1');}catch(e){try{localStorage.setItem(marker,'1');}catch(_e){}}
+})();</script>
+'''
+          if 'xiaoshu-retired-commerce-cleanup-v1' not in s:
+              pos = s.lower().rfind('</body>')
+              if pos < 0:
+                  raise SystemExit('cannot find </body> for one-time cleanup')
+              s = s[:pos] + cleanup + s[pos:]
+              changes.append(('add one-time legacy commerce storage cleanup', 1))
+
+          # Preserve historical product-card parsing in collections deliberately.
+          # It is read-only and does not read Shop storage.
+
+          if s == original:
+              raise SystemExit('no changes produced')
+          p.write_text(s, encoding='utf-8')
+          print('Applied', len(changes), 'logical patch groups:')
+          for i,(label,count) in enumerate(changes,1):
+              print(f'{i:02d}. {label} (x{count})')
+          PY
+
+      - name: Sanity checks
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          forbidden=[
+            "btn('gift','礼物柜')","btn('wallet','卡包')","showGiftCabinetApp","var WALLET_KEY=",
+            "loadJSON('shop_gift_cabinet'","id:'shop', label:'历史订单 / 礼物柜数据（兼容）'",
+            "shop:{id:'shop',live:'historical-storage-only'"
+          ]
+          bad=[x for x in forbidden if x in s]
+          if bad:
+              raise SystemExit('Shop retirement sanity check failed: '+repr(bad))
+          required=['收藏','朋友圈','相册','相机','电话','短信','callRecordsV2','xiaoshu-retired-commerce-cleanup-v1']
+          missing=[x for x in required if x not in s]
+          if missing:
+              raise SystemExit('Required feature markers missing: '+repr(missing))
+          print('Sanity checks passed')
+          PY
+
+      - name: Commit patched index
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No index change to commit'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'refactor: retire Shop remnants and TA gift wallet'
+          git push

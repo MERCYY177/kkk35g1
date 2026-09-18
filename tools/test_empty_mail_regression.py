@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import json
-import re
 import subprocess
 import tempfile
 
@@ -9,8 +7,11 @@ html = Path('index.html').read_text(encoding='utf-8')
 
 
 def extract_function(name: str) -> str:
-    marker = f'function {name}('
-    start = html.find(marker)
+    async_marker = f'async function {name}('
+    plain_marker = f'function {name}('
+    start = html.find(async_marker)
+    if start < 0:
+        start = html.find(plain_marker)
     if start < 0:
         raise AssertionError(f'missing function: {name}')
     brace = html.find('{', start)

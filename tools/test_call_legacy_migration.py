@@ -4,10 +4,12 @@ import subprocess, tempfile
 
 html = Path('index.html').read_text(encoding='utf-8')
 
-def extract_function(name):
+def extract_function(name, optional=False):
     marker = f'function {name}('
     start = html.find(marker)
     if start < 0:
+        if optional:
+            return ''
         raise AssertionError(f'missing function: {name}')
     return_start = start - 6 if start >= 6 and html[start-6:start] == 'async ' else start
     brace = html.find('{', start)
@@ -27,11 +29,13 @@ def extract_function(name):
     raise AssertionError(f'unclosed function: {name}')
 
 normalize = extract_function('normalizeRecords')
+legacy_filter = extract_function('legacyRecordsForSession', optional=True)
 hydrate = extract_function('hydrateRecords')
 
 node = f"""
 const assert = require('assert');
 {normalize}
+{legacy_filter}
 {hydrate}
 const RECORD_SUFFIX='callRecordsV2';
 const LEGACY_KEYS=['xiaoshu_call_records_v1','ta_phone_call_records','xiaoshu_ta_phone_call_records_v1'];

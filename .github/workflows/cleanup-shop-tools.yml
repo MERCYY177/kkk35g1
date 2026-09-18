@@ -1,0 +1,46 @@
+name: Cleanup temporary Shop migration tooling
+
+on:
+  push:
+    paths:
+      - '.github/workflows/cleanup-shop-tools.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reverify before cleanup
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          zero=['shopDB','openShopDb','readShopStrict','writeShopStrict','clearShopStrict','openShopV99','shopReadMap','shopReplaceMap','captureShop','captureShopCore','normalizeShopData','normalizeRescueShopRaw','shopExpected','filtered.shop','shopOut','desiredShop','shopRestored','礼物柜','卡包','商城','.shop-modal','inclShop','sel.shop','seen.shop',"id:'shop'","shop:{id:'shop'","case 'shop'",'raw.shopDB','data.shopDB','.fa-shopping-cart::before','.fa-store::before','.fa-wallet::before','.fa-cart-plus::before','.fa-ticket-alt::before']
+          bad={x:s.count(x) for x in zero if s.count(x)}
+          if bad: raise SystemExit('Unexpected active Shop residues: '+repr(bad))
+          if s.count('ShopDB')!=1 or "indexedDB.deleteDatabase('ShopDB')" not in s: raise SystemExit('Retirement migration invariant failed')
+          print('SHOP_RETIREMENT_OK_BEFORE_CLEANUP')
+          PY
+          python tools/validate_inline_js.py
+      - name: Remove temporary migration tooling
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -f \
+            .github/workflows/retire-shop-v2.yml \
+            .github/workflows/audit-shop.yml \
+            .github/workflows/cleanup-shop-tools.yml \
+            tools/retire_shop.py \
+            tools/retire_shop_run.py \
+            tools/retire_shop_residuals.py \
+            tools/audit_shop.py \
+            tools/final_shop_trim.py \
+            tools/validate_inline_js.py
+          git commit -m 'chore: remove temporary Shop migration tooling'
+          git push

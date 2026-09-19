@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+from pathlib import Path
+from html.parser import HTMLParser
+from urllib.parse import urlparse
+import collections, os, re
+
+ROOT=Path('.')
+INDEX=ROOT/'index.html'
+html=INDEX.read_text(encoding='utf-8')
+errors=[]; warnings=[]
+
+def err(msg): errors.append(msg)
+def warn(msg): warnings.append(msg)
+
+class AuditParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.ids=[]; self.refs=[]; self.external_runtime=[]
+    def handle_starttag(self, tag, attrs):
+        d=dict(attrs)
+        if d.get('id'): self.ids.append(d['id'])
+        for attr in ('src','href'):
+            v=d.get(attr)
+            if not v: continue
+            self.refs.append((tag,attr,v))
+            if v.startswith(('http://','https://')):
+                if tag=='script' or (tag=='link' and ('stylesheet' in (d.get('rel') or '') if isinstance(d.get('rel'),str) else False)):
+                    self.external_runtime.append((tag,v))
+
+p=AuditParser(); p.feed(html)
+
+# Static DOM duplicate IDs.
+c=collections.Counter(p.ids)
+dups={k:v for k,v in c.items() if v>1}
+if dups: err('duplicate static DOM ids: '+', '.join(f'{k} x{v}' for k,v in sorted(dups.items())))
+
+# Local src/href references must exist. Ignore fragments/protocol URLs/data/blob/javascript/mail/tel.
+def clean_local(v):
+    v=v.strip().strip('"\'')
+    if not v or v.startswith(('#','data:','blob:','javascript:','mailto:','tel:','http://','https://','//')): return None
+    v=v.split('#',1)[0].split('?',1)[0]
+    if not v: return None
+    # GitHub project Pages root-absolute paths are suspicious because they resolve outside /kkk35g1/.
+    if v.startswith('/'):
+        warn(f'root-absolute local reference may bypass project base path: {v}')
+        v=v.lstrip('/')
+    return v
+
+seen_missing=set()
+for tag,attr,v in p.refs:
+    local=clean_local(v)
+    if local and not (ROOT/local).exists():
+        key=(tag,attr,v)
+        if key not in seen_missing:
+            seen_missing.add(key); err(f'missing local {tag}[{attr}] resource: {v}')
+
+# CSS url(...) references, including URLs inside JS strings used as CSS presets.
+for raw in re.findall(r'url\(([^)]+)\)', html, re.I):
+    local=clean_local(raw)
+    if local and not (ROOT/local).exists():
+        err(f'missing local CSS url resource: {raw.strip()}')
+
+# Built-in theme localization invariants.
+start=html.find('const BUILTIN_KEYBOARD_BEAUTY_STYLES='); end=html.find('let editingKeyboardBeautyId',start)
+if start<0 or end<=start: err('cannot locate built-in theme registry')
+else:
+    region=html[start:end]
+    for domain in ('s3.bmp.ovh','i.postimg.cc','img.heliar.top','nos.netease.com'):
+        if domain in region: err(f'built-in theme still depends on {domain}')
+    if 'data:image/' in region: err('built-in theme data URI bloat returned')
+    refs=re.findall(r'assets/builtin-theme/theme-[0-9a-f]{16}\.(?:png|jpg|jpeg|gif|webp|svg)',region)
+    if len(refs)!=28: err(f'built-in theme local ref count changed: {len(refs)} (expected 28)')
+    if len(set(refs))!=18: err(f'built-in theme unique asset count changed: {len(set(refs))} (expected 18)')
+
+# Size regression.
+size=INDEX.stat().st_size
+if size>=2_500_000: err(f'index.html size regression: {size} bytes')
+
+# Critical fixes from the previous pass must still exist.
+required={
+ 'mail empty-pool guard':'if(!pool.length)return[]',
+ 'mail phrase-topic matching':'terms.some(function(term){return text.indexOf(term)>=0})',
+ 'mail punctuation preservation':'if(/[。！？!?….]$/.test(text))return text',
+ 'neutral proactive letter title':"title:'一封来信'",
+ 'adaptive letter grouping':'buf.length+line.length>70',
+ 'sticker-only scheduler':'if (settings.autoSendEnabled || settings.autoStickerEnabled)',
+ 'sticker miss does not fall through to text':'if (settings.autoSendEnabled) simulateReply();',
+ 'legacy call ownership helper':'function legacyRecordsForSession',
+ 'voice incoming guard':"requestedKind==='voice'&&!cfg.allowVoiceIncoming",
+ 'video incoming guard':"requestedKind==='video'&&!cfg.allowVideoIncoming",
+ 'menu aria semantics':"b.setAttribute('aria-haspopup','menu')",
+ 'menu Escape handling':"e.key==='Escape'",
+}
+for label,token in required.items():
+    if token not in html: err(f'critical regression: {label}')
+
+# Backup/save coverage for state introduced or relied upon in this project.
+for token in ('mailboxLettersV1','callRecordsV2','callSettingsV2'):
+    if token not in html: err(f'expected persistence/backup key missing from source: {token}')
+
+# Suspicious production leftovers / dynamic-code primitives.
+for pat,label in [
+    (r'\beval\s*\(', 'eval() present'),
+    (r'\bnew\s+Function\s*\(', 'new Function() present'),
+    (r'document\.write\s*\(', 'document.write() present'),
+]:
+    n=len(re.findall(pat,html))
+    if n: warn(f'{label}: {n} occurrence(s)')
+
+# External runtime dependencies are not an automatic failure, but report them explicitly.
+if p.external_runtime:
+    uniq=[]
+    for x in p.external_runtime:
+        if x not in uniq: uniq.append(x)
+    warn('external runtime script/stylesheet dependencies: '+ ' | '.join(v for _,v in uniq))
+
+# Common debug leftovers. Console calls are warnings, not failures.
+for term in ('TODO','FIXME'):
+    n=html.count(term)
+    if n: warn(f'{term} markers in production HTML: {n}')
+console_n=len(re.findall(r'console\.(?:log|debug|warn|error)\s*\(',html))
+if console_n: warn(f'console calls in production HTML: {console_n}')
+
+print('REAUDIT SUMMARY')
+print(f'index_bytes={size}')
+print(f'static_ids={len(p.ids)} unique_static_ids={len(set(p.ids))}')
+print(f'html_src_href_refs={len(p.refs)}')
+print(f'errors={len(errors)} warnings={len(warnings)}')
+for x in errors: print('ERROR:',x)
+for x in warnings: print('WARNING:',x)
+if errors: raise SystemExit(1)

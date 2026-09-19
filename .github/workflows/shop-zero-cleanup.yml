@@ -57,19 +57,12 @@ jobs:
           for p in css_patterns:
               s, k = re.subn(p, '', s)
               css_removed += k
-          print('product compatibility CSS rules removed:', css_removed)
+          assert css_removed == 6, f'expected 6 standalone product CSS rules, removed {css_removed}'
 
-          if 'xs-product-' in s:
-              print('=== remaining xs-product contexts after simple CSS removal ===')
-              for lineno, line in enumerate(s.splitlines(), 1):
-                  if 'xs-product-' in line:
-                      text = line.strip()
-                      while 'xs-product-' in text:
-                          i = text.index('xs-product-')
-                          lo = max(0, i - 240)
-                          hi = min(len(text), i + 520)
-                          print(f'L{lineno}: ' + text[lo:hi])
-                          text = text[i + len('xs-product-'):]
+          # Five product selectors were mixed into shared TA-phone theme selector lists.
+          # Remove only those selector entries, preserving the shared declarations.
+          s, list_removed = re.subn(r'#ta-phone-container \.xs-product-(?:thumb|row|name|price),', '', s)
+          assert list_removed == 5, f'expected 5 shared-list product selectors, removed {list_removed}'
 
           s = re.sub(r'\n{4,}', '\n\n\n', s)
 
@@ -97,6 +90,8 @@ jobs:
               raise SystemExit('cleanup made no changes')
           path.write_text(s, encoding='utf-8')
           print('zero-Shop cleanup complete')
+          print('standalone product CSS removed:', css_removed)
+          print('shared-list product selectors removed:', list_removed)
           print('bytes:', len(before.encode('utf-8')), '->', len(s.encode('utf-8')))
           PY
       - name: Commit cleanup

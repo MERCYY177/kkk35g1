@@ -1,0 +1,51 @@
+name: Audit removed chat commerce features
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-unused-chat-commerce.yml'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify zero residual and theme data integrity
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, json
+          s=Path('index.html').read_text(encoding='utf-8')
+          forbidden=[
+            'transferData','savedTransferData','redPacket','red-packet','red-packet-card','transfer-bubble',
+            'xiaoshu-coupon-chat-card','relation-coupon','renderRedPacketMessage','showRedPacketReceiveModal',
+            'trySystemRedPacket','tryCollectPendingRedPacket','checkRedPacketExpiry','红包','转账',
+            'xsGetChatCardKind','xsWhitelistedChatCardKind','xsSanitizeWhitelistedCardHtml',
+            'xiaoshu-card-message-outer','card-message-wrapper'
+          ]
+          bad={x:s.count(x) for x in forbidden if s.count(x)}
+          print('forbidden residuals:',bad)
+          required=['voice-message-bubble','message-image','message-video','xs-quote-box','收藏','朋友圈','相册','相机','电话','短信','callRecordsV2','xiaoshu-exit-button-style']
+          missing=[x for x in required if x not in s]
+          print('required missing:',missing)
+          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
+          if not m: raise SystemExit('builtin bubble data block missing')
+          bubbles=json.loads(m.group(1))
+          m2=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);',s,re.S)
+          if not m2: raise SystemExit('builtin keyboard data block missing')
+          keyboard=json.loads(m2.group(1))
+          print('builtin bubble themes:',len(bubbles),'keyboard themes:',len(keyboard))
+          css_residual=[]
+          for group,items,key in [('bubble',bubbles,'chatCss'),('keyboard',keyboard,'css')]:
+              for idx,item in enumerate(items):
+                  css=str(item.get(key,'') or '')
+                  for token in ('.red-packet-card','.transfer-bubble','.xiaoshu-card-message-outer','.xiaoshu-coupon-chat-card'):
+                      if token in css: css_residual.append((group,idx,token))
+          print('theme selector residuals:',css_residual[:20])
+          if bad: raise SystemExit('retired feature residues remain: '+repr(bad))
+          if missing: raise SystemExit('current feature regression: '+repr(missing))
+          if css_residual: raise SystemExit('retired selectors remain in theme data')
+          print('FINAL UNUSED CHAT COMMERCE AUDIT GREEN')
+          PY

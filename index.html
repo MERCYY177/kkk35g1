@@ -2923,7 +2923,7 @@ tabs: [
 };
 function xsIsLiteBackupGhostMessage(m) {
 if (!m || typeof m !== 'object') return false;
-const hasRealMedia = !!(m.image || m.imageData || m.video || m.videoBlobKey || m.voiceUrl || m.audioUrl || m.fileUrl || m.shareData || m.productData || m.cardData || m.orderData);
+const hasRealMedia = !!(m.image || m.imageData || m.video || m.videoBlobKey || m.voiceUrl || m.audioUrl || m.fileUrl);
 const hasRealText = String(m.text || m.html || m.content || '').trim().length > 0;
 return !!m._media && !hasRealMedia && !hasRealText;
 }
@@ -2977,7 +2977,7 @@ return 'XS_CHAT_TAIL_FULL_default';
 function xsMsgHasRealContent(m) {
 if (!m || typeof m !== 'object') return false;
 if (typeof xsIsLiteBackupGhostMessage === 'function' && xsIsLiteBackupGhostMessage(m)) return false;
-if (m.stickerId || m.image || m.imageData || m.video || m.videoBlobKey || m.voiceUrl || m.audioUrl || m.fileUrl || m.shareData || m.productData || m.cardData || m.orderData || m.redPacket || m.transfer) return true;
+if (m.stickerId || m.image || m.imageData || m.video || m.videoBlobKey || m.voiceUrl || m.audioUrl || m.fileUrl || m.redPacket || m.transfer) return true;
 return String(m.text || m.html || m.content || '').trim().length > 0;
 }
 function xsFingerprintValue(value) {
@@ -3018,7 +3018,7 @@ xsFingerprintValue(m.stickerId || ''),
 xsFingerprintValue(m.videoBlobKey || ''),
 xsFingerprintValue(m.fileUrl || m.fileName || ''),
 xsFingerprintValue(m.image || m.imageData || m.video || m.voiceUrl || m.audioUrl || ''),
-xsFingerprintValue(m.shareData || m.productData || m.cardData || m.orderData || m.redPacket || m.transfer || '')
+xsFingerprintValue(m.redPacket || m.transfer || '')
 ].join('␟');
 }
 function xsEnsureStableMessageIds(input) {
@@ -3212,14 +3212,6 @@ if (!m) return m;
 const copy = Object.assign({}, m);
 try {
 if (typeof xsIsLiteBackupGhostMessage === 'function' && xsIsLiteBackupGhostMessage(copy)) return null;
-} catch(e) {}
-try {
-if ((copy.type === 'share' || copy.type === 'pay-request' || (copy.shareData && typeof copy.shareData === 'object')) && !copy.productData && copy.shareData) {
-copy.productData = Object.assign({}, copy.shareData);
-}
-if ((copy.type === 'share' || copy.type === 'pay-request') && !copy.cardTag) {
-copy.cardTag = copy.type === 'pay-request' ? '帮我买' : (copy.sender === 'user' ? '好物分享' : '已收到');
-}
 } catch(e) {}
 if (typeof copy.video === 'string' && copy.video.indexOf('blob:') === 0) {
 copy.video = null;
@@ -4325,8 +4317,6 @@ const addMessage = (message, options = null) => {
                 let previewText = '';
                 if (message.image) {
                     previewText = '[图片]';
-                } else if ((message.type === 'share' || message.type === 'pay-request') && message.shareData) {
-                    previewText = '[商品卡片] ' + (message.shareData.name || '');
                 } else {
                     previewText = String(message.text || '');
                     if (previewText.indexOf('<') >= 0) {
@@ -10642,7 +10632,6 @@ originalTime: originalTime || Date.now(),
 collectedTime: Date.now()
 };
 if (extra && extra.msgType) item.msgType = extra.msgType;
-if (extra && extra.shareData) item.shareData = extra.shareData;
 collections[type].unshift(item);
 }
 function scanHistory() {
@@ -10656,10 +10645,7 @@ const alreadyCollected = collections.chat.some(function(item) {
 return item.content === msg.text.trim() && item.originalTime === originalTime;
 });
 if (!alreadyCollected && Math.random() < CHAT_HISTORY_CHANCE) {
-const extra = msg.type === 'share' && msg.shareData
-? { msgType: msg.type, shareData: msg.shareData }
-: null;
-addCollection(collections, 'chat', msg.text.trim(), originalTime, extra);
+addCollection(collections, 'chat', msg.text.trim(), originalTime, null);
 msg.taPhoneCollected = true;
 changed = true;
 }
@@ -11078,7 +11064,7 @@ __XIAOSHU_CIRCLE_SCRIPT_CLOSE__
   </div>
 </div>
 
-<script id="merged-script-v37">// step01B: visitorRecords 防空写保护，仅保护朋友圈访客记录，不改商品卡/表情包。
+<script id="merged-script-v37">// step01B: visitorRecords 防空写保护，仅保护朋友圈访客记录，不改表情包。
 const qs = s => document.querySelector(s);
 const qsa = s => [...document.querySelectorAll(s)];
 const STORE_KEY = 'moments_site_blank_v49_rebuild_baseline_same_layout';
@@ -17570,7 +17556,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
   function showTaPhoneTab(t){if(t==='moments')return callApi('showCollectApp',['moments']);return callApi('showCollectApp',['chat']);}
   function showSystemApp(t){var map={'收藏':'collect','朋友圈':'moments','相册':'album','相机':'camera','电话':'phone','短信':'sms'};return open(map[String(t||'')]||String(t||''));}
   function hit(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('#ta-phone-container [data-clean-app]');if(!b)return;ev.preventDefault();ev.stopPropagation();open(b.getAttribute('data-clean-app'));return false;}
-  function tryCollectChat(text,timestamp,msgRef){try{var c=collections();c.chat.unshift({id:Date.now()+Math.random(),content:String(text||''),originalTime:timestamp||Date.now(),collectedTime:Date.now(),msgType:msgRef&&msgRef.type,shareData:msgRef&&msgRef.shareData});saveJSON(COLLECTION_KEY,c);}catch(e){}return true;}
+  function tryCollectChat(text,timestamp,msgRef){try{var c=collections();c.chat.unshift({id:Date.now()+Math.random(),content:String(text||''),originalTime:timestamp||Date.now(),collectedTime:Date.now(),msgType:msgRef&&msgRef.type});saveJSON(COLLECTION_KEY,c);}catch(e){}return true;}
   function deleteCollection(type,id){var c=collections();c[type]=(c[type]||[]).filter(function(x){return String(x.id)!==String(id);});saveJSON(COLLECTION_KEY,c);return callApi('showCollectApp',[type]);}
 
   var shared={byId:$,escapeHTML:esc,loadJSON:loadJSON,saveJSON:saveJSON,formatDateTime:fmt,enterApp:enterApp,myName:myName,myAvatar:myAvatar,avatarHTML:avatarHTML,collections:collections,contentImagesFromRaw:contentImagesFromRaw,stripHTML:stripHTML,circleStore:circleStore,postImages:postImages};

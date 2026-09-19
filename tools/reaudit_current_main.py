@@ -15,10 +15,12 @@ class AuditParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.ids=[]; self.refs=[]; self.external_runtime=[]; self.style_attrs=[]
+        self.style_depth=0; self.style_chunks=[]
     def handle_starttag(self, tag, attrs):
         d=dict(attrs)
         if d.get('id'): self.ids.append(d['id'])
         if d.get('style'): self.style_attrs.append(d['style'])
+        if tag.lower()=='style': self.style_depth+=1
         for attr in ('src','href'):
             v=d.get(attr)
             if not v: continue
@@ -27,6 +29,12 @@ class AuditParser(HTMLParser):
                 rel=d.get('rel') or ''
                 if tag=='script' or (tag=='link' and 'stylesheet' in rel):
                     self.external_runtime.append((tag,v))
+    def handle_endtag(self, tag):
+        if tag.lower()=='style' and self.style_depth:
+            self.style_depth-=1
+    def handle_data(self, data):
+        if self.style_depth:
+            self.style_chunks.append(data)
 
 p=AuditParser(); p.feed(html)
 
@@ -54,9 +62,8 @@ for tag,attr,v in p.refs:
         if key not in seen_missing:
             seen_missing.add(key); err(f'missing local {tag}[{attr}] resource: {v}')
 
-# Only scan actual CSS contexts. Do not treat JavaScript helper calls named url(...) as CSS.
-style_blocks=re.findall(r'<style\b[^>]*>(.*?)</style>',html,re.I|re.S)
-css_text='\n'.join(style_blocks+p.style_attrs)
+# Scan only CSS parsed from real <style> nodes and literal style attributes.
+css_text='\n'.join(p.style_chunks+p.style_attrs)
 for raw in re.findall(r'url\(([^)]+)\)',css_text,re.I):
     local=clean_local(raw)
     if local and not (ROOT/local).exists():
@@ -73,6 +80,8 @@ else:
     refs=re.findall(r'assets/builtin-theme/theme-[0-9a-f]{16}\.(?:png|jpg|jpeg|gif|webp|svg)',region)
     if len(refs)!=28: err(f'built-in theme local ref count changed: {len(refs)} (expected 28)')
     if len(set(refs))!=18: err(f'built-in theme unique asset count changed: {len(set(refs))} (expected 18)')
+    for ref in sorted(set(refs)):
+        if not (ROOT/ref).is_file(): err(f'built-in theme asset missing: {ref}')
 
 # Size regression.
 size=INDEX.stat().st_size
@@ -109,21 +118,20 @@ for pat,label in [
     n=len(re.findall(pat,html))
     if n: warn(f'{label}: {n} occurrence(s)')
 
-# External runtime dependencies are not an automatic failure, but report them explicitly.
+# External runtime dependencies are reported rather than auto-failed.
 if p.external_runtime:
     uniq=[]
     for x in p.external_runtime:
         if x not in uniq: uniq.append(x)
     warn('external runtime script/stylesheet dependencies: '+ ' | '.join(v for _,v in uniq))
 
-# Common debug leftovers. Console calls are warnings, not failures.
 for term in ('TODO','FIXME'):
     n=html.count(term)
     if n: warn(f'{term} markers in production HTML: {n}')
 console_n=len(re.findall(r'console\.(?:log|debug|warn|error)\s*\(',html))
 if console_n: warn(f'console calls in production HTML: {console_n}')
 
-# Print bounded diagnostic contexts for anything we need to classify manually.
+# Print bounded contexts for manual classification of suspicious remnants.
 def contexts(needle):
     out=[]; pos=0
     while True:
@@ -140,6 +148,7 @@ print('REAUDIT SUMMARY')
 print(f'index_bytes={size}')
 print(f'static_ids={len(p.ids)} unique_static_ids={len(set(p.ids))}')
 print(f'html_src_href_refs={len(p.refs)}')
+print(f'parsed_style_chunks={len(p.style_chunks)} style_attrs={len(p.style_attrs)}')
 print(f'errors={len(errors)} warnings={len(warnings)}')
 for x in errors: print('ERROR:',x)
 for x in warnings: print('WARNING:',x)

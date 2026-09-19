@@ -1,0 +1,111 @@
+name: Final zero-Shop cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/shop-zero-cleanup.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Remove retired Shop migration and compatibility code
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('index.html')
+          s = path.read_text(encoding='utf-8')
+          before = s
+
+          # 1) Retired Shop cleanup/migration block: this project never used Shop data,
+          # so no runtime migration or legacy storage-key knowledge should remain.
+          pat = re.compile(r'\n?<script id="xiaoshu-retired-commerce-cleanup-v1">.*?</script>\s*', re.S)
+          s, n = pat.subn('\n', s)
+          assert n == 1, f'expected exactly one retired-commerce cleanup block, found {n}'
+
+          # 2) Old product-message compatibility helpers. These only existed to render
+          # historical Shop product cards, which do not exist for this project.
+          s, n1 = re.subn(r'^\s*function productFromItem\(item\)\{.*\}\s*$', '', s, count=1, flags=re.M)
+          s, n2 = re.subn(r'^\s*function productRow\(p\)\{.*\}\s*$', '', s, count=1, flags=re.M)
+          assert n1 == 1, f'productFromItem helper removal count={n1}'
+          assert n2 == 1, f'productRow helper removal count={n2}'
+
+          old = "var p=productFromItem(it);if(p&&p.img)imgs.push(p.img);"
+          assert s.count(old) == 1, f'album product hook count={s.count(old)}'
+          s = s.replace(old, '')
+
+          old = "productFromItem:productFromItem,productRow:productRow,"
+          assert s.count(old) == 1, f'shared product helper export count={s.count(old)}'
+          s = s.replace(old, '')
+
+          old = "if(U.productFromItem(item))return true;"
+          assert s.count(old) == 1, f'collection visibility product hook count={s.count(old)}'
+          s = s.replace(old, '')
+
+          old = "var p=U.productFromItem(item);if(p)return U.productRow(p);var raw="
+          assert s.count(old) == 1, f'collection product renderer count={s.count(old)}'
+          s = s.replace(old, 'var raw=')
+
+          # 3) Remove CSS that only styles the deleted compatibility cards.
+          css_patterns = [
+              r'\.xs-product-row\{[^{}]*\}',
+              r'\.xs-product-thumb\{[^{}]*\}',
+              r'\.xs-product-thumb\s+img\{[^{}]*\}',
+              r'\.xs-product-name\{[^{}]*\}',
+              r'\.xs-product-price\{[^{}]*\}',
+          ]
+          css_removed = 0
+          for p in css_patterns:
+              s, k = re.subn(p, '', s)
+              css_removed += k
+          print('product compatibility CSS rules removed:', css_removed)
+
+          # Normalize only excessive blank lines introduced by deleting whole lines.
+          s = re.sub(r'\n{4,}', '\n\n\n', s)
+
+          forbidden = [
+              'ShopDB', 'shopDB', 'openShopDb', 'readShopStrict', 'writeShopStrict',
+              'clearShopStrict', 'openShopV99', 'shopReadMap', 'shopReplaceMap',
+              'captureShop', 'captureShopCore', 'normalizeShopData', 'normalizeRescueShopRaw',
+              'shopExpected', 'shopRestored', 'shop_gift_cabinet', 'shop_balance',
+              'shop_partner_balance', 'shop_search_history', 'shop_products', 'shop_cart',
+              'shop_orders', 'shop_category', 'xiaoshu_shop_', 'xiaoshu_coupon_wallet_v1',
+              'coupon_wallet', 'gift_cabinet', 'xiaoshu-retired-commerce-cleanup',
+              '礼物柜', '卡包', '商城', '.shop-modal', 'productFromItem', 'productRow',
+              'xs-product-'
+          ]
+          bad = {x:s.count(x) for x in forbidden if s.count(x)}
+          if bad:
+              raise SystemExit('Shop residues remain after cleanup: ' + repr(bad))
+
+          required = ['收藏', '朋友圈', '相册', '相机', '电话', '短信', 'callRecordsV2']
+          missing = [x for x in required if x not in s]
+          if missing:
+              raise SystemExit('Unrelated feature markers missing: ' + repr(missing))
+
+          if s == before:
+              raise SystemExit('cleanup made no changes')
+          path.write_text(s, encoding='utf-8')
+          print('zero-Shop cleanup complete')
+          print('bytes:', len(before.encode('utf-8')), '->', len(s.encode('utf-8')))
+          PY
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "refactor: remove final Shop compatibility residues"
+          git push origin HEAD:main

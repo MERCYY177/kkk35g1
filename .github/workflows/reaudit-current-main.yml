@@ -8,6 +8,7 @@ on:
       - 'tools/reaudit_current_main.py'
       - 'tools/classify_remote_refs.py'
       - 'tools/map_bubble_assets.py'
+      - 'tools/test_bubble_remote_assets.py'
 
 jobs:
   audit:
@@ -16,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run structural and regression audit
         run: python tools/reaudit_current_main.py
+      - name: Run ordinary chat bubble asset regression
+        run: python tools/test_bubble_remote_assets.py
       - name: Classify remaining remote references
         run: python tools/classify_remote_refs.py
       - name: Inspect bubble-to-keyboard asset mapping

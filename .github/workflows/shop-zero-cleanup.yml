@@ -27,36 +27,25 @@ jobs:
           s = path.read_text(encoding='utf-8')
           before = s
 
-          # 1) Retired Shop cleanup/migration block: this project never used Shop data,
-          # so no runtime migration or legacy storage-key knowledge should remain.
           pat = re.compile(r'\n?<script id="xiaoshu-retired-commerce-cleanup-v1">.*?</script>\s*', re.S)
           s, n = pat.subn('\n', s)
           assert n == 1, f'expected exactly one retired-commerce cleanup block, found {n}'
 
-          # 2) Old product-message compatibility helpers. These only existed to render
-          # historical Shop product cards, which do not exist for this project.
           s, n1 = re.subn(r'^\s*function productFromItem\(item\)\{.*\}\s*$', '', s, count=1, flags=re.M)
           s, n2 = re.subn(r'^\s*function productRow\(p\)\{.*\}\s*$', '', s, count=1, flags=re.M)
           assert n1 == 1, f'productFromItem helper removal count={n1}'
           assert n2 == 1, f'productRow helper removal count={n2}'
 
-          old = "var p=productFromItem(it);if(p&&p.img)imgs.push(p.img);"
-          assert s.count(old) == 1, f'album product hook count={s.count(old)}'
-          s = s.replace(old, '')
+          replacements = [
+              ("var p=productFromItem(it);if(p&&p.img)imgs.push(p.img);", ''),
+              ("productFromItem:productFromItem,productRow:productRow,", ''),
+              ("if(U.productFromItem(item))return true;", ''),
+              ("var p=U.productFromItem(item);if(p)return U.productRow(p);var raw=", 'var raw='),
+          ]
+          for old, new in replacements:
+              assert s.count(old) == 1, f'expected one compatibility hook {old!r}, got {s.count(old)}'
+              s = s.replace(old, new)
 
-          old = "productFromItem:productFromItem,productRow:productRow,"
-          assert s.count(old) == 1, f'shared product helper export count={s.count(old)}'
-          s = s.replace(old, '')
-
-          old = "if(U.productFromItem(item))return true;"
-          assert s.count(old) == 1, f'collection visibility product hook count={s.count(old)}'
-          s = s.replace(old, '')
-
-          old = "var p=U.productFromItem(item);if(p)return U.productRow(p);var raw="
-          assert s.count(old) == 1, f'collection product renderer count={s.count(old)}'
-          s = s.replace(old, 'var raw=')
-
-          # 3) Remove CSS that only styles the deleted compatibility cards.
           css_patterns = [
               r'\.xs-product-row\{[^{}]*\}',
               r'\.xs-product-thumb\{[^{}]*\}',
@@ -70,7 +59,18 @@ jobs:
               css_removed += k
           print('product compatibility CSS rules removed:', css_removed)
 
-          # Normalize only excessive blank lines introduced by deleting whole lines.
+          if 'xs-product-' in s:
+              print('=== remaining xs-product contexts after simple CSS removal ===')
+              for lineno, line in enumerate(s.splitlines(), 1):
+                  if 'xs-product-' in line:
+                      text = line.strip()
+                      while 'xs-product-' in text:
+                          i = text.index('xs-product-')
+                          lo = max(0, i - 240)
+                          hi = min(len(text), i + 520)
+                          print(f'L{lineno}: ' + text[lo:hi])
+                          text = text[i + len('xs-product-'):]
+
           s = re.sub(r'\n{4,}', '\n\n\n', s)
 
           forbidden = [

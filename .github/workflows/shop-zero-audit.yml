@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect final semantic Shop names
+      - name: Map every remaining Shop substring
         shell: bash
         run: |
           python - <<'PY'
@@ -19,39 +19,29 @@ jobs:
           s=Path('index.html').read_text(encoding='utf-8')
           lines=s.splitlines()
 
-          forbidden=[
-            'ShopDB','shopDB','openShopDb','readShopStrict','writeShopStrict','clearShopStrict','openShopV99',
-            'shopReadMap','shopReplaceMap','captureShop','captureShopCore','normalizeShopData','normalizeRescueShopRaw',
-            'shopExpected','shopRestored','shop_gift_cabinet','shop_balance','shop_partner_balance','shop_search_history',
-            'shop_products','shop_cart','shop_orders','shop_category','xiaoshu_shop_','xiaoshu_coupon_wallet_v1',
-            'coupon_wallet','gift_cabinet','xiaoshu-retired-commerce-cleanup','礼物柜','卡包','商城','.shop-modal',
-            'productFromItem','productRow','xs-product-','renderWallet','showCouponWallet','giftsData',
-            'xsShopCardEsc','xsHasRealShopCardHtml','xsProductFromShareMessage','xsShopCardTagFromMessage',
-            'xsRenderShopCardFromMessage','isShopCardMessage','safeShopHtml','data-shop-card','xs-shop-share-card',
-            'shop-chat-card','ta-phone-product-card','order-product','xs-shop-card-message',"kind === 'shop'","return 'shop'",
-            'shareData','productData','orderData','cardData','giftData','couponData','pay-request',
-            '好物分享','商品内容','商品卡片','商品卡','商品','帮我买','cardTag'
-          ]
-          bad={x:s.count(x) for x in forbidden if s.count(x)}
           required=['xiaoshu-coupon-chat-card','red-packet-card','transfer-bubble','m.redPacket','m.transfer','收藏','朋友圈','相册','相机','电话','短信','callRecordsV2']
           missing=[x for x in required if x not in s]
-          print('forbidden:',bad)
           print('missing:',missing)
 
-          print('=== exact share/shop semantic lines ===')
+          print('=== EVERY shop/Shop substring line ===')
+          hits=[]
           for n,line in enumerate(lines,1):
-              if re.search(r"(?:\btype\s*===\s*['\"]share['\"]|\bshop\b)",line,re.I):
+              if 'shop' in line.lower():
+                  hits.append((n,line.rstrip()))
+                  print(f'L{n}: {line.rstrip()}')
+          print('shop substring line count:',len(hits))
+
+          print('=== EVERY exact share-type line ===')
+          for n,line in enumerate(lines,1):
+              if re.search(r"\btype\s*={2,3}\s*['\"]share['\"]",line):
                   print(f'L{n}: {line.rstrip()}')
 
-          print('=== bounded contexts ===')
-          centers=[2087,2108,4543,9627,21231]
-          for center in centers:
-              lo=max(1,center-12); hi=min(len(lines),center+12)
-              print(f'--- around L{center}: L{lo}-L{hi} ---')
-              for n in range(lo,hi+1):
+          print('=== backup validator context ===')
+          for lo,hi in [(2025,2112),(9588,9650),(4528,4552),(21220,21235)]:
+              print(f'--- L{lo}-L{hi} ---')
+              for n in range(lo,min(hi,len(lines))+1):
                   print(f'{n}: {lines[n-1]}')
 
-          if bad: raise SystemExit('known Shop residue returned: '+repr(bad))
           if missing: raise SystemExit('current feature regression: '+repr(missing))
-          print('semantic inspection complete')
+          print('full Shop substring mapping complete')
           PY

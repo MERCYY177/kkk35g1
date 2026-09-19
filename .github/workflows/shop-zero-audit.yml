@@ -10,57 +10,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Deep scan current index for retired Shop residues
+      - name: Inspect remaining Shop compatibility structures
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           import re, collections
+          s=Path('index.html').read_text(encoding='utf-8')
+          lines=s.splitlines()
 
-          s = Path('index.html').read_text(encoding='utf-8')
+          exact=['ShopDB','xiaoshu_shop_','coupon_wallet','gift_cabinet','productFromItem','productRow','xs-product-',
+                 'renderWallet','showCouponWallet','giftsData','ta-phone-product-card','order-product','xsShopCardEsc',
+                 'xsHasRealShopCardHtml','data-shop-card','xs-shop-share-card','isShopCardMessage','xsProductFromShareMessage',
+                 'xsShopCardTagFromMessage','xsRenderShopCardFromMessage','shop-chat-card','xiaoshu-coupon-chat-card',
+                 'xiaoshu-coupon-tab','xs-gift-time-line','xiaoshu-ta-phone-collections-and-gifts-v1-js']
+          print('=== residual counts ===')
+          for x in exact:
+              c=s.count(x)
+              if c: print(repr(x),c)
 
-          exact = [
-              'ShopDB','shopDB','openShopDb','readShopStrict','writeShopStrict','clearShopStrict','openShopV99',
-              'shopReadMap','shopReplaceMap','captureShop','captureShopCore','normalizeShopData','normalizeRescueShopRaw',
-              'shopExpected','shopRestored','shop_gift_cabinet','shop_balance','shop_partner_balance','shop_search_history',
-              'shop_products','shop_cart','shop_orders','shop_category','xiaoshu_shop_','xiaoshu_coupon_wallet_v1','coupon_wallet',
-              'gift_cabinet','xiaoshu-retired-commerce-cleanup','礼物柜','卡包','商城','.shop-modal','productFromItem','productRow',
-              'xs-product-','renderWallet','showCouponWallet','giftsData','ta-phone-product-card'
-          ]
-          bad={x:s.count(x) for x in exact if s.count(x)}
-          print('=== exact / suspicious residual counts ===')
-          for k,v in bad.items(): print(repr(k), v)
+          for a,b in [(3530,3620),(17405,17530),(17610,17765),(18925,18955),(20980,21010)]:
+              print(f'\n=== L{a}-L{b} ===')
+              for i in range(a-1,min(b,len(lines))):
+                  text=lines[i]
+                  if len(text)>2200: text=text[:2200]+' …'
+                  print(f'L{i+1}: {text}')
 
-          # Enumerate identifiers/classes carrying shop-ish concepts; this is diagnostic and lets us distinguish real leftovers from unrelated text.
-          token_re=re.compile(r'[A-Za-z_$][A-Za-z0-9_$-]*(?:shop|product|coupon|wallet|gift|cart)[A-Za-z0-9_$-]*', re.I)
-          counts=collections.Counter(m.group(0) for m in token_re.finditer(s))
-          print('\n=== shop-ish identifier/class tokens ===')
-          for token,count in counts.most_common(140): print(f'{count:4} {token}')
+          print('\n=== unique windows around ta-phone-product-card / order-product ===')
+          windows=[]
+          for token in ['ta-phone-product-card','order-product']:
+              seen=set()
+              for m in re.finditer(re.escape(token),s):
+                  w=s[max(0,m.start()-220):min(len(s),m.end()+300)].replace('\n',' ')
+                  w=re.sub(r'\s+',' ',w)
+                  if w not in seen:
+                      seen.add(w); windows.append((token,w))
+                  if len(seen)>=30: break
+          for token,w in windows[:60]: print(token+': '+w)
 
-          needles=['renderWallet','showCouponWallet','giftsData','ta-phone-product-card','coupon','wallet','product-card','productCard','giftData','gift']
-          print('\n=== bounded source contexts for suspect concepts ===')
-          shown=0
-          for lineno,line in enumerate(s.splitlines(),1):
-              low=line.lower()
-              hits=[n for n in needles if n.lower() in low]
-              if not hits: continue
-              # Avoid drowning in generic external/library text: prioritize app-specific xiaoshu/TA-phone/function lines.
-              if not any(x in line for x in ['function ','var ','const ','let ','TaPhone','ta-phone','xs-','coupon','Coupon','wallet','Wallet','gift','Gift','product-card','productCard']): continue
-              text=line.strip()
-              if len(text)>1400: text=text[:1400]+' …'
-              print(f'L{lineno} hits={hits}: {text}')
-              shown+=1
-              if shown>=100:
-                  print('... capped at 100 lines')
-                  break
+          print('\n=== shop-ish function/identifier declarations ===')
+          rx=re.compile(r'\b(?:function\s+|(?:var|let|const)\s+)([A-Za-z_$][A-Za-z0-9_$]*(?:Shop|shop|Product|product|Coupon|coupon|Wallet|wallet|Gift|gift|Cart|cart)[A-Za-z0-9_$]*)')
+          for name in sorted(set(rx.findall(s))): print(name)
 
-          required=['收藏','朋友圈','相册','相机','电话','短信','callRecordsV2']
-          missing=[x for x in required if x not in s]
-          print('\nmissing unrelated markers:', missing)
-
-          if bad:
-              raise SystemExit('Deep zero-Shop audit RED: '+repr(bad))
-          if missing:
-              raise SystemExit('Unrelated feature regression: '+repr(missing))
-          print('Deep zero-Shop audit GREEN')
+          raise SystemExit('inspection run complete (intentional red)')
           PY

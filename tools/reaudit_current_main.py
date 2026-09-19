@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 from html.parser import HTMLParser
-from urllib.parse import urlparse
-import collections, os, re
+import collections, re
 
 ROOT=Path('.')
 INDEX=ROOT/'index.html'
@@ -15,16 +14,18 @@ def warn(msg): warnings.append(msg)
 class AuditParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.ids=[]; self.refs=[]; self.external_runtime=[]
+        self.ids=[]; self.refs=[]; self.external_runtime=[]; self.style_attrs=[]
     def handle_starttag(self, tag, attrs):
         d=dict(attrs)
         if d.get('id'): self.ids.append(d['id'])
+        if d.get('style'): self.style_attrs.append(d['style'])
         for attr in ('src','href'):
             v=d.get(attr)
             if not v: continue
             self.refs.append((tag,attr,v))
             if v.startswith(('http://','https://')):
-                if tag=='script' or (tag=='link' and ('stylesheet' in (d.get('rel') or '') if isinstance(d.get('rel'),str) else False)):
+                rel=d.get('rel') or ''
+                if tag=='script' or (tag=='link' and 'stylesheet' in rel):
                     self.external_runtime.append((tag,v))
 
 p=AuditParser(); p.feed(html)
@@ -40,7 +41,6 @@ def clean_local(v):
     if not v or v.startswith(('#','data:','blob:','javascript:','mailto:','tel:','http://','https://','//')): return None
     v=v.split('#',1)[0].split('?',1)[0]
     if not v: return None
-    # GitHub project Pages root-absolute paths are suspicious because they resolve outside /kkk35g1/.
     if v.startswith('/'):
         warn(f'root-absolute local reference may bypass project base path: {v}')
         v=v.lstrip('/')
@@ -54,8 +54,10 @@ for tag,attr,v in p.refs:
         if key not in seen_missing:
             seen_missing.add(key); err(f'missing local {tag}[{attr}] resource: {v}')
 
-# CSS url(...) references, including URLs inside JS strings used as CSS presets.
-for raw in re.findall(r'url\(([^)]+)\)', html, re.I):
+# Only scan actual CSS contexts. Do not treat JavaScript helper calls named url(...) as CSS.
+style_blocks=re.findall(r'<style\b[^>]*>(.*?)</style>',html,re.I|re.S)
+css_text='\n'.join(style_blocks+p.style_attrs)
+for raw in re.findall(r'url\(([^)]+)\)',css_text,re.I):
     local=clean_local(raw)
     if local and not (ROOT/local).exists():
         err(f'missing local CSS url resource: {raw.strip()}')
@@ -94,7 +96,7 @@ required={
 for label,token in required.items():
     if token not in html: err(f'critical regression: {label}')
 
-# Backup/save coverage for state introduced or relied upon in this project.
+# Persistence/backup-related state must still be represented in source.
 for token in ('mailboxLettersV1','callRecordsV2','callSettingsV2'):
     if token not in html: err(f'expected persistence/backup key missing from source: {token}')
 
@@ -121,6 +123,19 @@ for term in ('TODO','FIXME'):
 console_n=len(re.findall(r'console\.(?:log|debug|warn|error)\s*\(',html))
 if console_n: warn(f'console calls in production HTML: {console_n}')
 
+# Print bounded diagnostic contexts for anything we need to classify manually.
+def contexts(needle):
+    out=[]; pos=0
+    while True:
+        i=html.find(needle,pos)
+        if i<0: break
+        snippet=html[max(0,i-220):min(len(html),i+420)]
+        snippet=re.sub(r'\s+',' ',snippet)
+        if len(snippet)>700: snippet=snippet[:700]
+        out.append(snippet)
+        pos=i+len(needle)
+    return out
+
 print('REAUDIT SUMMARY')
 print(f'index_bytes={size}')
 print(f'static_ids={len(p.ids)} unique_static_ids={len(set(p.ids))}')
@@ -128,4 +143,9 @@ print(f'html_src_href_refs={len(p.refs)}')
 print(f'errors={len(errors)} warnings={len(warnings)}')
 for x in errors: print('ERROR:',x)
 for x in warnings: print('WARNING:',x)
+for needle in ('new Function','document.write','s3.bmp.ovh','i.postimg.cc','img.heliar.top','nos.netease.com'):
+    found=contexts(needle)
+    print(f'CONTEXT_COUNT {needle}={len(found)}')
+    for idx,snippet in enumerate(found,1):
+        print(f'CONTEXT {needle} #{idx}: {snippet}')
 if errors: raise SystemExit(1)

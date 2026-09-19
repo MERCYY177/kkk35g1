@@ -10,47 +10,64 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect remaining Shop compatibility structures
+      - name: Map active vs retired commerce callsites
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re, collections
+          import re
           s=Path('index.html').read_text(encoding='utf-8')
-          lines=s.splitlines()
 
-          exact=['ShopDB','xiaoshu_shop_','coupon_wallet','gift_cabinet','productFromItem','productRow','xs-product-',
-                 'renderWallet','showCouponWallet','giftsData','ta-phone-product-card','order-product','xsShopCardEsc',
-                 'xsHasRealShopCardHtml','data-shop-card','xs-shop-share-card','isShopCardMessage','xsProductFromShareMessage',
-                 'xsShopCardTagFromMessage','xsRenderShopCardFromMessage','shop-chat-card','xiaoshu-coupon-chat-card',
-                 'xiaoshu-coupon-tab','xs-gift-time-line','xiaoshu-ta-phone-collections-and-gifts-v1-js']
-          print('=== residual counts ===')
-          for x in exact:
-              c=s.count(x)
-              if c: print(repr(x),c)
+          tokens=[
+            'renderWallet','showCouponWallet','giftsData','xsShopCardEsc','xsHasRealShopCardHtml',
+            'xsProductFromShareMessage','xsShopCardTagFromMessage','xsRenderShopCardFromMessage',
+            'isShopCardMessage','safeShopHtml','data-shop-card','xs-shop-share-card','shop-chat-card',
+            'ta-phone-product-card','order-product','productData','orderData','shareData','couponData','giftData',
+            'xiaoshu-coupon-chat-card','xiaoshu-coupon-tab','xs-gift-time-line'
+          ]
+          print('=== counts ===')
+          for t in tokens:
+            c=s.count(t)
+            if c: print(repr(t), c)
 
-          for a,b in [(3530,3620),(17405,17530),(17610,17765),(18925,18955),(20980,21010)]:
-              print(f'\n=== L{a}-L{b} ===')
-              for i in range(a-1,min(b,len(lines))):
-                  text=lines[i]
-                  if len(text)>2200: text=text[:2200]+' …'
-                  print(f'L{i+1}: {text}')
+          def contexts(token, limit=20, radius=650):
+            print(f'\n=== contexts: {token} ===')
+            seen=set(); n=0
+            for m in re.finditer(re.escape(token), s):
+              w=s[max(0,m.start()-radius):min(len(s),m.end()+radius)].replace('\n',' ')
+              w=re.sub(r'\s+',' ',w)
+              if w in seen: continue
+              seen.add(w)
+              print(w)
+              n+=1
+              if n>=limit: break
 
-          print('\n=== unique windows around ta-phone-product-card / order-product ===')
-          windows=[]
-          for token in ['ta-phone-product-card','order-product']:
-              seen=set()
-              for m in re.finditer(re.escape(token),s):
-                  w=s[max(0,m.start()-220):min(len(s),m.end()+300)].replace('\n',' ')
-                  w=re.sub(r'\s+',' ',w)
-                  if w not in seen:
-                      seen.add(w); windows.append((token,w))
-                  if len(seen)>=30: break
-          for token,w in windows[:60]: print(token+': '+w)
+          for t in ['renderWallet','giftsData','xsShopCardEsc','xsProductFromShareMessage','xsRenderShopCardFromMessage','isShopCardMessage','safeShopHtml','xiaoshu-coupon-chat-card']:
+            contexts(t, 25)
 
-          print('\n=== shop-ish function/identifier declarations ===')
-          rx=re.compile(r'\b(?:function\s+|(?:var|let|const)\s+)([A-Za-z_$][A-Za-z0-9_$]*(?:Shop|shop|Product|product|Coupon|coupon|Wallet|wallet|Gift|gift|Cart|cart)[A-Za-z0-9_$]*)')
-          for name in sorted(set(rx.findall(s))): print(name)
+          # Print complete named function bodies where safe and bounded.
+          names=['xsShopCardEsc','xsWhitelistedChatCardKind','xsHasRealShopCardHtml','xsGetChatCardKind','xsProductFromShareMessage','xsShopCardTagFromMessage','xsRenderShopCardFromMessage','isShopCardMessage','safeShopHtml']
+          for name in names:
+            print(f'\n=== function block: {name} ===')
+            m=re.search(r'function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',s)
+            if not m:
+              print('NOT FOUND'); continue
+            start=m.start(); i=m.end()-1; depth=0; quote=None; esc=False
+            while i<len(s):
+              ch=s[i]
+              if quote:
+                if esc: esc=False
+                elif ch=='\\': esc=True
+                elif ch==quote: quote=None
+              else:
+                if ch in "'\"`": quote=ch
+                elif ch=='{': depth+=1
+                elif ch=='}':
+                  depth-=1
+                  if depth==0:
+                    print(s[start:i+1]); break
+              i+=1
+            else: print('UNTERMINATED')
 
-          raise SystemExit('inspection run complete (intentional red)')
+          raise SystemExit('mapping complete (intentional red)')
           PY

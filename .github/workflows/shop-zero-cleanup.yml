@@ -27,45 +27,32 @@ jobs:
           s=path.read_text(encoding='utf-8')
           before=s
 
-          def function_span(src,name):
-              m=re.search(r'function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',src)
-              if not m: raise AssertionError(f'function {name} not found')
-              i=m.end()-1; depth=0; quote=None; esc=False
-              while i<len(src):
-                  ch=src[i]
-                  if quote:
-                      if esc: esc=False
-                      elif ch=='\\': esc=True
-                      elif ch==quote: quote=None
-                  else:
-                      if ch in "'\"`": quote=ch
-                      elif ch=='{': depth+=1
-                      elif ch=='}':
-                          depth-=1
-                          if depth==0: return m.start(),i+1
-                  i+=1
-              raise AssertionError(f'unterminated function {name}')
+          def replace_between(src,start_marker,end_marker,replacement):
+              a=src.find(start_marker)
+              assert a!=-1, f'start marker not found: {start_marker}'
+              b=src.find(end_marker,a+len(start_marker))
+              assert b!=-1, f'end marker not found after {start_marker}: {end_marker}'
+              return src[:a]+replacement+src[b:]
 
-          def remove_function(src,name):
-              a,b=function_span(src,name)
-              return src[:a]+src[b:]
-
-          def replace_function(src,name,new_text):
-              a,b=function_span(src,name)
-              return src[:a]+new_text+src[b:]
+          def remove_between(src,start_marker,end_marker):
+              return replace_between(src,start_marker,end_marker,'')
 
           old_root="const rootOk = kind === 'coupon'\n            ? !!tpl.content.querySelector('.xiaoshu-coupon-chat-card')\n            : kind === 'transfer'\n                ? !!tpl.content.querySelector('.transfer-bubble')\n                : kind === 'shop'\n                    ? !!tpl.content.querySelector('[data-shop-card], .xs-shop-share-card, .shop-chat-card, .ta-phone-product-card')\n                    : false;"
           new_root="const rootOk = kind === 'coupon'\n            ? !!tpl.content.querySelector('.xiaoshu-coupon-chat-card')\n            : kind === 'transfer'\n                ? !!tpl.content.querySelector('.transfer-bubble')\n                : false;"
           assert s.count(old_root)==1, f'sanitizer Shop branch count={s.count(old_root)}'
           s=s.replace(old_root,new_root)
 
-          new_kind="function xsWhitelistedChatCardKind(raw) {\nconst html = String(raw || '');\nif (!html.trim()) return '';\nif (/xiaoshu-coupon-chat-card/i.test(html)) return 'coupon';\nif (/red-packet-card/i.test(html)) return 'red-packet';\nif (/transfer-bubble/i.test(html)) return 'transfer';\nreturn '';\n}"
-          s=replace_function(s,'xsWhitelistedChatCardKind',new_kind)
-          new_get="function xsGetChatCardKind(message) {\nif (!message) return '';\nconst type = String(message.type || '').trim();\nif (type === 'red-packet') return 'red-packet';\nconst raw = [message.text, message.html, message.content].map(function(value) {\nreturn String(value || '');\n}).join(' ');\nreturn xsWhitelistedChatCardKind(raw);\n}"
-          s=replace_function(s,'xsGetChatCardKind',new_get)
-
-          for name in ['xsShopCardEsc','xsHasRealShopCardHtml','xsProductFromShareMessage','xsShopCardTagFromMessage','xsRenderShopCardFromMessage']:
-              s=remove_function(s,name)
+          # The commerce helpers are contiguous in this source. Use explicit neighboring function names
+          # as structural boundaries rather than trying to parse JavaScript regex/string syntax.
+          s=remove_between(s,'function xsShopCardEsc(','function xsWhitelistedChatCardKind(')
+          new_kind="function xsWhitelistedChatCardKind(raw) {\nconst html = String(raw || '');\nif (!html.trim()) return '';\nif (/xiaoshu-coupon-chat-card/i.test(html)) return 'coupon';\nif (/red-packet-card/i.test(html)) return 'red-packet';\nif (/transfer-bubble/i.test(html)) return 'transfer';\nreturn '';\n}\n"
+          s=replace_between(s,'function xsWhitelistedChatCardKind(','function xsHasRealShopCardHtml(',new_kind)
+          s=remove_between(s,'function xsHasRealShopCardHtml(','function xsGetChatCardKind(')
+          new_get="function xsGetChatCardKind(message) {\nif (!message) return '';\nconst type = String(message.type || '').trim();\nif (type === 'red-packet') return 'red-packet';\nconst raw = [message.text, message.html, message.content].map(function(value) {\nreturn String(value || '');\n}).join(' ');\nreturn xsWhitelistedChatCardKind(raw);\n}\n"
+          s=replace_between(s,'function xsGetChatCardKind(','window.xsGetChatCardKind = xsGetChatCardKind;',new_get)
+          s=remove_between(s,'function xsProductFromShareMessage(','function xsShopCardTagFromMessage(')
+          s=remove_between(s,'function xsShopCardTagFromMessage(','function xsRenderShopCardFromMessage(')
+          s=remove_between(s,'function xsRenderShopCardFromMessage(','function xsIsNonQuotableCardMessage(')
 
           old="const isShopCardMessage = __chatCardKind === 'shop';\nconst isRawWhitelistedCard = __chatCardKind === 'coupon' || __chatCardKind === 'transfer';"
           new="const isRawWhitelistedCard = __chatCardKind === 'coupon' || __chatCardKind === 'transfer';"
@@ -131,7 +118,8 @@ jobs:
           assert selector_counts['.order-product']>0
 
           new_is_card="function isCard(m){\n    if (!m) return false;\n    try { if (typeof window.xsGetChatCardKind === 'function' && window.xsGetChatCardKind(m)) return true; } catch(e) {}\n    return /card|coupon|transfer|red/.test(String(m.type || '').toLowerCase());\n  }"
-          s=replace_function(s,'isCard',new_is_card)
+          s,n=re.subn(r'function isCard\(m\)\{[^{}]*\}',new_is_card,s,count=1)
+          assert n==1, f'isCard replacement count={n}'
 
           s=re.sub(r'\n{4,}','\n\n\n',s)
 

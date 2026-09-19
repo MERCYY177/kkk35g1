@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 from html.parser import HTMLParser
-import collections, re
+import collections, json, re
 
 ROOT=Path('.')
 INDEX=ROOT/'index.html'
@@ -69,19 +69,42 @@ for raw in re.findall(r'url\(([^)]+)\)',css_text,re.I):
     if local and not (ROOT/local).exists():
         err(f'missing local CSS url resource: {raw.strip()}')
 
-# Built-in theme localization invariants.
+forbidden=('s3.bmp.ovh','i.postimg.cc','img.heliar.top','nos.netease.com')
+asset_re=r'assets/builtin-theme/theme-[0-9a-f]{16}\.(?:png|jpg|jpeg|gif|webp|svg)'
+
+# Large-keyboard built-in theme localization invariants.
 start=html.find('const BUILTIN_KEYBOARD_BEAUTY_STYLES='); end=html.find('let editingKeyboardBeautyId',start)
-if start<0 or end<=start: err('cannot locate built-in theme registry')
+if start<0 or end<=start: err('cannot locate large-keyboard built-in theme registry')
 else:
     region=html[start:end]
-    for domain in ('s3.bmp.ovh','i.postimg.cc','img.heliar.top','nos.netease.com'):
-        if domain in region: err(f'built-in theme still depends on {domain}')
-    if 'data:image/' in region: err('built-in theme data URI bloat returned')
-    refs=re.findall(r'assets/builtin-theme/theme-[0-9a-f]{16}\.(?:png|jpg|jpeg|gif|webp|svg)',region)
-    if len(refs)!=28: err(f'built-in theme local ref count changed: {len(refs)} (expected 28)')
-    if len(set(refs))!=18: err(f'built-in theme unique asset count changed: {len(set(refs))} (expected 18)')
+    for domain in forbidden:
+        if domain in region: err(f'large-keyboard built-in theme still depends on {domain}')
+    if 'data:image/' in region: err('large-keyboard built-in theme data URI bloat returned')
+    refs=re.findall(asset_re,region)
+    if len(refs)!=28: err(f'large-keyboard local ref count changed: {len(refs)} (expected 28)')
+    if len(set(refs))!=18: err(f'large-keyboard unique asset count changed: {len(set(refs))} (expected 18)')
     for ref in sorted(set(refs)):
-        if not (ROOT/ref).is_file(): err(f'built-in theme asset missing: {ref}')
+        if not (ROOT/ref).is_file(): err(f'large-keyboard theme asset missing: {ref}')
+
+# Ordinary-chat built-in bubble JSON must use the same local asset pool.
+bm=re.search(r'<script\b[^>]*id=["\']xiaoshu-builtin-bubble-css-data["\'][^>]*>(.*?)</script>',html,re.I|re.S)
+if not bm:
+    err('cannot locate ordinary-chat built-in bubble registry')
+else:
+    bubble_raw=bm.group(1)
+    try:
+        bubble_data=json.loads(bubble_raw)
+    except Exception as exc:
+        bubble_data=[]; err(f'ordinary-chat built-in bubble JSON invalid: {exc}')
+    if bubble_data and len(bubble_data)!=29:
+        err(f'ordinary-chat bubble entry count changed: {len(bubble_data)} (expected 29)')
+    for domain in forbidden:
+        if domain in bubble_raw: err(f'ordinary-chat built-in bubble still depends on {domain}')
+    bubble_refs=re.findall(asset_re,bubble_raw)
+    if len(bubble_refs)!=24: err(f'ordinary-chat local ref count changed: {len(bubble_refs)} (expected 24)')
+    if len(set(bubble_refs))!=16: err(f'ordinary-chat unique asset count changed: {len(set(bubble_refs))} (expected 16)')
+    for ref in sorted(set(bubble_refs)):
+        if not (ROOT/ref).is_file(): err(f'ordinary-chat bubble asset missing: {ref}')
 
 # Size regression.
 size=INDEX.stat().st_size

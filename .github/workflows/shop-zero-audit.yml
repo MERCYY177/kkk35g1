@@ -50,27 +50,26 @@ jobs:
               c=s.count(token)
               if c: print(repr(token),c)
 
+          print('=== exact suspicious lines ===')
+          needles=['shareData','productData','orderData','giftData','couponData','cardData','pay-request','好物分享','商品内容','代付','商品','购买']
+          for lineno,line in enumerate(s.splitlines(),1):
+              hits=[n for n in needles if n in line]
+              if hits:
+                  print(f'L{lineno} hits={hits}: {line.rstrip()}')
+
+          print('=== selected surrounding ranges ===')
+          lines=s.splitlines()
+          for lo,hi in [(2918,3030),(3208,3228),(4318,4335),(10636,10667),(17565,17579)]:
+              print(f'--- L{lo}-L{hi} ---')
+              for n in range(lo,min(hi,len(lines))+1):
+                  print(f'{n}: {lines[n-1]}')
+
           print('=== commerce-ish identifier/class tokens ===')
-          rx=re.compile(r'[A-Za-z_$][A-Za-z0-9_$-]*(?:shop|product|order|gift|wallet|cart)[A-Za-z0-9_$-]*',re.I)
+          rx=re.compile(r'(?<![A-Za-z0-9_$-])[A-Za-z_$][A-Za-z0-9_$-]*(?:shop|product|order|gift|wallet|cart)[A-Za-z0-9_$-]*(?![A-Za-z0-9_$-])',re.I)
           counts=collections.Counter(m.group(0) for m in rx.finditer(s))
           for token,count in counts.most_common(160):
               print(f'{count:4} {token}')
 
-          print('=== contexts for suspicious data fields / semantics ===')
-          needles=['shareData','productData','orderData','giftData','couponData','cardData','pay-request','好物分享','商品内容','代付']
-          shown=0
-          for lineno,line in enumerate(s.splitlines(),1):
-              hits=[n for n in needles if n in line]
-              if not hits: continue
-              text=line.strip()
-              if len(text)>2600: text=text[:2600]+' …'
-              print(f'L{lineno} hits={hits}: {text}')
-              shown+=1
-              if shown>=100:
-                  print('... capped at 100 matching lines')
-                  break
-
-          # Current card recognition may support relation coupon, red packet and transfer only.
           m=re.search(r'function\s+xsGetChatCardKind\s*\([^)]*\)\s*\{',s)
           print('xsGetChatCardKind present:',bool(m))
 

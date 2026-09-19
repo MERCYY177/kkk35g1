@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Remove final legacy commerce message fields
+      - name: Remove final Shop backup semantics and share type
         shell: bash
         run: |
           python - <<'PY'
@@ -28,72 +28,45 @@ jobs:
           before=s
 
           replacements=[
-            (
-              "const hasRealMedia = !!(m.image || m.imageData || m.video || m.videoBlobKey || m.voiceUrl || m.audioUrl || m.fileUrl || m.shareData || m.productData || m.cardData || m.orderData);",
-              "const hasRealMedia = !!(m.image || m.imageData || m.video || m.videoBlobKey || m.voiceUrl || m.audioUrl || m.fileUrl);"
-            ),
-            (
-              "if (m.stickerId || m.image || m.imageData || m.video || m.videoBlobKey || m.voiceUrl || m.audioUrl || m.fileUrl || m.shareData || m.productData || m.cardData || m.orderData || m.redPacket || m.transfer) return true;",
-              "if (m.stickerId || m.image || m.imageData || m.video || m.videoBlobKey || m.voiceUrl || m.audioUrl || m.fileUrl || m.redPacket || m.transfer) return true;"
-            ),
-            (
-              "xsFingerprintValue(m.shareData || m.productData || m.cardData || m.orderData || m.redPacket || m.transfer || '')",
-              "xsFingerprintValue(m.redPacket || m.transfer || '')"
-            ),
-            (
-              "try {\nif ((copy.type === 'share' || copy.type === 'pay-request' || (copy.shareData && typeof copy.shareData === 'object')) && !copy.productData && copy.shareData) {\ncopy.productData = Object.assign({}, copy.shareData);\n}\nif ((copy.type === 'share' || copy.type === 'pay-request') && !copy.cardTag) {\ncopy.cardTag = copy.type === 'pay-request' ? '帮我买' : (copy.sender === 'user' ? '好物分享' : '已收到');\n}\n} catch(e) {}\n",
-              ""
-            ),
-            (
-              "                } else if ((message.type === 'share' || message.type === 'pay-request') && message.shareData) {\n                    previewText = '[商品卡片] ' + (message.shareData.name || '');\n                } else {",
-              "                } else {"
-            ),
-            (
-              "if (extra && extra.shareData) item.shareData = extra.shareData;\n",
-              ""
-            ),
-            (
-              "const extra = msg.type === 'share' && msg.shareData\n? { msgType: msg.type, shareData: msg.shareData }\n: null;\naddCollection(collections, 'chat', msg.text.trim(), originalTime, extra);",
-              "addCollection(collections, 'chat', msg.text.trim(), originalTime, null);"
-            ),
-            (
-              "function tryCollectChat(text,timestamp,msgRef){try{var c=collections();c.chat.unshift({id:Date.now()+Math.random(),content:String(text||''),originalTime:timestamp||Date.now(),collectedTime:Date.now(),msgType:msgRef&&msgRef.type,shareData:msgRef&&msgRef.shareData});saveJSON(COLLECTION_KEY,c);}catch(e){}return true;}",
-              "function tryCollectChat(text,timestamp,msgRef){try{var c=collections();c.chat.unshift({id:Date.now()+Math.random(),content:String(text||''),originalTime:timestamp||Date.now(),collectedTime:Date.now(),msgType:msgRef&&msgRef.type});saveJSON(COLLECTION_KEY,c);}catch(e){}return true;}"
-            ),
-            (
-              "// step01B: visitorRecords 防空写保护，仅保护朋友圈访客记录，不改商品卡/表情包。",
-              "// step01B: visitorRecords 防空写保护，仅保护朋友圈访客记录，不改表情包。"
-            )
+            ("var cats=categoryIdsPresent(lf,ls,shop);", "var cats=categoryIdsPresent(lf,ls);"),
+            ("mediaCount:mediaCount,shopStores:Object.keys(shop).length,ignored:stats.ignored", "mediaCount:mediaCount,ignored:stats.ignored"),
+            ("if (text && (type === 'normal' || type === 'share')) {", "if (text && type === 'normal') {"),
+            ("if (backupCategory === 'shop' || backupCategory === 'map') return false;", "if (backupCategory === 'map') return false;"),
+            ("'CHAT_APP_', 'ta_phone_', 'xiaoshu_', 'moments_', 'shop_', 'dg_',", "'CHAT_APP_', 'ta_phone_', 'xiaoshu_', 'moments_', 'dg_',"),
+            (",shopTimeout:12000", ""),
+            ("|moments_|shop_|ta_phone_", "|moments_|ta_phone_"),
+            ("delete payload.manifest.shopStores;", ""),
+            ("live Shop/HomeDoor/sticker/beautify overlays", "live HomeDoor/sticker/beautify overlays")
           ]
 
           for old,new in replacements:
               count=s.count(old)
-              assert count==1, f'expected exactly one legacy commerce fragment, got {count}: {old[:120]!r}'
+              assert count==1, f'expected exactly one final Shop semantic fragment, got {count}: {old!r}'
               s=s.replace(old,new,1)
 
-          s=re.sub(r'\n{4,}','\n\n\n',s)
+          # The project has never used Shop. After this pass, the source must contain no Shop spelling at all.
+          shop_hits=[]
+          for lineno,line in enumerate(s.splitlines(),1):
+              if 'shop' in line.lower(): shop_hits.append((lineno,line.rstrip()))
+          if shop_hits:
+              print('remaining Shop substrings:')
+              for item in shop_hits: print(item)
+              raise SystemExit(f'Shop substring count remains {len(shop_hits)}')
+
+          share_type_hits=list(re.finditer(r"\btype\s*={2,3}\s*['\"]share['\"]",s))
+          if share_type_hits:
+              for m in share_type_hits:
+                  line=s.count('\n',0,m.start())+1
+                  print('share-type residue L'+str(line))
+              raise SystemExit('retired share message type remains')
 
           legacy=[
-            'shareData','productData','orderData','cardData','giftData','pay-request','好物分享',
-            '商品内容','商品卡片','商品卡','商品','帮我买','cardTag'
+            'shareData','productData','orderData','cardData','giftData','couponData','pay-request',
+            '好物分享','商品内容','商品卡片','商品卡','商品','帮我买','cardTag',
+            'renderWallet','showCouponWallet','giftsData','productFromItem','productRow','ShopDB'
           ]
           remain={x:s.count(x) for x in legacy if s.count(x)}
-          if remain:
-              print('legacy commerce residues after stage three:',remain)
-              for lineno,line in enumerate(s.splitlines(),1):
-                  hits=[x for x in remain if x in line]
-                  if hits: print(f'L{lineno} {hits}: {line.rstrip()}')
-              raise SystemExit('stage-three commerce residues remain: '+repr(remain))
-
-          known_shop=[
-            'ShopDB','shopDB','xiaoshu_shop_','coupon_wallet','gift_cabinet','商城','礼物柜','卡包',
-            'productFromItem','productRow','renderWallet','showCouponWallet','giftsData','xsShopCardEsc',
-            'xsHasRealShopCardHtml','xsProductFromShareMessage','xsShopCardTagFromMessage','xsRenderShopCardFromMessage',
-            'isShopCardMessage','safeShopHtml','data-shop-card','xs-shop-share-card','shop-chat-card',
-            'ta-phone-product-card','order-product','xs-shop-card-message',"kind === 'shop'","return 'shop'"
-          ]
-          bad={x:s.count(x) for x in known_shop if s.count(x)}
-          if bad: raise SystemExit('known Shop residues reappeared: '+repr(bad))
+          if remain: raise SystemExit('legacy commerce residue reappeared: '+repr(remain))
 
           required=[
             'xiaoshu-coupon-chat-card','red-packet-card','transfer-bubble',
@@ -103,9 +76,9 @@ jobs:
           missing=[x for x in required if x not in s]
           if missing: raise SystemExit('current feature regression: '+repr(missing))
 
-          if s==before: raise SystemExit('stage-three cleanup made no changes')
+          if s==before: raise SystemExit('final Shop semantic cleanup made no changes')
           path.write_text(s,encoding='utf-8')
-          print('stage-three legacy commerce cleanup complete')
+          print('final Shop semantic cleanup complete')
           print('bytes:',len(before.encode('utf-8')),'->',len(s.encode('utf-8')))
           PY
       - name: Commit cleanup
@@ -116,5 +89,5 @@ jobs:
           git add index.html
           git diff --cached --check
           git diff --cached --stat
-          git commit -m "refactor: remove legacy commerce message fields"
+          git commit -m "refactor: remove final Shop backup semantics"
           git push origin HEAD:main

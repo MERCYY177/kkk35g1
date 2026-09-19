@@ -40,18 +40,28 @@ for domain in domains:
         sf=script_for(i)
         if sf:
             idx,attrs,body,start=sf
-            rel=i-(start+html[start:i].find('>')+1 if False else start)
-            # Calculate position inside script body from opening-tag end.
             tag_end=html.find('>',start)+1
             rel=i-tag_end
             idm=re.search(r'\bid=["\']([^"\']+)',attrs,re.I)
             sid=idm.group(1) if idm else '(no id)'
             anchor=nearest_anchor(body,rel)
             snippet=re.sub(r'\s+',' ',body[max(0,rel-500):min(len(body),rel+500)])
-            print(f'#{n} script={idx} id={sid} anchor={anchor}')
+            print(f'#{n} script={idx} id={sid} attrs={attrs.strip()} anchor={anchor}')
             print('SNIP:',snippet[:1000])
         else:
             snippet=re.sub(r'\s+',' ',html[max(0,i-500):i+500])
             print(f'#{n} outside-script SNIP:',snippet[:1000])
         pos=i+len(domain)
+    print(f'count={n}')
+
+for term in ('xiaoshu-builtin-bubble-css-data','BUILTIN_KEYBOARD_BEAUTY_STYLES'):
+    print(f'=== USAGE {term} ===')
+    pos=0; n=0
+    while True:
+        i=html.find(term,pos)
+        if i<0: break
+        n+=1
+        snippet=re.sub(r'\s+',' ',html[max(0,i-900):min(len(html),i+1300)])
+        print(f'#{n}: {snippet[:2200]}')
+        pos=i+len(term)
     print(f'count={n}')

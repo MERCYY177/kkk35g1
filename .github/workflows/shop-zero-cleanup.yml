@@ -42,8 +42,6 @@ jobs:
           assert s.count(old_root)==1, f'sanitizer Shop branch count={s.count(old_root)}'
           s=s.replace(old_root,new_root)
 
-          # The commerce helpers are contiguous in this source. Use explicit neighboring function names
-          # as structural boundaries rather than trying to parse JavaScript regex/string syntax.
           s=remove_between(s,'function xsShopCardEsc(','function xsWhitelistedChatCardKind(')
           new_kind="function xsWhitelistedChatCardKind(raw) {\nconst html = String(raw || '');\nif (!html.trim()) return '';\nif (/xiaoshu-coupon-chat-card/i.test(html)) return 'coupon';\nif (/red-packet-card/i.test(html)) return 'red-packet';\nif (/transfer-bubble/i.test(html)) return 'transfer';\nreturn '';\n}\n"
           s=replace_between(s,'function xsWhitelistedChatCardKind(','function xsHasRealShopCardHtml(',new_kind)
@@ -64,7 +62,7 @@ jobs:
           assert s.count(old)==1, f'Shop render branch count={s.count(old)}'
           s=s.replace(old,new)
 
-          old="if (isShopCardMessage) messageDiv.classList.add('xs-shop-card-message');"
+          old="        if (isShopCardMessage) messageDiv.classList.add('xs-shop-card-message');"
           assert s.count(old)==1, f'Shop message class hook count={s.count(old)}'
           s=s.replace(old,'')
 

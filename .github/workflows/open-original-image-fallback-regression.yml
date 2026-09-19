@@ -1,0 +1,17 @@
+name: Open original image fallback regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/open-original-image-fallback-regression.yml'
+      - 'tools/test_open_original_image_fallback.js'
+      - 'index.html'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run original-image fallback regression
+        run: node tools/test_open_original_image_fallback.js

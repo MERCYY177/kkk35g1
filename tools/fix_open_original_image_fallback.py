@@ -42,16 +42,16 @@ if catch_pos<0:
     raise SystemExit('openOriginalImage catch block not found')
 head=fn[:catch_pos]
 tail=fn[catch_pos:]
-old='src="'+"'+url+'"+'"'
-new='src="'+"'+src+'"+'"'
-if old not in tail:
-    raise SystemExit('expected fallback img src using url not found')
-if tail.count(old)!=1:
-    raise SystemExit(f'unexpected fallback url img count: {tail.count(old)}')
-tail=tail.replace(old,new,1)
+old="'+url+'"
+new="'+src+'"
+# Fallback currently references the out-of-scope Blob URL twice: image src and pagehide cleanup.
+# Both must use the in-scope original src so constructing the HTML cannot throw ReferenceError.
+if tail.count(old)!=2:
+    raise SystemExit(f'unexpected fallback url interpolation count: {tail.count(old)}')
+tail=tail.replace(old,new)
 patched=head+tail
 if patched==fn:
     raise SystemExit('patch made no change')
 html=html[:start]+patched+html[end:]
 path.write_text(html,encoding='utf-8')
-print('patched openOriginalImage fallback to use original src in popup')
+print('patched both out-of-scope fallback URL interpolations to original src')

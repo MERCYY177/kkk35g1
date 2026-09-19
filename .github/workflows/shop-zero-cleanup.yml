@@ -54,57 +54,26 @@ jobs:
               a,b=function_span(src,name)
               return src[:a]+new_text+src[b:]
 
-          # Keep current relation-coupon / red-packet / transfer cards, remove Shop recognition.
-          old_root="""const rootOk = kind === 'coupon'
-            ? !!tpl.content.querySelector('.xiaoshu-coupon-chat-card')
-            : kind === 'transfer'
-                ? !!tpl.content.querySelector('.transfer-bubble')
-                : kind === 'shop'
-                    ? !!tpl.content.querySelector('[data-shop-card], .xs-shop-share-card, .shop-chat-card, .ta-phone-product-card')
-                    : false;"""
-          new_root="""const rootOk = kind === 'coupon'
-            ? !!tpl.content.querySelector('.xiaoshu-coupon-chat-card')
-            : kind === 'transfer'
-                ? !!tpl.content.querySelector('.transfer-bubble')
-                : false;"""
+          old_root="const rootOk = kind === 'coupon'\n            ? !!tpl.content.querySelector('.xiaoshu-coupon-chat-card')\n            : kind === 'transfer'\n                ? !!tpl.content.querySelector('.transfer-bubble')\n                : kind === 'shop'\n                    ? !!tpl.content.querySelector('[data-shop-card], .xs-shop-share-card, .shop-chat-card, .ta-phone-product-card')\n                    : false;"
+          new_root="const rootOk = kind === 'coupon'\n            ? !!tpl.content.querySelector('.xiaoshu-coupon-chat-card')\n            : kind === 'transfer'\n                ? !!tpl.content.querySelector('.transfer-bubble')\n                : false;"
           assert s.count(old_root)==1, f'sanitizer Shop branch count={s.count(old_root)}'
           s=s.replace(old_root,new_root)
 
-          s=replace_function(s,'xsWhitelistedChatCardKind',"""function xsWhitelistedChatCardKind(raw) {
-const html = String(raw || '');
-if (!html.trim()) return '';
-if (/xiaoshu-coupon-chat-card/i.test(html)) return 'coupon';
-if (/red-packet-card/i.test(html)) return 'red-packet';
-if (/transfer-bubble/i.test(html)) return 'transfer';
-return '';
-}""")
-          s=replace_function(s,'xsGetChatCardKind',"""function xsGetChatCardKind(message) {
-if (!message) return '';
-const type = String(message.type || '').trim();
-if (type === 'red-packet') return 'red-packet';
-const raw = [message.text, message.html, message.content].map(function(value) {
-return String(value || '');
-}).join(' ');
-return xsWhitelistedChatCardKind(raw);
-}""")
+          new_kind="function xsWhitelistedChatCardKind(raw) {\nconst html = String(raw || '');\nif (!html.trim()) return '';\nif (/xiaoshu-coupon-chat-card/i.test(html)) return 'coupon';\nif (/red-packet-card/i.test(html)) return 'red-packet';\nif (/transfer-bubble/i.test(html)) return 'transfer';\nreturn '';\n}"
+          s=replace_function(s,'xsWhitelistedChatCardKind',new_kind)
+          new_get="function xsGetChatCardKind(message) {\nif (!message) return '';\nconst type = String(message.type || '').trim();\nif (type === 'red-packet') return 'red-packet';\nconst raw = [message.text, message.html, message.content].map(function(value) {\nreturn String(value || '');\n}).join(' ');\nreturn xsWhitelistedChatCardKind(raw);\n}"
+          s=replace_function(s,'xsGetChatCardKind',new_get)
 
           for name in ['xsShopCardEsc','xsHasRealShopCardHtml','xsProductFromShareMessage','xsShopCardTagFromMessage','xsRenderShopCardFromMessage']:
               s=remove_function(s,name)
 
-          old="""const isShopCardMessage = __chatCardKind === 'shop';
-const isRawWhitelistedCard = __chatCardKind === 'coupon' || __chatCardKind === 'transfer';"""
-          new="""const isRawWhitelistedCard = __chatCardKind === 'coupon' || __chatCardKind === 'transfer';"""
+          old="const isShopCardMessage = __chatCardKind === 'shop';\nconst isRawWhitelistedCard = __chatCardKind === 'coupon' || __chatCardKind === 'transfer';"
+          new="const isRawWhitelistedCard = __chatCardKind === 'coupon' || __chatCardKind === 'transfer';"
           assert s.count(old)==1, f'card flag block count={s.count(old)}'
           s=s.replace(old,new)
 
-          old="""if (isShopCardMessage) {
-const safeShopHtml = xsHasRealShopCardHtml(__chatCardText)
-? xsSanitizeWhitelistedCardHtml(__chatCardText, 'shop')
-: '';
-content = safeShopHtml || xsRenderShopCardFromMessage(msg);
-if (!content && msg.text) content = `<div>${xsQuoteEscape(String(msg.text || '')).replace(/\\n/g, '<br>')}</div>`;
-} else if (isRawWhitelistedCard) {"""
-          new="""if (isRawWhitelistedCard) {"""
+          old="if (isShopCardMessage) {\nconst safeShopHtml = xsHasRealShopCardHtml(__chatCardText)\n? xsSanitizeWhitelistedCardHtml(__chatCardText, 'shop')\n: '';\ncontent = safeShopHtml || xsRenderShopCardFromMessage(msg);\nif (!content && msg.text) content = `<div>${xsQuoteEscape(String(msg.text || '')).replace(/\\n/g, '<br>')}</div>`;\n} else if (isRawWhitelistedCard) {"
+          new="if (isRawWhitelistedCard) {"
           assert s.count(old)==1, f'Shop render branch count={s.count(old)}'
           s=s.replace(old,new)
 
@@ -112,15 +81,15 @@ if (!content && msg.text) content = `<div>${xsQuoteEscape(String(msg.text || '')
           assert s.count(old)==1, f'Shop message class hook count={s.count(old)}'
           s=s.replace(old,'')
 
-          # Retire old product quote semantics while preserving generic non-quotable-card behavior.
           assert s.count("if (plain === '商品内容') return true;")==1
           s=s.replace("if (plain === '商品内容') return true;",'')
           assert s.count("else if (message.type === 'share' || message.type === 'pay-request') text = '商品内容';")==1
           s=s.replace("else if (message.type === 'share' || message.type === 'pay-request') text = '商品内容';",'')
-          assert s.count("text = String(text).replace(new RegExp(oldBad, 'g'), '商品内容').replace(/\\s+/g, ' ').trim();")==1
-          s=s.replace("text = String(text).replace(new RegExp(oldBad, 'g'), '商品内容').replace(/\\s+/g, ' ').trim();","text = String(text).replace(new RegExp(oldBad, 'g'), '[消息]').replace(/\\s+/g, ' ').trim();")
+          old="text = String(text).replace(new RegExp(oldBad, 'g'), '商品内容').replace(/\\s+/g, ' ').trim();"
+          new="text = String(text).replace(new RegExp(oldBad, 'g'), '[消息]').replace(/\\s+/g, ' ').trim();"
+          assert s.count(old)==1, f'quote fallback count={s.count(old)}'
+          s=s.replace(old,new)
 
-          # TA phone: remove dangling retired wallet/gift API references and names.
           s,n=re.subn(r",gift:'<svg[^']*</svg>'",'',s,count=1)
           assert n==1, f'gift icon removal count={n}'
           s,n=re.subn(r",wallet:'<svg[^']*</svg>'",'',s,count=1)
@@ -129,20 +98,19 @@ if (!content && msg.text) content = `<div>${xsQuoteEscape(String(msg.text || '')
           s=s.replace('giftsData:giftsData,','')
           assert s.count('showCouponWallet:renderWallet,')==1
           s=s.replace('showCouponWallet:renderWallet,','')
+          assert s.count('xiaoshu-ta-phone-collections-and-gifts-v1-js')==1
           s=s.replace('xiaoshu-ta-phone-collections-and-gifts-v1-js','xiaoshu-ta-phone-collections-v2-js')
           assert s.count('__xiaoshuTaPhoneCollectionsAndGiftsV1')==2
           s=s.replace('__xiaoshuTaPhoneCollectionsAndGiftsV1','__xiaoshuTaPhoneCollectionsV2')
           assert s.count('xs-gift-time-line')==2
           s=s.replace('xs-gift-time-line','xs-clean-time')
 
-          # The old dark wallet stylesheet is dead; relation-coupon chat card has its own styles.
           pat=re.compile(r'\n?<style id="xiaoshu-system-dark-coupon-v3">.*?</style>\s*',re.S)
           s,n=pat.subn('\n',s,count=1)
           assert n==1, f'dead coupon-wallet dark style removal count={n}'
           assert s.count('xiaoshu-exit-button-and-coupon-wallet-style')==1
           s=s.replace('xiaoshu-exit-button-and-coupon-wallet-style','xiaoshu-exit-button-and-relation-coupon-style')
 
-          # Replace obsolete commerce-card selectors in built-in themes with the existing generic card selector.
           selector_map={
             '.ta-phone-product-card':'.message-card',
             '.product-card':'.message-card',
@@ -162,12 +130,8 @@ if (!content && msg.text) content = `<div>${xsQuoteEscape(String(msg.text || '')
           assert selector_counts['.ta-phone-product-card']>0
           assert selector_counts['.order-product']>0
 
-          # Stats should classify only currently supported card types, not retired commerce data fields.
-          s=replace_function(s,'isCard',"""function isCard(m){
-    if (!m) return false;
-    try { if (typeof window.xsGetChatCardKind === 'function' && window.xsGetChatCardKind(m)) return true; } catch(e) {}
-    return /card|coupon|transfer|red/.test(String(m.type || '').toLowerCase());
-  }""")
+          new_is_card="function isCard(m){\n    if (!m) return false;\n    try { if (typeof window.xsGetChatCardKind === 'function' && window.xsGetChatCardKind(m)) return true; } catch(e) {}\n    return /card|coupon|transfer|red/.test(String(m.type || '').toLowerCase());\n  }"
+          s=replace_function(s,'isCard',new_is_card)
 
           s=re.sub(r'\n{4,}','\n\n\n',s)
 
@@ -175,14 +139,13 @@ if (!content && msg.text) content = `<div>${xsQuoteEscape(String(msg.text || '')
             'renderWallet','showCouponWallet','giftsData','xsShopCardEsc','xsHasRealShopCardHtml',
             'xsProductFromShareMessage','xsShopCardTagFromMessage','xsRenderShopCardFromMessage',
             'isShopCardMessage','safeShopHtml','data-shop-card','xs-shop-share-card','shop-chat-card',
-            'ta-phone-product-card','order-product','xs-shop-card-message','kind === \'shop\'',"return 'shop'",
+            'ta-phone-product-card','order-product','xs-shop-card-message',"kind === 'shop'","return 'shop'",
             'xiaoshu-ta-phone-collections-and-gifts-v1-js','__xiaoshuTaPhoneCollectionsAndGiftsV1',
             'xs-gift-time-line','xiaoshu-exit-button-and-coupon-wallet-style'
           ]
           bad={x:s.count(x) for x in forbidden if s.count(x)}
           if bad: raise SystemExit('stage-two Shop residues remain: '+repr(bad))
 
-          # Preserve explicitly active unrelated/current features.
           required=['xiaoshu-coupon-chat-card','red-packet-card','transfer-bubble','收藏','朋友圈','相册','相机','电话','短信','callRecordsV2']
           missing=[x for x in required if x not in s]
           if missing: raise SystemExit('unrelated/current feature regression: '+repr(missing))

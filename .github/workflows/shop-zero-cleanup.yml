@@ -16,83 +16,182 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Remove retired Shop migration and compatibility code
+      - name: Remove remaining Shop runtime and theme compatibility
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           import re
 
-          path = Path('index.html')
-          s = path.read_text(encoding='utf-8')
-          before = s
+          path=Path('index.html')
+          s=path.read_text(encoding='utf-8')
+          before=s
 
-          pat = re.compile(r'\n?<script id="xiaoshu-retired-commerce-cleanup-v1">.*?</script>\s*', re.S)
-          s, n = pat.subn('\n', s)
-          assert n == 1, f'expected exactly one retired-commerce cleanup block, found {n}'
+          def function_span(src,name):
+              m=re.search(r'function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',src)
+              if not m: raise AssertionError(f'function {name} not found')
+              i=m.end()-1; depth=0; quote=None; esc=False
+              while i<len(src):
+                  ch=src[i]
+                  if quote:
+                      if esc: esc=False
+                      elif ch=='\\': esc=True
+                      elif ch==quote: quote=None
+                  else:
+                      if ch in "'\"`": quote=ch
+                      elif ch=='{': depth+=1
+                      elif ch=='}':
+                          depth-=1
+                          if depth==0: return m.start(),i+1
+                  i+=1
+              raise AssertionError(f'unterminated function {name}')
 
-          s, n1 = re.subn(r'^\s*function productFromItem\(item\)\{.*\}\s*$', '', s, count=1, flags=re.M)
-          s, n2 = re.subn(r'^\s*function productRow\(p\)\{.*\}\s*$', '', s, count=1, flags=re.M)
-          assert n1 == 1, f'productFromItem helper removal count={n1}'
-          assert n2 == 1, f'productRow helper removal count={n2}'
+          def remove_function(src,name):
+              a,b=function_span(src,name)
+              return src[:a]+src[b:]
 
-          replacements = [
-              ("var p=productFromItem(it);if(p&&p.img)imgs.push(p.img);", ''),
-              ("productFromItem:productFromItem,productRow:productRow,", ''),
-              ("if(U.productFromItem(item))return true;", ''),
-              ("var p=U.productFromItem(item);if(p)return U.productRow(p);var raw=", 'var raw='),
+          def replace_function(src,name,new_text):
+              a,b=function_span(src,name)
+              return src[:a]+new_text+src[b:]
+
+          # Keep current relation-coupon / red-packet / transfer cards, remove Shop recognition.
+          old_root="""const rootOk = kind === 'coupon'
+            ? !!tpl.content.querySelector('.xiaoshu-coupon-chat-card')
+            : kind === 'transfer'
+                ? !!tpl.content.querySelector('.transfer-bubble')
+                : kind === 'shop'
+                    ? !!tpl.content.querySelector('[data-shop-card], .xs-shop-share-card, .shop-chat-card, .ta-phone-product-card')
+                    : false;"""
+          new_root="""const rootOk = kind === 'coupon'
+            ? !!tpl.content.querySelector('.xiaoshu-coupon-chat-card')
+            : kind === 'transfer'
+                ? !!tpl.content.querySelector('.transfer-bubble')
+                : false;"""
+          assert s.count(old_root)==1, f'sanitizer Shop branch count={s.count(old_root)}'
+          s=s.replace(old_root,new_root)
+
+          s=replace_function(s,'xsWhitelistedChatCardKind',"""function xsWhitelistedChatCardKind(raw) {
+const html = String(raw || '');
+if (!html.trim()) return '';
+if (/xiaoshu-coupon-chat-card/i.test(html)) return 'coupon';
+if (/red-packet-card/i.test(html)) return 'red-packet';
+if (/transfer-bubble/i.test(html)) return 'transfer';
+return '';
+}""")
+          s=replace_function(s,'xsGetChatCardKind',"""function xsGetChatCardKind(message) {
+if (!message) return '';
+const type = String(message.type || '').trim();
+if (type === 'red-packet') return 'red-packet';
+const raw = [message.text, message.html, message.content].map(function(value) {
+return String(value || '');
+}).join(' ');
+return xsWhitelistedChatCardKind(raw);
+}""")
+
+          for name in ['xsShopCardEsc','xsHasRealShopCardHtml','xsProductFromShareMessage','xsShopCardTagFromMessage','xsRenderShopCardFromMessage']:
+              s=remove_function(s,name)
+
+          old="""const isShopCardMessage = __chatCardKind === 'shop';
+const isRawWhitelistedCard = __chatCardKind === 'coupon' || __chatCardKind === 'transfer';"""
+          new="""const isRawWhitelistedCard = __chatCardKind === 'coupon' || __chatCardKind === 'transfer';"""
+          assert s.count(old)==1, f'card flag block count={s.count(old)}'
+          s=s.replace(old,new)
+
+          old="""if (isShopCardMessage) {
+const safeShopHtml = xsHasRealShopCardHtml(__chatCardText)
+? xsSanitizeWhitelistedCardHtml(__chatCardText, 'shop')
+: '';
+content = safeShopHtml || xsRenderShopCardFromMessage(msg);
+if (!content && msg.text) content = `<div>${xsQuoteEscape(String(msg.text || '')).replace(/\\n/g, '<br>')}</div>`;
+} else if (isRawWhitelistedCard) {"""
+          new="""if (isRawWhitelistedCard) {"""
+          assert s.count(old)==1, f'Shop render branch count={s.count(old)}'
+          s=s.replace(old,new)
+
+          old="if (isShopCardMessage) messageDiv.classList.add('xs-shop-card-message');"
+          assert s.count(old)==1, f'Shop message class hook count={s.count(old)}'
+          s=s.replace(old,'')
+
+          # Retire old product quote semantics while preserving generic non-quotable-card behavior.
+          assert s.count("if (plain === '商品内容') return true;")==1
+          s=s.replace("if (plain === '商品内容') return true;",'')
+          assert s.count("else if (message.type === 'share' || message.type === 'pay-request') text = '商品内容';")==1
+          s=s.replace("else if (message.type === 'share' || message.type === 'pay-request') text = '商品内容';",'')
+          assert s.count("text = String(text).replace(new RegExp(oldBad, 'g'), '商品内容').replace(/\\s+/g, ' ').trim();")==1
+          s=s.replace("text = String(text).replace(new RegExp(oldBad, 'g'), '商品内容').replace(/\\s+/g, ' ').trim();","text = String(text).replace(new RegExp(oldBad, 'g'), '[消息]').replace(/\\s+/g, ' ').trim();")
+
+          # TA phone: remove dangling retired wallet/gift API references and names.
+          s,n=re.subn(r",gift:'<svg[^']*</svg>'",'',s,count=1)
+          assert n==1, f'gift icon removal count={n}'
+          s,n=re.subn(r",wallet:'<svg[^']*</svg>'",'',s,count=1)
+          assert n==1, f'wallet icon removal count={n}'
+          assert s.count('giftsData:giftsData,')==1
+          s=s.replace('giftsData:giftsData,','')
+          assert s.count('showCouponWallet:renderWallet,')==1
+          s=s.replace('showCouponWallet:renderWallet,','')
+          s=s.replace('xiaoshu-ta-phone-collections-and-gifts-v1-js','xiaoshu-ta-phone-collections-v2-js')
+          assert s.count('__xiaoshuTaPhoneCollectionsAndGiftsV1')==2
+          s=s.replace('__xiaoshuTaPhoneCollectionsAndGiftsV1','__xiaoshuTaPhoneCollectionsV2')
+          assert s.count('xs-gift-time-line')==2
+          s=s.replace('xs-gift-time-line','xs-clean-time')
+
+          # The old dark wallet stylesheet is dead; relation-coupon chat card has its own styles.
+          pat=re.compile(r'\n?<style id="xiaoshu-system-dark-coupon-v3">.*?</style>\s*',re.S)
+          s,n=pat.subn('\n',s,count=1)
+          assert n==1, f'dead coupon-wallet dark style removal count={n}'
+          assert s.count('xiaoshu-exit-button-and-coupon-wallet-style')==1
+          s=s.replace('xiaoshu-exit-button-and-coupon-wallet-style','xiaoshu-exit-button-and-relation-coupon-style')
+
+          # Replace obsolete commerce-card selectors in built-in themes with the existing generic card selector.
+          selector_map={
+            '.ta-phone-product-card':'.message-card',
+            '.product-card':'.message-card',
+            '.order-product':'.message-card',
+            '.order-card':'.message-card',
+            '.gift-card':'.message-card',
+            '.coupon-card':'.message-card',
+            '.shop-card':'.message-card',
+            '.shop-chat-card':'.message-card',
+            '.xs-shop-share-card':'.message-card',
+            '[data-shop-card]':'[data-card]'
+          }
+          selector_counts={}
+          for old,new in selector_map.items():
+              c=s.count(old); selector_counts[old]=c
+              if c: s=s.replace(old,new)
+          assert selector_counts['.ta-phone-product-card']>0
+          assert selector_counts['.order-product']>0
+
+          # Stats should classify only currently supported card types, not retired commerce data fields.
+          s=replace_function(s,'isCard',"""function isCard(m){
+    if (!m) return false;
+    try { if (typeof window.xsGetChatCardKind === 'function' && window.xsGetChatCardKind(m)) return true; } catch(e) {}
+    return /card|coupon|transfer|red/.test(String(m.type || '').toLowerCase());
+  }""")
+
+          s=re.sub(r'\n{4,}','\n\n\n',s)
+
+          forbidden=[
+            'renderWallet','showCouponWallet','giftsData','xsShopCardEsc','xsHasRealShopCardHtml',
+            'xsProductFromShareMessage','xsShopCardTagFromMessage','xsRenderShopCardFromMessage',
+            'isShopCardMessage','safeShopHtml','data-shop-card','xs-shop-share-card','shop-chat-card',
+            'ta-phone-product-card','order-product','xs-shop-card-message','kind === \'shop\'',"return 'shop'",
+            'xiaoshu-ta-phone-collections-and-gifts-v1-js','__xiaoshuTaPhoneCollectionsAndGiftsV1',
+            'xs-gift-time-line','xiaoshu-exit-button-and-coupon-wallet-style'
           ]
-          for old, new in replacements:
-              assert s.count(old) == 1, f'expected one compatibility hook {old!r}, got {s.count(old)}'
-              s = s.replace(old, new)
+          bad={x:s.count(x) for x in forbidden if s.count(x)}
+          if bad: raise SystemExit('stage-two Shop residues remain: '+repr(bad))
 
-          css_patterns = [
-              r'\.xs-product-row\{[^{}]*\}',
-              r'\.xs-product-thumb\{[^{}]*\}',
-              r'\.xs-product-thumb\s+img\{[^{}]*\}',
-              r'\.xs-product-name\{[^{}]*\}',
-              r'\.xs-product-price\{[^{}]*\}',
-          ]
-          css_removed = 0
-          for p in css_patterns:
-              s, k = re.subn(p, '', s)
-              css_removed += k
-          assert css_removed == 6, f'expected 6 standalone product CSS rules, removed {css_removed}'
+          # Preserve explicitly active unrelated/current features.
+          required=['xiaoshu-coupon-chat-card','red-packet-card','transfer-bubble','收藏','朋友圈','相册','相机','电话','短信','callRecordsV2']
+          missing=[x for x in required if x not in s]
+          if missing: raise SystemExit('unrelated/current feature regression: '+repr(missing))
 
-          # Five product selectors were mixed into shared TA-phone theme selector lists.
-          # Remove only those selector entries, preserving the shared declarations.
-          s, list_removed = re.subn(r'#ta-phone-container \.xs-product-(?:thumb|row|name|price),', '', s)
-          assert list_removed == 5, f'expected 5 shared-list product selectors, removed {list_removed}'
-
-          s = re.sub(r'\n{4,}', '\n\n\n', s)
-
-          forbidden = [
-              'ShopDB', 'shopDB', 'openShopDb', 'readShopStrict', 'writeShopStrict',
-              'clearShopStrict', 'openShopV99', 'shopReadMap', 'shopReplaceMap',
-              'captureShop', 'captureShopCore', 'normalizeShopData', 'normalizeRescueShopRaw',
-              'shopExpected', 'shopRestored', 'shop_gift_cabinet', 'shop_balance',
-              'shop_partner_balance', 'shop_search_history', 'shop_products', 'shop_cart',
-              'shop_orders', 'shop_category', 'xiaoshu_shop_', 'xiaoshu_coupon_wallet_v1',
-              'coupon_wallet', 'gift_cabinet', 'xiaoshu-retired-commerce-cleanup',
-              '礼物柜', '卡包', '商城', '.shop-modal', 'productFromItem', 'productRow',
-              'xs-product-'
-          ]
-          bad = {x:s.count(x) for x in forbidden if s.count(x)}
-          if bad:
-              raise SystemExit('Shop residues remain after cleanup: ' + repr(bad))
-
-          required = ['收藏', '朋友圈', '相册', '相机', '电话', '短信', 'callRecordsV2']
-          missing = [x for x in required if x not in s]
-          if missing:
-              raise SystemExit('Unrelated feature markers missing: ' + repr(missing))
-
-          if s == before:
-              raise SystemExit('cleanup made no changes')
-          path.write_text(s, encoding='utf-8')
-          print('zero-Shop cleanup complete')
-          print('standalone product CSS removed:', css_removed)
-          print('shared-list product selectors removed:', list_removed)
-          print('bytes:', len(before.encode('utf-8')), '->', len(s.encode('utf-8')))
+          if s==before: raise SystemExit('cleanup made no changes')
+          path.write_text(s,encoding='utf-8')
+          print('stage-two zero-Shop cleanup complete')
+          print('selector replacements:',selector_counts)
+          print('bytes:',len(before.encode('utf-8')),'->',len(s.encode('utf-8')))
           PY
       - name: Commit cleanup
         shell: bash
@@ -102,5 +201,5 @@ jobs:
           git add index.html
           git diff --cached --check
           git diff --cached --stat
-          git commit -m "refactor: remove final Shop compatibility residues"
+          git commit -m "refactor: remove remaining Shop runtime compatibility"
           git push origin HEAD:main

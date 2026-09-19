@@ -1,0 +1,77 @@
+name: Zero Shop residual audit
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan current index for retired Shop residues
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('index.html')
+          s = path.read_text(encoding='utf-8')
+
+          exact = [
+              'ShopDB', 'shopDB', 'openShopDb', 'readShopStrict', 'writeShopStrict',
+              'clearShopStrict', 'openShopV99', 'shopReadMap', 'shopReplaceMap',
+              'captureShop', 'captureShopCore', 'normalizeShopData', 'normalizeRescueShopRaw',
+              'shopExpected', 'shopRestored', 'shop_gift_cabinet',
+              'xiaoshu_coupon_wallet_v1', 'coupon_wallet', 'gift_cabinet',
+              'xiaoshu-retired-commerce-cleanup', '礼物柜', '卡包', '商城', '.shop-modal',
+              'productFromItem', 'productRow'
+          ]
+
+          bad = {}
+          for token in exact:
+              count = s.count(token)
+              if count:
+                  bad[token] = count
+
+          print('=== exact residual counts ===')
+          for token, count in bad.items():
+              print(f'{token!r}: {count}')
+
+          # Print bounded line context only for the residues we need to remove.
+          needles = [k for k in bad]
+          print('\n=== matching lines ===')
+          shown = 0
+          for lineno, line in enumerate(s.splitlines(), 1):
+              hits = [n for n in needles if n in line]
+              if hits:
+                  text = line.strip()
+                  if len(text) > 900:
+                      text = text[:900] + ' …'
+                  print(f'L{lineno} hits={hits}: {text}')
+                  shown += 1
+                  if shown >= 120:
+                      print('... context output capped at 120 matching lines')
+                      break
+
+          # Broader concept counts are diagnostic only; they are not automatic deletion targets.
+          broad = ['product', 'goods', 'cart', 'order', 'coupon', 'wallet', 'payment', 'payFor', 'commodity', 'price', '商品', '购物车', '订单', '优惠券', '钱包', '代付', '购买']
+          print('\n=== broad diagnostic counts (not failures by themselves) ===')
+          for token in broad:
+              c = s.lower().count(token.lower()) if token.isascii() else s.count(token)
+              if c:
+                  print(f'{token!r}: {c}')
+
+          required = ['收藏', '朋友圈', '相册', '相机', '电话', '短信', 'callRecordsV2']
+          missing = [x for x in required if x not in s]
+          print('\n=== required unrelated feature markers ===')
+          print('missing:', missing)
+
+          if bad:
+              raise SystemExit('Zero-Shop audit RED: retired Shop residues remain: ' + repr(bad))
+          if missing:
+              raise SystemExit('Unrelated feature regression: missing ' + repr(missing))
+          print('Zero-Shop audit GREEN')
+          PY

@@ -2084,7 +2084,7 @@ function preflightBackup(data){
     migratedFrom:data.formatVersion||data.version||'legacy'
   };
   var mediaCount=validateMedia(clean,errors);
-  var cats=categoryIdsPresent(lf,ls,shop);
+  var cats=categoryIdsPresent(lf,ls);
   if(data.formatVersion===6&&data.type===FORMAT_TYPE){
     var mf=data.manifest;
     if(!mf||mf.schema!=='xiaoshu-backup-manifest-v1'){errors.push('v6 备份缺少有效 manifest');}
@@ -2105,7 +2105,7 @@ function preflightBackup(data){
   if(!cats.length)errors.push('备份中没有可恢复的当前模块数据');
   if(stats.retired)warnings.push('已忽略 '+stats.retired+' 个退休模块数据项');
   if(stats.ignored)warnings.push('已忽略 '+stats.ignored+' 个未知或非当前模块数据项');
-  return {ok:errors.length===0,errors:errors,warnings:warnings,data:clean,availableCategoryIds:cats,summary:{localforageKeys:Object.keys(lf).length,localStorageKeys:Object.keys(ls).length,mediaCount:mediaCount,shopStores:Object.keys(shop).length,ignored:stats.ignored,retired:stats.retired}};
+  return {ok:errors.length===0,errors:errors,warnings:warnings,data:clean,availableCategoryIds:cats,summary:{localforageKeys:Object.keys(lf).length,localStorageKeys:Object.keys(ls).length,mediaCount:mediaCount,ignored:stats.ignored,retired:stats.retired}};
 }
 
 
@@ -4540,7 +4540,7 @@ const addMessage = (message, options = null) => {
                 updateReplyPreview();
 
                 // TA的手机：实时收藏用户发送的消息
-                if (text && (type === 'normal' || type === 'share')) {
+                if (text && type === 'normal') {
                     const doCollect = () => {
                         if (typeof window.TaPhoneApp === 'object' && typeof window.TaPhoneApp.tryCollectChat === 'function') {
                             window.TaPhoneApp.tryCollectChat(text, Date.now(), messageData);
@@ -9624,13 +9624,13 @@ if (!key) return false;
 try {
 if (window.ChatBackup && typeof ChatBackup.classifyKey === 'function') {
 var backupCategory = ChatBackup.classifyKey(key,'ls') || ChatBackup.classifyKey(key,'lf');
-if (backupCategory === 'shop' || backupCategory === 'map') return false;
+if (backupCategory === 'map') return false;
 if (backupCategory) return true;
 }
 } catch(_e) {}
 if (key.indexOf('__xs_lf__ChatApp_V3__chat_data__') === 0) return true;
 var prefixes = [
-'CHAT_APP_', 'ta_phone_', 'xiaoshu_', 'moments_', 'shop_', 'dg_',
+'CHAT_APP_', 'ta_phone_', 'xiaoshu_', 'moments_', 'dg_',
 'customWeather_', 'dailyFortuneNotes_', 'gca_', 'kkk35g_', 'darkdoor_', 'leaf_'
 ];
 if (prefixes.some(function(p){ return key.indexOf(p) === 0; })) return true;
@@ -20963,7 +20963,7 @@ if(global.__xiaoshuV99CompleteAuditFixes)return;
 global.__xiaoshuV99CompleteAuditFixes=true;
 global.__kkk35gRelease='v99-complete-audit-fixes';
 
-var V99={version:'v99',build:'complete-audit-fixes',backupTimeout:45000,zipTimeout:90000,totalExportTimeout:140000,readTimeout:5000,writeTimeout:7000,shopTimeout:12000};
+var V99={version:'v99',build:'complete-audit-fixes',backupTimeout:45000,zipTimeout:90000,totalExportTimeout:140000,readTimeout:5000,writeTimeout:7000};
 global.xiaoshuV99Audit=V99;
 
 function errText(e){return String(e&&(e.message||e)||'未知错误');}
@@ -21067,12 +21067,12 @@ function exportLsValue(v,state){if(v==null||typeof v!=='string')return v;if(isMe
 function overlayLf(payload,key,value,state){if(!key||value===null||value===undefined)return;payload.localforage=payload.localforage||{};payload.localforage[key]=ChatBackup.extractMediaTree(clone(value)===null?value:clone(value),state);}
 function overlayLs(payload,key,value,state){if(!key||value===null||value===undefined)return;payload.localStorage=payload.localStorage||{};var raw=typeof value==='string'?value:JSON.stringify(value);payload.localStorage[key]=exportLsValue(raw,state);}
 function categoryList(payload){var seen={};ensureRegistryForData(payload);Object.keys(payload.localforage||{}).forEach(function(k){var c=ChatBackup.classifyKey(k,'lf');if(c)seen[c]=1;});Object.keys(payload.localStorage||{}).forEach(function(k){var c=ChatBackup.classifyKey(k,'ls');if(c)seen[c]=1;});return registry().map(function(c){return c.id;}).filter(function(id){return seen[id];});}
-function looksCurrentKey(k){return /^(CHAT_APP_V3_|__xs_lf__ChatApp_V3__chat_data__|xiaoshu_|kkk35g_|moments_|shop_|ta_phone_|home_|profile_|fullRealKeyboardChat_v2|little_home_)/.test(String(k||''));}
+function looksCurrentKey(k){return /^(CHAT_APP_V3_|__xs_lf__ChatApp_V3__chat_data__|xiaoshu_|kkk35g_|moments_|ta_phone_|home_|profile_|fullRealKeyboardChat_v2|little_home_)/.test(String(k||''));}
 async function collectUnownedDiagnostics(){var d={localStorage:[],localforage:[],notes:[]};ensureRegistryForKeys();try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(!k||!looksCurrentKey(k))continue;if(ChatBackup.shouldNeverPersistKey&&ChatBackup.shouldNeverPersistKey(k))continue;if(!ChatBackup.classifyKey(k,'ls'))d.localStorage.push(k);}}catch(e){d.notes.push('localStorage无人认领检查失败: '+errText(e));}
  try{var keys=await timeoutPromise(localforage.keys(),1800,'IndexedDB无人认领检查');for(var j=0;j<keys.length;j++){var x=keys[j];if(!looksCurrentKey(x))continue;if(ChatBackup.shouldNeverPersistKey&&ChatBackup.shouldNeverPersistKey(x))continue;if(!ChatBackup.classifyKey(x,'lf'))d.localforage.push(x);}}catch(e){d.notes.push('IndexedDB无人认领检查未完成: '+errText(e));}
  d.localStorage=d.localStorage.slice(0,100);d.localforage=d.localforage.slice(0,100);return d;}
 function applyFlagsPost(payload,flags){if(!flags)return;var allowed={chat:flags.inclMsgs!==false||flags.inclSet!==false,chat2:flags.inclChat2!==false,replies:flags.inclCustom!==false,stickers:flags.inclStickers!==false,themes:flags.inclThemes!==false,moments:flags.inclMoments!==false,map:flags.inclMap!==false,taPhone:flags.inclTaPhone!==false,interactionHub:flags.inclInteraction!==false,call:flags.inclCall!==false,coreExtra:flags.inclCoreExtra!==false};Object.keys(payload.localforage||{}).forEach(function(k){var c=ChatBackup.classifyKey(k,'lf');if(c&&allowed[c]===false)delete payload.localforage[k];});Object.keys(payload.localStorage||{}).forEach(function(k){var c=ChatBackup.classifyKey(k,'ls');if(c&&allowed[c]===false)delete payload.localStorage[k];});}
-function rebuildManifest(payload){payload.mediaMeta=mediaMeta(payload.mediaStore||{});var cats=categoryList(payload);payload.modules=cats;payload.manifest=payload.manifest||{};payload.manifest.schema='xiaoshu-backup-manifest-v1';payload.manifest.createdAt=payload.timestamp||new Date().toISOString();payload.manifest.categories=cats;payload.manifest.localforageKeys=Object.keys(payload.localforage||{}).sort();payload.manifest.localStorageKeys=Object.keys(payload.localStorage||{}).sort();delete payload.manifest.shopStores;payload.manifest.mediaCount=Object.keys(payload.mediaStore||{}).length;payload.manifest.mediaBytes=Object.keys(payload.mediaMeta||{}).reduce(function(n,id){return n+Number(payload.mediaMeta[id].size||0);},0);payload.manifest.payloadChecksums={algorithm:'stable-fnv1a-v1',localforage:checksum(payload.localforage||{}),localStorage:checksum(payload.localStorage||{})};
+function rebuildManifest(payload){payload.mediaMeta=mediaMeta(payload.mediaStore||{});var cats=categoryList(payload);payload.modules=cats;payload.manifest=payload.manifest||{};payload.manifest.schema='xiaoshu-backup-manifest-v1';payload.manifest.createdAt=payload.timestamp||new Date().toISOString();payload.manifest.categories=cats;payload.manifest.localforageKeys=Object.keys(payload.localforage||{}).sort();payload.manifest.localStorageKeys=Object.keys(payload.localStorage||{}).sort();payload.manifest.mediaCount=Object.keys(payload.mediaStore||{}).length;payload.manifest.mediaBytes=Object.keys(payload.mediaMeta||{}).reduce(function(n,id){return n+Number(payload.mediaMeta[id].size||0);},0);payload.manifest.payloadChecksums={algorithm:'stable-fnv1a-v1',localforage:checksum(payload.localforage||{}),localStorage:checksum(payload.localStorage||{})};
  var pfx=payload.appPrefix||currentPrefix(),sid=String(payload.sessionId||''),sl=payload.localforage&&payload.localforage[pfx+'sessionList'],mk=sid?(pfx+sid+'_chatMessages'):'',msgs=mk&&payload.localforage?payload.localforage[mk]:null;
  if(Array.isArray(sl)&&sid&&Array.isArray(msgs)){payload.manifest.chatSemantic={sessionId:sid,sessionCount:sl.length,sessionIds:sl.map(function(x){return x&&x.id!=null?String(x.id):'';}),messageKey:mk,messageCount:msgs.length,messageChecksum:checksum(msgs)};}else delete payload.manifest.chatSemantic;
  return payload;}
@@ -21228,7 +21228,7 @@ setTimeout(function(){try{ensureRegistryForKeys();}catch(e){}},700);
 })(window);
 </script>
 <script id="kkk35g-v99-release-marker">window.__kkk35gRelease='v99-complete-audit-fixes';</script>
-<!-- kkk35g v99: complete audit fixes; module data contracts; watchdog export; non-destructive timeout restore; two-stage rescue; live Shop/HomeDoor/sticker/beautify overlays; payload checksums; root LS media round-trip fix -->
+<!-- kkk35g v99: complete audit fixes; module data contracts; watchdog export; non-destructive timeout restore; two-stage rescue; live HomeDoor/sticker/beautify overlays; payload checksums; root LS media round-trip fix -->
 
 
 <style id="kkk35g-v104-chat1-interaction-performance-css">

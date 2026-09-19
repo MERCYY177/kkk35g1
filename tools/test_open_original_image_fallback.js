@@ -52,6 +52,12 @@ vm.runInContext(fnText+';this.openOriginalImage=openOriginalImage;',sandbox);
 (async()=>{
   let rejected=null;
   try{await sandbox.openOriginalImage('original://source')}catch(e){rejected=e}
+  if(rejected || !writes.some(s=>s.includes('original://source')) || sandbox.location.href){
+    console.log('FUNCTION_SOURCE='+fnText);
+    console.log('WRITES='+JSON.stringify(writes));
+    console.log('LOCATION='+sandbox.location.href);
+    console.log('REJECTED='+(rejected&&rejected.stack||rejected));
+  }
   assert.strictEqual(rejected,null,'fallback must not reject when image conversion fails');
   assert.ok(writes.some(s=>s.includes('original://source')),'when popup opens, fallback should render original src in that popup');
   assert.strictEqual(sandbox.location.href,'','successful popup fallback must not navigate the current app away');

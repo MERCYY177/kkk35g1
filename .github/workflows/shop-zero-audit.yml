@@ -10,72 +10,77 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Final deep zero-Shop audit
+      - name: Enforce final zero-Shop state
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re, collections
+          import re
 
           s=Path('index.html').read_text(encoding='utf-8')
 
           forbidden=[
+            # Retired Shop module / storage / migration.
             'ShopDB','shopDB','openShopDb','readShopStrict','writeShopStrict','clearShopStrict','openShopV99',
             'shopReadMap','shopReplaceMap','captureShop','captureShopCore','normalizeShopData','normalizeRescueShopRaw',
             'shopExpected','shopRestored','shop_gift_cabinet','shop_balance','shop_partner_balance','shop_search_history',
             'shop_products','shop_cart','shop_orders','shop_category','xiaoshu_shop_','xiaoshu_coupon_wallet_v1',
             'coupon_wallet','gift_cabinet','xiaoshu-retired-commerce-cleanup','礼物柜','卡包','商城','.shop-modal',
+            # Retired product-card compatibility / TA-phone commerce shell.
             'productFromItem','productRow','xs-product-','renderWallet','showCouponWallet','giftsData',
             'xsShopCardEsc','xsHasRealShopCardHtml','xsProductFromShareMessage','xsShopCardTagFromMessage',
             'xsRenderShopCardFromMessage','isShopCardMessage','safeShopHtml','data-shop-card','xs-shop-share-card',
             'shop-chat-card','ta-phone-product-card','order-product','xs-shop-card-message',"kind === 'shop'","return 'shop'",
             'xiaoshu-ta-phone-collections-and-gifts-v1-js','__xiaoshuTaPhoneCollectionsAndGiftsV1',
-            'xs-gift-time-line','xiaoshu-exit-button-and-coupon-wallet-style'
+            'xs-gift-time-line','xiaoshu-exit-button-and-coupon-wallet-style',
+            # Final retired message-data compatibility layer.
+            'shareData','productData','orderData','cardData','giftData','couponData','pay-request',
+            '好物分享','商品内容','商品卡片','商品卡','商品','帮我买','cardTag'
           ]
           bad={x:s.count(x) for x in forbidden if s.count(x)}
-          print('=== forbidden residuals ===')
+          print('=== forbidden Shop / legacy-commerce residuals ===')
           print(bad)
 
           required=[
-            'xiaoshu-coupon-chat-card','red-packet-card','transfer-bubble',
+            # Current non-Shop card features.
+            'xiaoshu-coupon-chat-card','red-packet-card','transfer-bubble','m.redPacket','m.transfer',
+            # Current TA-phone/system features that must not regress.
             '收藏','朋友圈','相册','相机','电话','短信','callRecordsV2'
           ]
           missing=[x for x in required if x not in s]
           print('=== required current features missing ===')
           print(missing)
 
-          suspicious=['shareData','productData','orderData','giftData','couponData','cardData','pay-request','好物分享','商品内容','代付','商品','购买']
-          print('=== suspicious field / semantic counts ===')
-          for token in suspicious:
-              c=s.count(token)
-              if c: print(repr(token),c)
-
-          print('=== exact suspicious lines ===')
-          needles=['shareData','productData','orderData','giftData','couponData','cardData','pay-request','好物分享','商品内容','代付','商品','购买']
-          for lineno,line in enumerate(s.splitlines(),1):
-              hits=[n for n in needles if n in line]
-              if hits:
-                  print(f'L{lineno} hits={hits}: {line.rstrip()}')
-
-          print('=== selected surrounding ranges ===')
-          lines=s.splitlines()
-          for lo,hi in [(2918,3030),(3208,3228),(4318,4335),(10636,10667),(17565,17579)]:
-              print(f'--- L{lo}-L{hi} ---')
-              for n in range(lo,min(hi,len(lines))+1):
-                  print(f'{n}: {lines[n-1]}')
-
-          print('=== commerce-ish identifier/class tokens ===')
-          rx=re.compile(r'(?<![A-Za-z0-9_$-])[A-Za-z_$][A-Za-z0-9_$-]*(?:shop|product|order|gift|wallet|cart)[A-Za-z0-9_$-]*(?![A-Za-z0-9_$-])',re.I)
-          counts=collections.Counter(m.group(0) for m in rx.finditer(s))
-          for token,count in counts.most_common(160):
-              print(f'{count:4} {token}')
-
-          m=re.search(r'function\s+xsGetChatCardKind\s*\([^)]*\)\s*\{',s)
-          print('xsGetChatCardKind present:',bool(m))
+          # Diagnostics for semantic leftovers which are intentionally not blanket-failed by generic words.
+          semantic_patterns={
+            "type === share": r"(?:message|msg|copy|m)?\.?type\s*===\s*['\"]share['\"]",
+            "type == share": r"(?:message|msg|copy|m)?\.?type\s*==\s*['\"]share['\"]",
+            "type share literal": r"\btype\s*:\s*['\"]share['\"]",
+            "shop word": r"\bshop\b",
+            "product word": r"\bproduct\b",
+            "wallet word": r"\bwallet\b",
+            "cart word": r"\bcart\b",
+            "gift word": r"\bgift\b",
+            "price identifier": r"\bprice\b",
+            "currency yuan": r"[¥￥]",
+            "purchase Chinese": r"购买|购物|代付|好物"
+          }
+          print('=== semantic diagnostics ===')
+          for label,pat in semantic_patterns.items():
+              hits=list(re.finditer(pat,s,re.I))
+              print(label, len(hits))
+              for m in hits[:20]:
+                  line=s.count('\n',0,m.start())+1
+                  a=s.rfind('\n',0,m.start())+1
+                  b=s.find('\n',m.end())
+                  if b<0: b=len(s)
+                  text=s[a:b].strip()
+                  if len(text)>1800: text=text[:1800]+' …'
+                  print(f'  L{line}: {text}')
 
           if bad:
               raise SystemExit('FINAL zero-Shop audit RED: '+repr(bad))
           if missing:
               raise SystemExit('current feature regression: '+repr(missing))
-          print('FINAL exact zero-Shop audit GREEN; inspect diagnostics above for remaining generic fields')
+          print('FINAL strict zero-Shop audit GREEN')
           PY

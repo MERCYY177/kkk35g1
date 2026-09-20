@@ -1,0 +1,170 @@
+name: Fix drawer performance and beautify order
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-drawer-beautify-order.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: RED - verify current defects exist
+        shell: bash
+        run: |
+          set +e
+          python - <<'PY'
+          from pathlib import Path
+          import re, json, sys
+          s=Path('index.html').read_text(encoding='utf-8')
+          defects=[]
+          if "document.addEventListener('touchmove',touchMove,{passive:false});" in s:
+              defects.append('global non-passive drawer touchmove')
+          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
+          if not m: raise SystemExit('main registry missing')
+          main=json.loads(m.group(1))
+          if any(not str(x.get('name','')).startswith(f'{i:02d}_') for i,x in enumerate(main,1)):
+              defects.append('chat1 numbering has gaps')
+          km=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId',s,re.S)
+          if not km: raise SystemExit('keyboard registry missing')
+          kb=json.loads(km.group(1))
+          if any(not str(x.get('name','')).startswith(f'{i:02d}_') for i,x in enumerate(kb,1)):
+              defects.append('chat2 numbering has gaps')
+          print('RED defects:', defects)
+          if not defects:
+              raise SystemExit('RED unexpectedly clean')
+          raise SystemExit(1)
+          PY
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then
+            echo 'RED did not fail as expected'
+            exit 1
+          fi
+          echo 'RED failed as expected'
+
+      - name: Apply minimal fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, json, hashlib
+
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+
+          def strip_num(name):
+              return re.sub(r'^\d{1,2}[\s_.-]*','',str(name or '')).strip()
+          def digest_payload(items, css_key):
+              data=[]
+              for x in items:
+                  data.append((x.get('id'), x.get(css_key,''), x.get('file','')))
+              return hashlib.sha256(json.dumps(data,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+
+          # Chat1 registry: stable IDs/CSS/files stay byte-semantically identical; only display names change.
+          pat=r'(<script id="xiaoshu-builtin-bubble-css-data" type="application/json">)(.*?)(</script>)'
+          m=re.search(pat,s,re.S)
+          if not m: raise SystemExit('main registry missing')
+          main=json.loads(m.group(2))
+          main_before=digest_payload(main,'chatCss')
+          for i,x in enumerate(main,1):
+              x['name']=f'{i:02d}_{strip_num(x.get("name"))}'
+          if digest_payload(main,'chatCss')!=main_before: raise SystemExit('main payload changed beyond names')
+          main_json=json.dumps(main,ensure_ascii=False,separators=(',',':'))
+          s=s[:m.start(2)]+main_json+s[m.end(2):]
+
+          # Big keyboard registry: preserve current order and stable IDs/CSS; make visible numbering continuous.
+          kpat=r'(const BUILTIN_KEYBOARD_BEAUTY_STYLES=)(\[.*?\])(;\s*let editingKeyboardBeautyId)'
+          km=re.search(kpat,s,re.S)
+          if not km: raise SystemExit('keyboard registry missing')
+          kb=json.loads(km.group(2))
+          kb_before=digest_payload(kb,'css')
+          for i,x in enumerate(kb,1):
+              x['name']=f'{i:02d}_{strip_num(x.get("name"))}'
+          if digest_payload(kb,'css')!=kb_before: raise SystemExit('keyboard payload changed beyond names')
+          kb_json=json.dumps(kb,ensure_ascii=False,separators=(',',':'))
+          s=s[:km.start(2)]+kb_json+s[km.end(2):]
+
+          # Drawer: touch-end already computes the swipe from start/end coordinates; the blocking move listener only
+          # calls preventDefault and does no live animation. Remove it so browser scrolling/compositing is not stalled.
+          old="document.addEventListener('touchmove',touchMove,{passive:false});"
+          if s.count(old)!=1: raise SystemExit(f'expected one blocking drawer touchmove, got {s.count(old)}')
+          s=s.replace(old,'',1)
+
+          # Keep the existing no-backdrop patch, but pre-promote the sliding drawer to a compositor layer.
+          sm=re.search(r'(<style id="kkk35g-v110-drawer-no-backdrop-composite-test">)(.*?)(</style>)',s,re.S)
+          if not sm: raise SystemExit('drawer performance style missing')
+          perf='''\n#xiaoshuAppDrawer{will-change:transform,opacity!important;transform:translate3d(0,calc(100% + 18px),0)!important;backface-visibility:hidden!important;-webkit-backface-visibility:hidden!important;}\nbody.xiaoshu-drawer-open #xiaoshuAppDrawer{transform:translate3d(0,0,0)!important;}\n#xiaoshuDrawerHomeEntry{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;will-change:opacity!important;}\n'''
+          if '#xiaoshuAppDrawer{will-change:transform,opacity!important' not in sm.group(2):
+              body=sm.group(2)+perf
+              s=s[:sm.start(2)]+body+s[sm.end(2):]
+
+          p.write_text(s,encoding='utf-8')
+          print('chat1 themes:',len(main))
+          print('chat1 names:',[x['name'] for x in main])
+          print('chat2 themes:',len(kb))
+          print('chat2 names:',[x['name'] for x in kb])
+          PY
+
+      - name: GREEN - verify performance and ordering
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, json, sys
+          s=Path('index.html').read_text(encoding='utf-8')
+          errs=[]
+
+          if "document.addEventListener('touchmove',touchMove,{passive:false});" in s:
+              errs.append('blocking drawer touchmove remains')
+          if '#xiaoshuAppDrawer{will-change:transform,opacity!important;transform:translate3d(0,calc(100% + 18px),0)!important' not in s:
+              errs.append('drawer compositor rule missing')
+          if 'body.xiaoshu-drawer-open #xiaoshuAppDrawer{transform:translate3d(0,0,0)!important;}' not in s:
+              errs.append('drawer open compositor rule missing')
+
+          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
+          if not m: errs.append('main registry missing'); main=[]
+          else: main=json.loads(m.group(1))
+          for i,x in enumerate(main,1):
+              expected=f'{i:02d}_'
+              if not str(x.get('name','')).startswith(expected): errs.append(f'chat1 {i} not continuous: {x.get("name")}')
+          km=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId',s,re.S)
+          if not km: errs.append('keyboard registry missing'); kb=[]
+          else: kb=json.loads(km.group(1))
+          for i,x in enumerate(kb,1):
+              expected=f'{i:02d}_'
+              if not str(x.get('name','')).startswith(expected): errs.append(f'chat2 {i} not continuous: {x.get("name")}')
+
+          # Required retained themes must still exist by stable ID/name body, and removed follow-system additions stay gone.
+          main_join='\n'.join(x.get('name','') for x in main)
+          kb_join='\n'.join(x.get('name','') for x in kb)
+          for token in ['JRYS兔丸粉白奶黄','LineKitty黑边白气泡']:
+              if token not in main_join: errs.append(f'main lost {token}')
+              if token not in kb_join: errs.append(f'keyboard lost {token}')
+          for token in ['IG黑白经典·跟随系统','IG渐变彩色·跟随系统','仿微信·跟随系统','iOS6复古绿·跟随系统']:
+              if token in s: errs.append(f'removed follow-system theme returned: {token}')
+
+          # Existing chat-more menu fix must remain.
+          if '#xs-chat-more-menu.show{display:grid!important;grid-template-columns:1fr!important' not in s:
+              errs.append('chat more vertical menu regressed')
+
+          print('chat1 count',len(main),[x.get('name') for x in main])
+          print('chat2 count',len(kb),[x.get('name') for x in kb])
+          print('GREEN errors',errs)
+          if errs: raise SystemExit(1)
+          print('DRAWER + BEAUTIFY GREEN')
+          PY
+
+      - name: Commit and push
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'perf: smooth drawer and renumber beautify themes'
+          git push

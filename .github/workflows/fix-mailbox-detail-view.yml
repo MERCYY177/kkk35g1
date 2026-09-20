@@ -1,0 +1,62 @@
+name: Fix mailbox detail view stacking
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-mailbox-detail-view.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply minimal mailbox mode fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old="function setMode(mode){var listMode=el('xsMailListMode'),compose=el('xsMailCompose'),view=el('xsMailView'),footer=el('xsMailFooter');closeSettings();listMode.style.display=mode==='list'?'block':'none';compose.classList.toggle('show',mode==='compose');view.classList.toggle('show',mode==='view');footer.style.display=mode==='list'?'block':'none';setHeaderAction(mode);if(mode==='list')renderList();el('xsMailMain').scrollTop=0}"
+          new="function setMode(mode){var listMode=el('xsMailListMode'),list=el('xsMailList'),compose=el('xsMailCompose'),view=el('xsMailView'),footer=el('xsMailFooter');closeSettings();listMode.style.display=mode==='list'?'block':'none';list.style.display=mode==='list'?'grid':'none';compose.classList.toggle('show',mode==='compose');view.classList.toggle('show',mode==='view');footer.style.display=mode==='list'?'block':'none';setHeaderAction(mode);if(mode==='list')renderList();el('xsMailMain').scrollTop=0}"
+          c=s.count(old)
+          assert c==1, f'expected exactly one mailbox setMode target, got {c}'
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          PY
+      - name: Regression test mailbox view switching
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const src=fs.readFileSync('index.html','utf8');
+          const matches=src.split('\n').filter(l=>l.startsWith('function setMode(mode){'));
+          const line=matches[matches.length-1];
+          if(!line) throw new Error('mailbox setMode not found');
+          const els={xsMailListMode:{style:{}},xsMailList:{style:{}},xsMailCompose:{classList:{toggle(){}}},xsMailView:{classList:{toggle(){}}},xsMailFooter:{style:{}},xsMailMain:{scrollTop:123}};
+          global.el=id=>els[id]; global.closeSettings=()=>{}; global.setHeaderAction=()=>{}; global.renderList=()=>{};
+          eval(line);
+          setMode('view');
+          if(els.xsMailList.style.display!=='none') throw new Error('detail mode still leaves mailbox list visible');
+          setMode('compose');
+          if(els.xsMailList.style.display!=='none') throw new Error('compose mode still leaves mailbox list visible');
+          setMode('list');
+          if(els.xsMailList.style.display!=='grid') throw new Error('list mode does not restore mailbox list');
+          console.log('MAILBOX VIEW SWITCH GREEN');
+          NODE
+          git diff --check
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "fix: hide mailbox list in letter detail view"
+          git push origin HEAD:main

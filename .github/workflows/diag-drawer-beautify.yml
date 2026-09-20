@@ -1,4 +1,4 @@
-name: Diagnose current chat defects
+name: Diagnose final fix targets
 
 on:
   push:
@@ -14,19 +14,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Isolate pool and call ownership logic
+      - name: Extract final target source
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
+          import re,json
           s=Path('index.html').read_text(encoding='utf-8')
           out=[]
-          def extract_at(start):
-              m=re.search(r'function\s+([A-Za-z0-9_$]+)\s*\([^)]*\)\s*\{',s[start:])
-              if not m:return None
-              st=start+m.start(); brace=s.find('{',st+m.group(0).find('{'))
-              depth=0;quote=None;esc=False;i=brace
+          def extract_func(name,occ=0):
+              ms=list(re.finditer(r'function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',s))
+              out.append(f'\n=== FUNCTION {name} matches={len(ms)} occ={occ} ===')
+              if len(ms)<=occ:return
+              st=ms[occ].start(); brace=s.find('{',ms[occ].start(),ms[occ].end()+2);depth=0;quote=None;esc=False;i=brace
               while i<len(s):
                   c=s[i]
                   if quote:
@@ -38,43 +38,42 @@ jobs:
                       elif c=='{':depth+=1
                       elif c=='}':
                           depth-=1
-                          if depth==0:return m.group(1),s[st:i+1]
+                          if depth==0:out.append(s[st:i+1]);return
                   i+=1
-              return m.group(1),s[st:st+8000]
-          def func(name,occ=0):
-              ms=list(re.finditer(r'function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',s))
-              out.append(f'\n=== {name} occ={occ} matches={len(ms)} ===')
-              if len(ms)<=occ:return
-              st=ms[occ].start(); r=extract_at(st)
-              out.append(r[1] if r else 'extract failed')
-          for n in ['buildPool','builtinSrcs','publishLegacyPool','emit','withoutBuiltins','isImage','norm','getPool','syncRuntime','hydrate']:
-              func(n)
-          func('safeResourceUrl',0);func('safeResourceUrl',1)
-          # function names containing call/phone, plus source around likely reject/status phrases
-          names=[]
-          for m in re.finditer(r'function\s+([A-Za-z0-9_$]*(?:Call|call|Phone|phone)[A-Za-z0-9_$]*)\s*\(',s):
-              n=m.group(1)
-              if n not in names:names.append(n)
-          out.append('\n=== CALL FUNCTION NAMES ===\n'+repr(names))
-          for n in names:
-              if re.search(r'(record|status|reject|decline|incoming|end|hang|render|finish|answer|call)',n,re.I):
-                  func(n)
-          # direct windows around call-specific Chinese words and call-state assignments
-          tokens=['未接来电','语音来电','视频来电','已拒绝','拒接','rejected','declined','incoming','outgoing','callRecordsV2','xs-main-call-record-kind']
-          for tok in tokens:
-              ms=list(re.finditer(re.escape(tok),s,re.I));out.append(f'\n=== TOKEN {tok} count={len(ms)} ===')
-              for m in ms[:12]:out.append(s[max(0,m.start()-1000):min(len(s),m.end()+1600)])
-          # Chat2 sticker batching/scroll exact functions too.
-          for n in ['appendSharedStickerBatch','bindSharedStickerGrid','renderSharedStickerGrid','normalizeSharedStickerPool']:
-              func(n)
+          for n in ['writeEventOnce','builtinPacks','itemSrc','sendBigKeyboardStickers','bindBigKeyboardStorage','bigKeyboardStickerPool','appendSharedStickerBatch','bindSharedStickerGrid']:
+              extract_func(n)
+          out.append('\n=== sendBigKeyboardStickers REFERENCES ===')
+          for m in re.finditer(r'sendBigKeyboardStickers\s*\(',s):out.append(s[max(0,m.start()-900):min(len(s),m.end()+1300)])
+          out.append('\n=== BIG KEYBOARD MESSAGE REFERENCES ===')
+          for m in re.finditer(r'xiaoshu-big-keyboard-stickers-(?:state|request)',s):out.append(s[max(0,m.start()-900):min(len(s),m.end()+1200)])
+          out.append('\n=== CALL EVENT CSS CANDIDATES ===')
+          # collect CSS blocks whose selector/body mentions call event classes or phone-slash icons nearby
+          for m in re.finditer(r'[^{}]{0,180}\{[^{}]{0,1200}\}',s):
+              b=m.group(0)
+              if re.search(r'(?:call-event|phone-slash|call.*message|message.*call|xs.*call.*pill|system.*call)',b,re.I):out.append(b)
+          out.append('\n=== BUILTIN STICKER STATIC FACTS ===')
+          # report arrays/JSON with assets/stickers refs and counts around builtinPacks function
+          bp=s.find('function builtinPacks')
+          if bp>=0:out.append(s[max(0,bp-12000):bp+5000])
+          # Beauty same-theme selector comparison for common themes
+          out.append('\n=== BEAUTY COMMON PAIRS ===')
+          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
+          km=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId',s,re.S)
+          main=json.loads(m.group(1)) if m else []; kb=json.loads(km.group(1)) if km else []
+          def body(n):return re.sub(r'^\d{1,2}[_. -]*','',str(n or ''))
+          a={body(x.get('name')):x for x in main};b={body(x.get('name')):x for x in kb}
+          for name in ['eve_iMessage蓝版','仿WhatsApp灰白上角尾巴','JRYS兔丸粉白奶黄','LineKitty黑边白气泡']:
+              if name in a and name in b:
+                  out.append('\n--- '+name+' CHAT1 ---\n'+str(a[name].get('chatCss',''))[:8000])
+                  out.append('\n--- '+name+' CHAT2 ---\n'+str(b[name].get('css',''))[:8000])
           text='\n'.join(out)
-          Path('_diag_pool_call.txt').write_text(text,encoding='utf-8')
-          print('report chars',len(text));print(text[:14000])
+          Path('_diag_final.txt').write_text(text,encoding='utf-8')
+          print('final diagnostic chars',len(text)); print(text[:16000])
           PY
-      - name: Commit diagnostics
+      - name: Commit final diagnostics
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add _diag_pool_call.txt
-          git commit -m 'test: record pool and call ownership diagnostics'
+          git add _diag_final.txt
+          git commit -m 'test: record final fix targets'
           git push

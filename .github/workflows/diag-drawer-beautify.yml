@@ -14,87 +14,67 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Isolate exact functions and registries
+      - name: Isolate pool and call ownership logic
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re,json
+          import re
           s=Path('index.html').read_text(encoding='utf-8')
           out=[]
-          def extract_function(name,occ=0):
-              ms=list(re.finditer(r'function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',s))
-              out.append(f'\n=== function {name} matches={len(ms)} ===')
-              if len(ms)<=occ:return
-              m=ms[occ]; start=m.start(); brace=s.find('{',m.start(),m.end()+2); depth=0; quote=None; esc=False; i=brace
+          def extract_at(start):
+              m=re.search(r'function\s+([A-Za-z0-9_$]+)\s*\([^)]*\)\s*\{',s[start:])
+              if not m:return None
+              st=start+m.start(); brace=s.find('{',st+m.group(0).find('{'))
+              depth=0;quote=None;esc=False;i=brace
               while i<len(s):
                   c=s[i]
                   if quote:
-                      if esc: esc=False
-                      elif c=='\\': esc=True
-                      elif c==quote: quote=None
+                      if esc:esc=False
+                      elif c=='\\':esc=True
+                      elif c==quote:quote=None
                   else:
-                      if c in "'\"`": quote=c
-                      elif c=='{': depth+=1
+                      if c in "'\"`":quote=c
+                      elif c=='{':depth+=1
                       elif c=='}':
                           depth-=1
-                          if depth==0:
-                              out.append(s[start:i+1]); return
+                          if depth==0:return m.group(1),s[st:i+1]
                   i+=1
-              out.append(s[start:start+5000])
-          for name in ['getPool','syncRuntime','hydrate','appendStickerBatch','bindStickerGrid','openStickers','normalizeSharedStickerPool','renderSharedStickerGrid','registerChat2Sticker','resolveChat2Sticker','safeResourceUrl']:
-              extract_function(name)
-          # Nearby definitions around canonical sticker store assignment.
-          pos=s.find('window.xiaoshuStickerStore=api')
-          out.append('\n=== STICKER STORE ASSIGNMENT WINDOW ===')
-          out.append(s[max(0,pos-10000):pos+2200] if pos>=0 else 'not found')
-          # All named functions containing reject/decline/call status tokens, compact windows.
-          out.append('\n=== CALL REJECT WINDOWS ===')
-          callp=re.compile(r'reject|decline|拒绝|callStatus|callRecord|call-status|call-record',re.I)
-          seen=[]
-          for m in callp.finditer(s):
-              if seen and m.start()-seen[-1]<1200: continue
-              seen.append(m.start()); out.append(f'--- @{m.start()} ---\n'+s[max(0,m.start()-1400):min(len(s),m.start()+2400)])
-              if len(seen)>=25:break
-          # Exact call-record CSS declaration block(s).
-          out.append('\n=== CALL RECORD CSS ===')
-          for selector in ['.xs-main-call-record{','.xs-main-call-record-main{','.xs-main-call-record-status{']:
-              p=0
-              while True:
-                  p=s.find(selector,p)
-                  if p<0:break
-                  e=s.find('}',p)
-                  out.append(s[p:e+1]);p=e+1
-          # Beauty registry structural comparison.
-          out.append('\n=== BEAUTY REGISTRY STRUCTURE ===')
-          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
-          km=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId',s,re.S)
-          main=json.loads(m.group(1)) if m else []
-          kb=json.loads(km.group(1)) if km else []
-          out.append('chat1 count='+str(len(main))+' keys='+repr(sorted(set().union(*[set(x.keys()) for x in main]) if main else [])))
-          out.append('chat2 count='+str(len(kb))+' keys='+repr(sorted(set().union(*[set(x.keys()) for x in kb]) if kb else [])))
-          def body(n):return re.sub(r'^\d{1,2}[_. -]*','',str(n or ''))
-          m1={body(x.get('name')):x for x in main};m2={body(x.get('name')):x for x in kb}
-          out.append('only_chat1='+repr(sorted(set(m1)-set(m2))))
-          out.append('only_chat2='+repr(sorted(set(m2)-set(m1))))
-          out.append('common='+str(len(set(m1)&set(m2))))
-          for n in sorted(set(m2)-set(m1))[:30]:
-              x=m2[n];out.append('CHAT2_ONLY '+n+' '+repr({k:(str(v)[:500] if isinstance(v,str) else v) for k,v in x.items()}))
-          # Locate beauty state application/bridge functions.
-          for name in ['applyParentBeautyImport','applyActiveKeyboardBeauty','kkk35gMigrateLegacyBeautyState','applyTheme']:
-              extract_function(name)
-          # Main drawer function and touch handlers.
-          for name in ['openDrawer','ensureDrawer','touchMove','touchEnd','closeDrawer']:
-              extract_function(name)
+              return m.group(1),s[st:st+8000]
+          def func(name,occ=0):
+              ms=list(re.finditer(r'function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',s))
+              out.append(f'\n=== {name} occ={occ} matches={len(ms)} ===')
+              if len(ms)<=occ:return
+              st=ms[occ].start(); r=extract_at(st)
+              out.append(r[1] if r else 'extract failed')
+          for n in ['buildPool','builtinSrcs','publishLegacyPool','emit','withoutBuiltins','isImage','norm','getPool','syncRuntime','hydrate']:
+              func(n)
+          func('safeResourceUrl',0);func('safeResourceUrl',1)
+          # function names containing call/phone, plus source around likely reject/status phrases
+          names=[]
+          for m in re.finditer(r'function\s+([A-Za-z0-9_$]*(?:Call|call|Phone|phone)[A-Za-z0-9_$]*)\s*\(',s):
+              n=m.group(1)
+              if n not in names:names.append(n)
+          out.append('\n=== CALL FUNCTION NAMES ===\n'+repr(names))
+          for n in names:
+              if re.search(r'(record|status|reject|decline|incoming|end|hang|render|finish|answer|call)',n,re.I):
+                  func(n)
+          # direct windows around call-specific Chinese words and call-state assignments
+          tokens=['未接来电','语音来电','视频来电','已拒绝','拒接','rejected','declined','incoming','outgoing','callRecordsV2','xs-main-call-record-kind']
+          for tok in tokens:
+              ms=list(re.finditer(re.escape(tok),s,re.I));out.append(f'\n=== TOKEN {tok} count={len(ms)} ===')
+              for m in ms[:12]:out.append(s[max(0,m.start()-1000):min(len(s),m.end()+1600)])
+          # Chat2 sticker batching/scroll exact functions too.
+          for n in ['appendSharedStickerBatch','bindSharedStickerGrid','renderSharedStickerGrid','normalizeSharedStickerPool']:
+              func(n)
           text='\n'.join(out)
-          Path('_diag_targeted.txt').write_text(text,encoding='utf-8')
-          print('targeted chars',len(text))
-          print(text[:12000])
+          Path('_diag_pool_call.txt').write_text(text,encoding='utf-8')
+          print('report chars',len(text));print(text[:14000])
           PY
-      - name: Commit targeted diagnostics
+      - name: Commit diagnostics
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add _diag_targeted.txt
-          git commit -m 'test: record targeted defect functions'
+          git add _diag_pool_call.txt
+          git commit -m 'test: record pool and call ownership diagnostics'
           git push

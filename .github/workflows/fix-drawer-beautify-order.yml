@@ -1,4 +1,4 @@
-name: Fix drawer performance and beautify order
+name: Fix chat stickers calls and beauty sync
 
 on:
   push:
@@ -15,150 +15,239 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: RED - verify current defects exist
+      - name: RED - prove current defects
         shell: bash
         run: |
-          set +e
           python - <<'PY'
           from pathlib import Path
-          import re, json, sys
+          import re,json
           s=Path('index.html').read_text(encoding='utf-8')
-          defects=[]
-          if "document.addEventListener('touchmove',touchMove,{passive:false});" in s:
-              defects.append('global non-passive drawer touchmove')
+          failures=[]
+          # Chat1 currently renders only the first 25 and depends on scroll for every later batch.
+          if "if(grid){appendStickerBatch();bindStickerGrid(grid,a);}" in s:
+              failures.append('chat1 picker is scroll-gated after first 25')
+          # Chat2 renderer likewise only appends one batch per render call.
+          if re.search(r'function renderSharedStickerGrid\(reset=true\).*?\nappendSharedStickerBatch\(\);\n}',s,re.S):
+              failures.append('chat2 picker renders one batch per render call')
+          # Parent iframe load sends storage only, so sticker delivery has a race.
+          old_bind="frame.addEventListener('load',function(){setTimeout(function(){sendBigKeyboardStorage(frame);},0);},true);"
+          if old_bind in s:
+              failures.append('chat2 iframe load does not push stickers')
+          # Incoming reject copy is from system perspective rather than the user's action.
+          if "writeEventOnce(call,'fa-phone-slash','已拒绝'+(call.kind==='video'?'视频':'语音')+'来电','')" in s:
+              failures.append('incoming rejection copy is wrong')
+          # Built-in beauty registries are provably out of sync.
           m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
-          if not m: raise SystemExit('main registry missing')
-          main=json.loads(m.group(1))
-          if any(not str(x.get('name','')).startswith(f'{i:02d}_') for i,x in enumerate(main,1)):
-              defects.append('chat1 numbering has gaps')
           km=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId',s,re.S)
-          if not km: raise SystemExit('keyboard registry missing')
-          kb=json.loads(km.group(1))
-          if any(not str(x.get('name','')).startswith(f'{i:02d}_') for i,x in enumerate(kb,1)):
-              defects.append('chat2 numbering has gaps')
-          print('RED defects:', defects)
-          if not defects:
-              raise SystemExit('RED unexpectedly clean')
-          raise SystemExit(1)
+          if not m or not km: raise SystemExit('beauty registry missing')
+          main=json.loads(m.group(1)); kb=json.loads(km.group(1))
+          def body(n): return re.sub(r'^\d{1,2}[\s_.-]*','',str(n or '')).strip()
+          if [body(x.get('name')) for x in main] != [body(x.get('name')) for x in kb]:
+              failures.append(f'beauty registries differ: chat1={len(main)} chat2={len(kb)}')
+          print('RED defects:', failures)
+          if len(failures) < 5:
+              raise SystemExit('Expected all five current defects before patch')
+          print('RED confirmed')
           PY
-          code=$?
-          set -e
-          if [ "$code" -eq 0 ]; then
-            echo 'RED did not fail as expected'
-            exit 1
-          fi
-          echo 'RED failed as expected'
 
-      - name: Apply minimal fixes
+      - name: Apply fixes
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re, json, hashlib
-
+          import re,json,hashlib
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
+          original=s
 
-          def strip_num(name):
-              return re.sub(r'^\d{1,2}[\s_.-]*','',str(name or '')).strip()
-          def digest_payload(items, css_key):
-              data=[]
-              for x in items:
-                  data.append((x.get('id'), x.get(css_key,''), x.get('file','')))
-              return hashlib.sha256(json.dumps(data,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+          def must_replace(old,new,count=1,label='replacement'):
+              global s
+              n=s.count(old)
+              if n < count: raise SystemExit(f'{label}: expected >= {count}, found {n}')
+              s=s.replace(old,new,count)
 
-          # Chat1 registry: stable IDs/CSS/files stay byte-semantically identical; only display names change.
-          pat=r'(<script id="xiaoshu-builtin-bubble-css-data" type="application/json">)(.*?)(</script>)'
-          m=re.search(pat,s,re.S)
-          if not m: raise SystemExit('main registry missing')
-          main=json.loads(m.group(2))
-          main_before=digest_payload(main,'chatCss')
-          for i,x in enumerate(main,1):
-              x['name']=f'{i:02d}_{strip_num(x.get("name"))}'
-          if digest_payload(main,'chatCss')!=main_before: raise SystemExit('main payload changed beyond names')
-          main_json=json.dumps(main,ensure_ascii=False,separators=(',',':'))
+          # ---------------- Stickers: Chat1 ----------------
+          # Preserve the canonical pool exactly; only remove the UI's dependence on scroll events.
+          old="if(grid){appendStickerBatch();bindStickerGrid(grid,a);}"
+          new="if(grid){while(stickerRenderedCount<stickerPool.length)appendStickerBatch();bindStickerGrid(grid,a);}"
+          must_replace(old,new,1,'chat1 full sticker render')
+
+          # ---------------- Stickers: Chat2 ----------------
+          # Render the whole received pool. Thumbnail network/decoding still remains concurrency-limited by
+          # SHARED_STICKER_LOAD_LIMIT, so this does not turn 496 images into 496 simultaneous loads.
+          pat=r'(function renderSharedStickerGrid\(reset=true\)\{.*?if\(!sharedStickerPool\.length\)\{.*?return;\}\s*)appendSharedStickerBatch\(\);(\s*\})'
+          mm=re.search(pat,s,re.S)
+          if not mm: raise SystemExit('chat2 renderSharedStickerGrid target missing')
+          s=s[:mm.start()]+mm.group(1)+"while(sharedStickerRenderedCount<sharedStickerPool.length)appendSharedStickerBatch();"+mm.group(2)+s[mm.end():]
+
+          # Always push stickers when the iframe finishes loading. Previously only storage was pushed here,
+          # leaving sticker setup dependent on a request/message timing race.
+          old_bind="frame.addEventListener('load',function(){setTimeout(function(){sendBigKeyboardStorage(frame);},0);},true);"
+          new_bind="frame.addEventListener('load',function(){setTimeout(function(){sendBigKeyboardStorage(frame);sendBigKeyboardStickers(frame);},0);},true);"
+          must_replace(old_bind,new_bind,1,'chat2 iframe sticker push')
+          # Reopening an already-loaded Chat2 must refresh both storage and stickers as well.
+          old_else="}else{\nsetTimeout(function(){sendBigKeyboardStorage(frame);},0);\n}"
+          new_else="}else{\nsetTimeout(function(){sendBigKeyboardStorage(frame);sendBigKeyboardStickers(frame);},0);\n}"
+          if old_else in s: s=s.replace(old_else,new_else,1)
+
+          # Keep the already-correct Chat2 relative local-sticker sanitizer. Assert rather than rewrite it.
+          local_rule="if((raw.startsWith('assets/stickers/')||raw.startsWith('./assets/stickers/'))&&!raw.includes('..')&&/\\.(?:png|jpe?g|gif|webp)(?:[?#][^\\s]*)?$/i.test(raw))return raw;"
+          if local_rule not in s: raise SystemExit('Chat2 local sticker safeResourceUrl rule missing; refusing to regress it')
+
+          # Correct stale comments only. Do NOT add/remove any built-in sticker resources here: the 119 unwanted
+          # physical files stay excluded by the existing built-in catalog.
+          s=s.replace('最终版：仅保留用户筛选后的499张本地表情，已删除隐藏项、重复项和失效外链。','最终版：使用统一共享表情池；内置可选表情保持用户确认的496张，另含用户上传项。')
+
+          # ---------------- Incoming call semantics ----------------
+          old_reject="function rejectIncoming(){if(!incoming)return false;var call=incoming;writeEventOnce(call,'fa-phone-slash','已拒绝'+(call.kind==='video'?'视频':'语音')+'来电','');recordStatus(Object.assign(call,{type:call.kind==='video'?'视频通话':'语音通话',direction:'incoming'}),'已拒绝',0);clearIncoming();scheduleIncoming(true);return false}"
+          new_reject="function rejectIncoming(){if(!incoming)return false;var call=incoming;writeEventOnce(call,'fa-phone-slash','我已拒绝','');recordStatus(Object.assign(call,{type:call.kind==='video'?'视频通话':'语音通话',direction:'incoming',endedBy:'me',endReason:'rejected'}),'我已拒绝',0);clearIncoming();scheduleIncoming(true);return false}"
+          must_replace(old_reject,new_reject,1,'incoming rejection semantics')
+          # Partner-side outgoing rejection keeps a different actor label.
+          s=s.replace("labels={unanswered:'对方未接听',busy:'对方正在忙',rejected:'对方拒绝通话'}","labels={unanswered:'对方未接听',busy:'对方正在忙',rejected:'对方已拒绝'}",1)
+
+          # The call-event pill is content-sized and truly centered. Symmetric padding avoids the screenshot's
+          # visually left-shifted icon+label group and the explicit max-width prevents theme CSS from stretching it.
+          old_css='.call-event-message{display:flex;justify-content:center;padding:4px 16px;margin:4px 0;}'
+          new_css='.call-event-message{display:flex!important;align-items:center!important;justify-content:center!important;padding:4px 16px;margin:4px 0;width:100%;box-sizing:border-box;}'
+          must_replace(old_css,new_css,1,'call event wrapper centering')
+          pill_pat=r'\.call-event-pill\{([^{}]*)\}'
+          pm=re.search(pill_pat,s)
+          if not pm: raise SystemExit('call event pill css missing')
+          body=pm.group(1)
+          body=re.sub(r'padding:[^;]+;','padding:6px 12px;',body,1)
+          body += 'justify-content:center!important;width:max-content!important;max-width:calc(100% - 32px)!important;min-width:0!important;margin-left:auto!important;margin-right:auto!important;box-sizing:border-box!important;'
+          s=s[:pm.start()]+'.call-event-pill{'+body+'}'+s[pm.end():]
+
+          # ---------------- Beauty: one identical built-in catalogue ----------------
+          # Chat2 currently contains all 43 desired presets; Chat1 contains only 18. Keep every existing Chat1 CSS
+          # byte-for-byte for its 18 known presets, and generate Chat1 selector equivalents only for the missing 25.
+          main_pat=r'(<script id="xiaoshu-builtin-bubble-css-data" type="application/json">)(.*?)(</script>)'
+          kb_pat=r'(const BUILTIN_KEYBOARD_BEAUTY_STYLES=)(\[.*?\])(;\s*let editingKeyboardBeautyId)'
+          m=re.search(main_pat,s,re.S); km=re.search(kb_pat,s,re.S)
+          if not m or not km: raise SystemExit('beauty registry missing')
+          main=json.loads(m.group(2)); kb=json.loads(km.group(2))
+          def body_name(n): return re.sub(r'^\d{1,2}[\s_.-]*','',str(n or '')).strip()
+          current={body_name(x.get('name')):x for x in main}
+
+          def chat2_to_chat1_css(css):
+              css=str(css or '')
+              # Longest/specific selectors first. This mirrors the mappings proven by the 18 common presets.
+              repl=[
+                ('.chat .msg.mine .bubble','.chat-container .message-wrapper.sent .message-sent'),
+                ('.chat .msg.other .bubble','.chat-container .message-wrapper.received .message-received'),
+                ('.chat .msg .bubble','.chat-container .message-wrapper .message'),
+                ('.chat .msg.mine','.chat-container .message-wrapper.sent'),
+                ('.chat .msg.other','.chat-container .message-wrapper.received'),
+                ('.chat .msg>div:not(.mini-avatar)','.chat-container .message-wrapper .message-content-wrapper'),
+                ('.chat .msg>div','.chat-container .message-wrapper .message-content-wrapper'),
+                ('.chat .msg .mini-avatar','.chat-container .message-wrapper .avatar'),
+                ('.chat .msg','.chat-container .message-wrapper'),
+                ('.chat','.chat-container'),
+              ]
+              for a,b in repl: css=css.replace(a,b)
+              # Remaining mini-avatar mentions are harmlessly mapped to Chat1 avatar elements.
+              css=css.replace('.mini-avatar','.avatar')
+              return css
+
+          synced=[]
+          for i,kitem in enumerate(kb,1):
+              name=body_name(kitem.get('name'))
+              display=f'{i:02d}_{name}'
+              if name in current:
+                  item=dict(current[name])
+                  item['name']=display
+              else:
+                  css=chat2_to_chat1_css(kitem.get('css',''))
+                  if not css.strip(): raise SystemExit('empty translated CSS for '+name)
+                  item={
+                    'id':'builtin_sync_'+hashlib.sha1(name.encode('utf-8')).hexdigest()[:16],
+                    'name':display,
+                    'source':'chat2-synced',
+                    'file':'',
+                    'chatCss':css,
+                  }
+              synced.append(item)
+          # Renumber Chat2 identically without changing IDs/CSS.
+          for i,x in enumerate(kb,1): x['name']=f'{i:02d}_{body_name(x.get("name"))}'
+          main_json=json.dumps(synced,ensure_ascii=False,separators=(',',':'))
+          # Registry replacement positions were found before earlier edits; re-find on the current source.
+          m=re.search(main_pat,s,re.S); km=re.search(kb_pat,s,re.S)
           s=s[:m.start(2)]+main_json+s[m.end(2):]
-
-          # Big keyboard registry: preserve current order and stable IDs/CSS; make visible numbering continuous.
-          kpat=r'(const BUILTIN_KEYBOARD_BEAUTY_STYLES=)(\[.*?\])(;\s*let editingKeyboardBeautyId)'
-          km=re.search(kpat,s,re.S)
-          if not km: raise SystemExit('keyboard registry missing')
-          kb=json.loads(km.group(2))
-          kb_before=digest_payload(kb,'css')
-          for i,x in enumerate(kb,1):
-              x['name']=f'{i:02d}_{strip_num(x.get("name"))}'
-          if digest_payload(kb,'css')!=kb_before: raise SystemExit('keyboard payload changed beyond names')
+          km=re.search(kb_pat,s,re.S)
           kb_json=json.dumps(kb,ensure_ascii=False,separators=(',',':'))
           s=s[:km.start(2)]+kb_json+s[km.end(2):]
 
-          # Drawer: touch-end already computes the swipe from start/end coordinates; the blocking move listener only
-          # calls preventDefault and does no live animation. Remove it so browser scrolling/compositing is not stalled.
-          old="document.addEventListener('touchmove',touchMove,{passive:false});"
-          if s.count(old)!=1: raise SystemExit(f'expected one blocking drawer touchmove, got {s.count(old)}')
-          s=s.replace(old,'',1)
+          # Keep the existing drawer performance patch intact; do not reintroduce blocking global touchmove.
+          if "document.addEventListener('touchmove',touchMove,{passive:false});" in s:
+              raise SystemExit('blocking global drawer touchmove unexpectedly returned')
+          if '#xiaoshuAppDrawer{will-change:transform,opacity!important' not in s:
+              raise SystemExit('existing drawer compositor optimization missing')
 
-          # Keep the existing no-backdrop patch, but pre-promote the sliding drawer to a compositor layer.
-          sm=re.search(r'(<style id="kkk35g-v110-drawer-no-backdrop-composite-test">)(.*?)(</style>)',s,re.S)
-          if not sm: raise SystemExit('drawer performance style missing')
-          perf='''\n#xiaoshuAppDrawer{will-change:transform,opacity!important;transform:translate3d(0,calc(100% + 18px),0)!important;backface-visibility:hidden!important;-webkit-backface-visibility:hidden!important;}\nbody.xiaoshu-drawer-open #xiaoshuAppDrawer{transform:translate3d(0,0,0)!important;}\n#xiaoshuDrawerHomeEntry{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;will-change:opacity!important;}\n'''
-          if '#xiaoshuAppDrawer{will-change:transform,opacity!important' not in sm.group(2):
-              body=sm.group(2)+perf
-              s=s[:sm.start(2)]+body+s[sm.end(2):]
-
+          if s==original: raise SystemExit('no changes produced')
           p.write_text(s,encoding='utf-8')
-          print('chat1 themes:',len(main))
-          print('chat1 names:',[x['name'] for x in main])
-          print('chat2 themes:',len(kb))
-          print('chat2 names:',[x['name'] for x in kb])
+          print('patched index.html chars',len(original),'->',len(s))
+          print('beauty synced',len(synced),'presets')
           PY
 
-      - name: GREEN - verify performance and ordering
+      - name: GREEN - static regression verification
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re, json, sys
+          import re,json
           s=Path('index.html').read_text(encoding='utf-8')
           errs=[]
 
-          if "document.addEventListener('touchmove',touchMove,{passive:false});" in s:
-              errs.append('blocking drawer touchmove remains')
-          if '#xiaoshuAppDrawer{will-change:transform,opacity!important;transform:translate3d(0,calc(100% + 18px),0)!important' not in s:
-              errs.append('drawer compositor rule missing')
-          if 'body.xiaoshu-drawer-open #xiaoshuAppDrawer{transform:translate3d(0,0,0)!important;}' not in s:
-              errs.append('drawer open compositor rule missing')
+          # Sticker rendering and bridge.
+          if "if(grid){while(stickerRenderedCount<stickerPool.length)appendStickerBatch();bindStickerGrid(grid,a);}" not in s: errs.append('Chat1 full pool render missing')
+          if 'while(sharedStickerRenderedCount<sharedStickerPool.length)appendSharedStickerBatch();' not in s: errs.append('Chat2 full pool render missing')
+          if "frame.addEventListener('load',function(){setTimeout(function(){sendBigKeyboardStorage(frame);sendBigKeyboardStickers(frame);},0);},true);" not in s: errs.append('Chat2 load sticker push missing')
+          if "window.addEventListener('stickerLibraryUpdated',function(){var frame=document.getElementById('xiaoshuBigKeyboardFrame');if(frame&&loaded)sendBigKeyboardStickers(frame);});" not in s: errs.append('Chat2 live sticker refresh listener regressed')
+          local_rule="if((raw.startsWith('assets/stickers/')||raw.startsWith('./assets/stickers/'))&&!raw.includes('..')&&/\\.(?:png|jpe?g|gif|webp)(?:[?#][^\\s]*)?$/i.test(raw))return raw;"
+          if local_rule not in s: errs.append('local sticker sanitizer rule regressed')
+          # Ensure no accidental source-level operation was introduced that blindly scans all physical assets into the built-in pool.
+          if 'assets/stickers/**/*' in s or 'glob("assets/stickers' in s or "glob('assets/stickers" in s: errs.append('unexpected physical-directory sticker auto-import')
 
+          # Active/automatic sticker sending must read the unified store pool, not a 100-item slice.
+          auto=re.search(r'window\.xiaoshuSendPartnerStickerNow=function\(\).*?function mount\(\)',s,re.S)
+          if not auto: errs.append('automatic sticker sender missing')
+          else:
+              txt=auto.group(0)
+              if 'xiaoshuStickerStore.getPool()' not in txt: errs.append('automatic sender not using canonical pool')
+              if re.search(r'getPool\(\)\s*\.slice|pool\s*=\s*pool\.slice',txt): errs.append('automatic sender slices the pool')
+
+          # Call actor semantics + layout.
+          if "writeEventOnce(call,'fa-phone-slash','我已拒绝','')" not in s: errs.append('incoming rejection does not say 我已拒绝')
+          if "direction:'incoming',endedBy:'me',endReason:'rejected'" not in s: errs.append('incoming rejection actor metadata missing')
+          if "rejected:'对方已拒绝'" not in s: errs.append('outgoing partner rejection copy missing')
+          if 'justify-content:center!important;width:max-content!important;max-width:calc(100% - 32px)!important' not in s: errs.append('call pill centering rule missing')
+
+          # Beauty catalogues: exact same count/order/body names.
           m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
-          if not m: errs.append('main registry missing'); main=[]
-          else: main=json.loads(m.group(1))
-          for i,x in enumerate(main,1):
-              expected=f'{i:02d}_'
-              if not str(x.get('name','')).startswith(expected): errs.append(f'chat1 {i} not continuous: {x.get("name")}')
           km=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId',s,re.S)
-          if not km: errs.append('keyboard registry missing'); kb=[]
-          else: kb=json.loads(km.group(1))
-          for i,x in enumerate(kb,1):
-              expected=f'{i:02d}_'
-              if not str(x.get('name','')).startswith(expected): errs.append(f'chat2 {i} not continuous: {x.get("name")}')
+          if not m or not km: errs.append('beauty registry missing'); main=[];kb=[]
+          else: main=json.loads(m.group(1));kb=json.loads(km.group(1))
+          def body(n): return re.sub(r'^\d{1,2}[\s_.-]*','',str(n or '')).strip()
+          a=[body(x.get('name')) for x in main]; b=[body(x.get('name')) for x in kb]
+          if len(main)!=43 or len(kb)!=43: errs.append(f'beauty count mismatch {len(main)}/{len(kb)}')
+          if a!=b: errs.append('beauty names/order still differ')
+          if any(not str(x.get('chatCss','')).strip() for x in main): errs.append('Chat1 has empty beauty CSS')
+          # Existing 18 hand-tuned Chat1 themes must remain represented; no destructive theme deletion.
+          for token in ['eve_iMessage蓝版','仿WhatsApp灰白上角尾巴','JRYS兔丸粉白奶黄','LineKitty黑边白气泡']:
+              if token not in a: errs.append('Chat1 lost '+token)
 
-          # Required retained themes must still exist by stable ID/name body, and removed follow-system additions stay gone.
-          main_join='\n'.join(x.get('name','') for x in main)
-          kb_join='\n'.join(x.get('name','') for x in kb)
-          for token in ['JRYS兔丸粉白奶黄','LineKitty黑边白气泡']:
-              if token not in main_join: errs.append(f'main lost {token}')
-              if token not in kb_join: errs.append(f'keyboard lost {token}')
-          for token in ['IG黑白经典·跟随系统','IG渐变彩色·跟随系统','仿微信·跟随系统','iOS6复古绿·跟随系统']:
-              if token in s: errs.append(f'removed follow-system theme returned: {token}')
+          # Drawer prior fix remains.
+          if "document.addEventListener('touchmove',touchMove,{passive:false});" in s: errs.append('blocking drawer touchmove returned')
+          if '#xiaoshuAppDrawer{will-change:transform,opacity!important' not in s: errs.append('drawer compositor rule missing')
 
-          # Existing chat-more menu fix must remain.
-          if '#xs-chat-more-menu.show{display:grid!important;grid-template-columns:1fr!important' not in s:
-              errs.append('chat more vertical menu regressed')
+          # Basic HTML/source integrity checks for accidental truncation.
+          if len(s)<1900000: errs.append('index.html unexpectedly shrank')
+          if s.count('<script') < 20 or s.count('</script>') < 20: errs.append('script structure looks truncated')
 
-          print('chat1 count',len(main),[x.get('name') for x in main])
-          print('chat2 count',len(kb),[x.get('name') for x in kb])
+          print('beauty counts',len(main),len(kb))
           print('GREEN errors',errs)
           if errs: raise SystemExit(1)
-          print('DRAWER + BEAUTIFY GREEN')
+          print('CHAT FIX REGRESSION GREEN')
           PY
 
       - name: Commit and push
@@ -166,5 +255,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html
-          git commit -m 'perf: smooth drawer and renumber beautify themes'
+          git commit -m 'fix: sync chat stickers calls and beauty'
           git push

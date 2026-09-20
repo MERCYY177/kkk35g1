@@ -13,65 +13,44 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Inspect historical sticker catalog and Chat2 bridge
+      - name: Trace Chat2 sticker bridge
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json, re, subprocess
+          import subprocess
 
-          HIST='bd884979aec7822e1fd307b3fc1a593942f2082d'
-          CUR=Path('index.html').read_text(encoding='utf-8')
-          OLD=subprocess.check_output(['git','show',f'{HIST}:index.html'],text=True,errors='replace')
+          text=Path('index.html').read_text(encoding='utf-8')
+          needles=[
+            'xiaoshu-big-keyboard-stickers-request',
+            'xiaoshu-big-keyboard-stickers',
+            'big-keyboard-stickers',
+            'sharedStickerPool',
+            'normalizeSharedStickerPool',
+            'bigKeyboardStickerPool()',
+          ]
+          for n in needles:
+              print('\n===',n,'count',text.count(n),'===')
+              pos=0
+              for k in range(12):
+                  i=text.find(n,pos)
+                  if i<0: break
+                  print('CTX',k+1,text[max(0,i-900):min(len(text),i+1900)].replace('\n','\\n'))
+                  pos=i+len(n)
 
-          def assets_at(ref):
-              out=subprocess.check_output(['git','ls-tree','-r','--name-only',ref,'--','assets/stickers'],text=True)
-              return sorted(x for x in out.splitlines() if x and not x.endswith('/'))
+          print('\n=== commits changing exact request token ===')
+          try:
+              out=subprocess.check_output(['git','log','--all','-Sxiaoshu-big-keyboard-stickers-request','--format=%H%x09%ad%x09%s','--date=iso','--','index.html'],text=True,errors='replace')
+              print(out)
+          except subprocess.CalledProcessError as e:
+              print(e.output)
 
-          def pack_info(text,label):
-              m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',text,re.S|re.I)
-              if not m:
-                  print(label,'PACK_DATA MISSING')
-                  return set()
-              data=json.loads(m.group(1).strip() or '[]')
-              refs=[]
-              for p in data if isinstance(data,list) else []:
-                  for it in (p or {}).get('items',[]):
-                      if isinstance(it,dict) and it.get('src'): refs.append(str(it['src']))
-              print(label,'packs',len(data),'items',len(refs),'unique',len(set(refs)))
-              print(label,'pack_names',[p.get('name') for p in data if isinstance(p,dict)])
-              pref={}
-              for s in refs:
-                  key='embedded' if '/embedded/' in s else ('document' if '/document_' in s else ('phone' if '/phone_' in s else 'other'))
-                  pref[key]=pref.get(key,0)+1
-              print(label,'pack_prefix_counts',pref)
-              return set(refs)
+          print('\n=== commits changing sharedStickerPool ===')
+          try:
+              out=subprocess.check_output(['git','log','--all','-SsharedStickerPool','--format=%H%x09%ad%x09%s','--date=iso','--','index.html'],text=True,errors='replace')
+              print(out[:12000])
+          except subprocess.CalledProcessError as e:
+              print(e.output)
 
-          cur_assets=assets_at('HEAD')
-          old_assets=assets_at(HIST)
-          print('CURRENT assets',len(cur_assets),'embedded',sum('/embedded/' in x for x in cur_assets))
-          print('HIST assets',len(old_assets),'embedded',sum('/embedded/' in x for x in old_assets))
-          print('missing_from_current',len(set(old_assets)-set(cur_assets)))
-          print('missing_sample',sorted(set(old_assets)-set(cur_assets))[:12])
-          cur_refs=pack_info(CUR,'CURRENT')
-          old_refs=pack_info(OLD,'HIST')
-          print('HIST assets absent from HIST pack',len(set(old_assets)-old_refs))
-          print('HIST refs absent from assets',len(old_refs-set(old_assets)))
-          print('CURRENT assets absent from CURRENT pack',len(set(cur_assets)-cur_refs))
-          print('CURRENT refs absent from assets',len(cur_refs-set(cur_assets)))
-
-          # Compact bridge inventory from current and historical source.
-          needles=['xiaoshu-sticker-pool-request','xiaoshu-sticker-pool-response','requestSharedStickerPool','bigKeyboardStickerPool','xiaoshuBigKeyboardFrame','postMessage({type:']
-          for label,text in [('CURRENT',CUR),('HIST',OLD)]:
-              print('---',label,'BRIDGE COUNTS ---')
-              for n in needles: print(n,text.count(n))
-              for n in ['requestSharedStickerPool','xiaoshu-sticker-pool-request','xiaoshu-sticker-pool-response']:
-                  pos=0
-                  for idx in range(4):
-                      i=text.find(n,pos)
-                      if i<0: break
-                      print(label,'CTX',n,idx+1,text[max(0,i-700):min(len(text),i+1500)].replace('\n','\\n'))
-                      pos=i+len(n)
-
-          print('DIAG HISTORICAL STICKER CATALOG DONE')
+          print('DIAG CHAT2 STICKER BRIDGE DONE')
           PY

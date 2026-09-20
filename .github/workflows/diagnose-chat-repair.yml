@@ -1,0 +1,80 @@
+name: Diagnose chat repair targets
+
+on:
+  push:
+    branches: [repair-chat-20260920]
+    paths:
+      - '.github/workflows/diagnose-chat-repair.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: RED - inspect exact broken paths
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, json
+          s=Path('index.html').read_text(encoding='utf-8')
+          print('index chars',len(s))
+
+          def show(label, pattern, flags=re.S, limit=5000):
+              m=re.search(pattern,s,flags)
+              print('\n===== '+label+' =====')
+              if not m:
+                  print('MISSING')
+                  return None
+              text=m.group(0)
+              print(text[:limit])
+              if len(text)>limit: print('...TRUNCATED...',len(text))
+              return text
+
+          pack=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
+          if pack:
+              data=json.loads(pack.group(1))
+              refs=[str(i.get('src','')).strip() for p in data for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
+              print('builtin sticker refs',len(refs),'unique',len(set(refs)))
+          else: print('builtin sticker pack MISSING')
+
+          show('Sticker store block',r'<script id="xiaoshu-sticker-store[^>]*>.*?</script>')
+          show('Chat1 append/bind region',r'function appendStickerBatch\(\).*?function bindStickerGrid\(.*?\n\s*\}',limit=9000)
+          show('Chat1 render picker',r'function renderPicker\(.*?\n\s*\}',limit=9000)
+          show('Chat2 normalize pool',r'function normalizeSharedStickerPool\(.*?\n\s*\}',limit=7000)
+          show('Chat2 render grid',r'function renderSharedStickerGrid\(reset=true\).*?\n\}',limit=9000)
+          show('Parent sticker sender',r'function sendBigKeyboardStickers\(frame\).*?\n\}',limit=9000)
+          show('Big keyboard frame load bridge',r'frame\.addEventListener\(["\']load["\'].*?\);',limit=5000)
+          show('Automatic sticker sender',r'window\.xiaoshuSendPartnerStickerNow=function\(\).*?function mount\(\)',limit=10000)
+          show('Incoming reject',r'function rejectIncoming\(\).*?return false\}',limit=5000)
+
+          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
+          k=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId',s,re.S)
+          if m and k:
+              a=json.loads(m.group(1)); b=json.loads(k.group(1))
+              print('\n===== Beauty registries =====')
+              print('chat1',len(a),[x.get('name') for x in a])
+              print('chat2',len(b),[x.get('name') for x in b])
+          else: print('beauty registry MISSING',bool(m),bool(k))
+
+          print('\n===== Required token counts =====')
+          tokens=[
+            'if(grid){appendStickerBatch();bindStickerGrid(grid,a);}',
+            'while(sharedStickerRenderedCount<sharedStickerPool.length)appendSharedStickerBatch();',
+            'sendBigKeyboardStickers(frame)',
+            "writeEventOnce(call,'fa-phone-slash','我已拒绝','')",
+            "rejected:'对方已拒绝'",
+            '.call-event-message{display:flex!important;align-items:center!important;justify-content:center!important;'
+          ]
+          for t in tokens: print(repr(t[:80]),s.count(t))
+
+          # Deliberate RED: current Chat1 has only one eager batch; this test captures the reported incomplete picker.
+          if 'if(grid){appendStickerBatch();bindStickerGrid(grid,a);}' in s:
+              raise SystemExit('RED confirmed: Chat1 picker starts with one batch and depends on fragile incremental loading')
+          raise SystemExit('RED target changed: inspect diagnostics')
+          PY

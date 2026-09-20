@@ -9,18 +9,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect CSS selector UI mapping
+      - name: Inspect appended CSS presets
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           import re
           s=Path('index.html').read_text(encoding='utf-8')
-          for needle in ['xiaoshu-builtin-bubble-css-data','BUILTIN_KEYBOARD_BEAUTY_STYLES','chatCss','bubble-css','keyboard-beauty']:
-              print('\n===',needle,'===')
-              ps=[m.start() for m in re.finditer(re.escape(needle),s,re.I)]
-              print('count',len(ps))
-              for p in ps[-12:]:
-                  print('---')
-                  print(s[max(0,p-800):p+1300].replace('\n',' '))
+          needle='XIAOSHU_PHASE1_BUILTINS'
+          ps=[m.start() for m in re.finditer(needle,s)]
+          print('count',len(ps))
+          for p in ps:
+              print('\n--- context ---')
+              print(s[max(0,p-1000):p+8000])
           PY

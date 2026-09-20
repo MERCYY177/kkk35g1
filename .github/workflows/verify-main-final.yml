@@ -1,0 +1,54 @@
+name: Verify merged main chat repair
+on:
+  push:
+    branches: [repair-chat-20260920]
+    paths: ['.github/workflows/verify-main-final.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 1616746ac2b4fd380ff8ca69f9efe3f643f0068a
+          fetch-depth: 0
+      - name: Verify exact merged main commit
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "1616746ac2b4fd380ff8ca69f9efe3f643f0068a"
+          git diff --check HEAD^
+          python - <<'PY'
+          from pathlib import Path
+          import re,json,subprocess
+          s=Path('index.html').read_text(encoding='utf-8'); bad=[]
+          def ck(v,m): print(('PASS ' if v else 'FAIL ')+m); bad.append(m) if not v else None
+          pat=r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>'
+          m=re.search(pat,s,re.S|re.I); d=json.loads(m.group(1)) if m else []
+          refs=[str(i.get('src','')).strip() for p in d for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
+          old=subprocess.check_output(['git','show','bd884979aec7822e1fd307b3fc1a593942f2082d:index.html'],text=True,encoding='utf-8',errors='replace')
+          hm=re.search(pat,old,re.S|re.I); hd=json.loads(hm.group(1)) if hm else []
+          hist=[str(i.get('src','')).strip() for p in hd for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
+          assets=[x for x in Path('assets/stickers').glob('*') if x.is_file() and x.suffix.lower() in {'.png','.jpg','.jpeg','.gif','.webp'}]
+          extras={x.name for x in assets}-{Path(x).name for x in refs}
+          ck(len(refs)==496 and len(set(refs))==496,'main has 496 unique wanted sticker refs')
+          ck(refs==hist,'main 496 exactly matches historical wanted corpus')
+          ck(all(Path(x).is_file() for x in refs),'all 496 wanted sticker files exist')
+          ck(len(extras)==119,'119 unwanted sticker filenames remain excluded')
+          ck('function scheduleStickerGridFill(generation)' in s and 'scheduleStickerGridFill(stickerLoadGeneration)' in s,'Chat1 progressive completion is on main')
+          ck('if(grid){appendStickerBatch();bindStickerGrid(grid,a);}' not in s,'old Chat1 scroll-only activation is absent')
+          parent=re.search(r'function bigKeyboardStickerPool\(\)\{.*?\n\}',s,re.S); pt=parent.group(0) if parent else ''
+          ck("(!Array.isArray(pool)||!pool.length)&&typeof window.xiaoshuGetSharedStickerPool==='function'" in pt and "(!Array.isArray(pool)||!pool.length)&&Array.isArray(window._stickerLibrary)" in pt,'Chat2 bridge empty-pool fallback is on main')
+          ck('sharedStickerPool=normalizeSharedStickerPool(parentPool);' in s and "if(!sharedStickerPool.length){requestSharedStickerPool();" in s,'Chat2 iframe self-heal is on main')
+          ck('while(sharedStickerRenderedCount<sharedStickerPool.length)appendSharedStickerBatch();' in s,'Chat2 full-pool render remains enabled')
+          auto=re.search(r'window\.xiaoshuSendPartnerStickerNow=function\(\).*?function mount\(\)',s,re.S); at=auto.group(0) if auto else ''
+          ck("(!Array.isArray(pool)||!pool.length)&&typeof window.xiaoshuGetSharedStickerPool==='function'" in at and "(!Array.isArray(pool)||!pool.length)&&Array.isArray(window._stickerLibrary)" in at,'automatic sticker fallback is on main')
+          bm=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S); km=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId',s,re.S)
+          a=json.loads(bm.group(1)) if bm else []; b=json.loads(km.group(1)) if km else []
+          ck(len(a)==18 and len(b)==18 and [x.get('name') for x in a]==[x.get('name') for x in b],'Chat1 and Chat2 retain the same 18 beauty themes')
+          ck(s.count("writeEventOnce(call,'fa-phone-slash','我已拒绝','')")==1,'incoming rejection copy remains 我已拒绝')
+          ck(s.count('.call-event-message{display:flex!important;align-items:center!important;justify-content:center!important;')==1,'call event centering remains on main')
+          ck(len(s)>1500000 and '<html' in s and '</html>' in s,'main index structure is intact')
+          if bad: raise SystemExit('FAILED: '+', '.join(bad))
+          print('FINAL MAIN VERIFICATION PASSED')
+          PY

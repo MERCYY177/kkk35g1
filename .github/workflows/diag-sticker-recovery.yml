@@ -13,81 +13,65 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Audit sticker assets, code and history
+      - name: Inspect historical sticker catalog and Chat2 bridge
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          from collections import Counter
-          import re, subprocess
+          import json, re, subprocess
 
-          def sh(*args):
-              return subprocess.check_output(args, text=True, errors='replace').strip()
+          HIST='bd884979aec7822e1fd307b3fc1a593942f2082d'
+          CUR=Path('index.html').read_text(encoding='utf-8')
+          OLD=subprocess.check_output(['git','show',f'{HIST}:index.html'],text=True,errors='replace')
 
-          p = Path('index.html')
-          text = p.read_text(encoding='utf-8')
-          assets = sorted(x.as_posix() for x in Path('assets/stickers').glob('*') if x.is_file())
-          print('=== CURRENT ===')
-          print('HEAD', sh('git','rev-parse','HEAD'))
-          print('sticker_asset_files', len(assets))
-          pref = Counter(Path(x).name.split('_',1)[0] for x in assets)
-          print('asset_prefix_counts', dict(sorted(pref.items())))
-          print('first_assets', assets[:8])
-          print('last_assets', assets[-8:])
+          def assets_at(ref):
+              out=subprocess.check_output(['git','ls-tree','-r','--name-only',ref,'--','assets/stickers'],text=True)
+              return sorted(x for x in out.splitlines() if x and not x.endswith('/'))
 
-          refs = re.findall(r"assets/stickers/[A-Za-z0-9_.-]+", text)
-          uniq_refs = sorted(set(refs))
-          print('code_asset_refs_total', len(refs), 'unique', len(uniq_refs))
-          missing = sorted(set(uniq_refs) - set(assets))
-          unreferenced = sorted(set(assets) - set(uniq_refs))
-          print('missing_referenced_assets', len(missing), missing[:80])
-          print('unreferenced_assets', len(unreferenced), unreferenced[:80])
+          def pack_info(text,label):
+              m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',text,re.S|re.I)
+              if not m:
+                  print(label,'PACK_DATA MISSING')
+                  return set()
+              data=json.loads(m.group(1).strip() or '[]')
+              refs=[]
+              for p in data if isinstance(data,list) else []:
+                  for it in (p or {}).get('items',[]):
+                      if isinstance(it,dict) and it.get('src'): refs.append(str(it['src']))
+              print(label,'packs',len(data),'items',len(refs),'unique',len(set(refs)))
+              print(label,'pack_names',[p.get('name') for p in data if isinstance(p,dict)])
+              pref={}
+              for s in refs:
+                  key='embedded' if '/embedded/' in s else ('document' if '/document_' in s else ('phone' if '/phone_' in s else 'other'))
+                  pref[key]=pref.get(key,0)+1
+              print(label,'pack_prefix_counts',pref)
+              return set(refs)
 
-          needles = [
-              'xiaoshuStickerStore','xiaoshuBuiltinStickerPacks','builtinSrcs','getPool','buildPool',
-              'xiaoshuGetSharedStickerPool','xiaoshuProactiveStickerStore','xs_proactive_stickers',
-              '聊天2','聊天 2','chat2','chat-2','chat2-sticker','sticker-panel','sticker-picker',
-              'custom-sticker','customSticker','stickerPack','sticker-pack'
-          ]
-          print('=== IDENTIFIER COUNTS ===')
-          for n in needles:
-              print(n, text.count(n))
+          cur_assets=assets_at('HEAD')
+          old_assets=assets_at(HIST)
+          print('CURRENT assets',len(cur_assets),'embedded',sum('/embedded/' in x for x in cur_assets))
+          print('HIST assets',len(old_assets),'embedded',sum('/embedded/' in x for x in old_assets))
+          print('missing_from_current',len(set(old_assets)-set(cur_assets)))
+          print('missing_sample',sorted(set(old_assets)-set(cur_assets))[:12])
+          cur_refs=pack_info(CUR,'CURRENT')
+          old_refs=pack_info(OLD,'HIST')
+          print('HIST assets absent from HIST pack',len(set(old_assets)-old_refs))
+          print('HIST refs absent from assets',len(old_refs-set(old_assets)))
+          print('CURRENT assets absent from CURRENT pack',len(set(cur_assets)-cur_refs))
+          print('CURRENT refs absent from assets',len(cur_refs-set(cur_assets)))
 
-          keys = sorted(set(re.findall(r"['\"]([^'\"]*sticker[^'\"]*)['\"]", text, flags=re.I)))
-          print('=== STICKER STRING KEYS ===')
-          for k in keys[:250]: print(k)
+          # Compact bridge inventory from current and historical source.
+          needles=['xiaoshu-sticker-pool-request','xiaoshu-sticker-pool-response','requestSharedStickerPool','bigKeyboardStickerPool','xiaoshuBigKeyboardFrame','postMessage({type:']
+          for label,text in [('CURRENT',CUR),('HIST',OLD)]:
+              print('---',label,'BRIDGE COUNTS ---')
+              for n in needles: print(n,text.count(n))
+              for n in ['requestSharedStickerPool','xiaoshu-sticker-pool-request','xiaoshu-sticker-pool-response']:
+                  pos=0
+                  for idx in range(4):
+                      i=text.find(n,pos)
+                      if i<0: break
+                      print(label,'CTX',n,idx+1,text[max(0,i-700):min(len(text),i+1500)].replace('\n','\\n'))
+                      pos=i+len(n)
 
-          print('=== CONTEXTS ===')
-          for n in ['xiaoshuStickerStore','xiaoshuBuiltinStickerPacks','builtinSrcs','xiaoshuProactiveStickerStore','xs_proactive_stickers','聊天2','chat2']:
-              pos = 0; shown = 0
-              while shown < 8:
-                  i = text.find(n, pos)
-                  if i < 0: break
-                  a=max(0,i-500); b=min(len(text),i+1200)
-                  snippet=text[a:b].replace('\n','\\n')
-                  print(f'CTX {n} #{shown+1}:', snippet)
-                  pos=i+len(n); shown+=1
-
-          print('=== COMMITS TOUCHING assets/stickers ===')
-          log = sh('git','log','--all','--format=%H%x09%ad%x09%s','--date=iso','--','assets/stickers')
-          print(log or '(none)')
-          commits=[ln.split('\t',1)[0] for ln in log.splitlines() if ln.strip()]
-          print('=== ASSET CHANGE DETAILS ===')
-          for c in commits[:30]:
-              parents = sh('git','show','-s','--format=%P',c).split()
-              parent=parents[0] if parents else None
-              def count_at(ref):
-                  try:
-                      out=sh('git','ls-tree','-r','--name-only',ref,'--','assets/stickers')
-                      return len([x for x in out.splitlines() if x.strip()])
-                  except Exception: return -1
-              print('COMMIT', c, sh('git','show','-s','--format=%ad %s','--date=iso',c))
-              print(' count parent/current', count_at(parent) if parent else None, count_at(c))
-              if parent:
-                  diff=sh('git','diff','--name-status',parent,c,'--','assets/stickers')
-                  print(diff[:30000] if diff else '(no file changes)')
-
-          print('=== STICKER-SUBJECT COMMITS ===')
-          print(sh('git','log','--all','--format=%H%x09%ad%x09%s','--date=iso','--grep=sticker','-i','-n','80'))
-          print('DIAG STICKER RECOVERY DONE')
+          print('DIAG HISTORICAL STICKER CATALOG DONE')
           PY

@@ -9,19 +9,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: List appended CSS preset ids
+        with:
+          fetch-depth: 0
+      - name: Compare rabbit CSS with original
         shell: bash
         run: |
           python - <<'PY'
+          import json,re,subprocess,hashlib
           from pathlib import Path
-          import re
-          s=Path('index.html').read_text(encoding='utf-8')
-          m=re.search(r'var XIAOSHU_PHASE1_BUILTINS=\[(.*?)\n\];\nvar BUILTIN=',s,re.S)
-          if not m: raise SystemExit('phase1 block missing')
-          block=m.group(1)
-          ids=re.findall(r"\bid:'([^']+)'",block)
-          names=re.findall(r"\bname:'([^']+)'",block)
-          files=re.findall(r"\bfile:'([^']+)'",block)
-          print('COUNT',len(ids))
-          for i,(a,b,c) in enumerate(zip(ids,names,files),1): print(i,a,b,c)
+          cur=Path('index.html').read_text(encoding='utf-8')
+          old=subprocess.check_output(['git','show','eb322d951c021c4e09c7c1a0347358c60ab51be6:index.html'],text=True,encoding='utf-8')
+          def bubble_obj(s,obj_id):
+              m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
+              arr=json.loads(m.group(1))
+              return next(x for x in arr if x.get('id')==obj_id)
+          def kb_obj(s,obj_id):
+              m=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);',s,re.S)
+              arr=json.loads(m.group(1))
+              return next((x for x in arr if x.get('id')==obj_id),None)
+          rid='builtin_xiaoshu_jrys_tuwan_pink_kkk35g_v1'
+          kid='builtin_parent_builtin_xiaoshu_jrys_tuwan_pink_kkk35g_v1'
+          for label,fn,oid in [('bubble',bubble_obj,rid),('keyboard',kb_obj,kid)]:
+              a=fn(old,oid); b=fn(cur,oid)
+              print(label,'old exists',a is not None,'current exists',b is not None)
+              if a is None or b is None: continue
+              field='chatCss' if label=='bubble' else 'css'
+              av=str(a.get(field,'')); bv=str(b.get(field,''))
+              print(label,'old len',len(av),'current len',len(bv))
+              print(label,'old sha',hashlib.sha256(av.encode()).hexdigest())
+              print(label,'current sha',hashlib.sha256(bv.encode()).hexdigest())
+              print(label,'same',av==bv)
+              if av!=bv:
+                  # Print first differing window only.
+                  n=min(len(av),len(bv)); p=next((i for i in range(n) if av[i]!=bv[i]),n)
+                  print(label,'first diff at',p)
+                  print('OLD',repr(av[max(0,p-220):p+500]))
+                  print('CUR',repr(bv[max(0,p-220):p+500]))
           PY

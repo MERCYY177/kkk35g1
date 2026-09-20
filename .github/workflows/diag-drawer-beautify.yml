@@ -1,4 +1,4 @@
-name: Diagnose drawer and beautify ordering
+name: Diagnose current chat defects
 
 on:
   push:
@@ -14,73 +14,83 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect drawer and beautify registries
+      - name: Inspect exact current source paths
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
+          import re, json
 
-          p=Path('index.html')
-          s=p.read_text(encoding='utf-8')
-          lines=s.splitlines()
+          s=Path('index.html').read_text(encoding='utf-8')
           out=[]
-          out.append('=== DRAWER MATCHES ===')
-          pats=re.compile(r'xiaoshuAppDrawer|xiaoshuDrawerMask|(?:open|show|toggle|render|build|refresh)[A-Za-z0-9_]*Drawer|Drawer[A-Za-z0-9_]*(?:open|show|toggle|render|build|refresh)|drawer',re.I)
-          hits=[]
-          for i,line in enumerate(lines,1):
-              if pats.search(line): hits.append(i)
-          out.append(f'drawer_hit_lines={hits[:200]} total={len(hits)}')
-          # Merge nearby hits into windows, cap output.
-          windows=[]
-          for n in hits:
-              a=max(1,n-10); b=min(len(lines),n+16)
-              if windows and a<=windows[-1][1]+2:
-                  windows[-1]=(windows[-1][0],max(windows[-1][1],b))
-              else: windows.append((a,b))
-          for wi,(a,b) in enumerate(windows[:20],1):
-              out.append(f'--- DRAWER WINDOW {wi} L{a}-L{b} ---')
-              for n in range(a,b+1): out.append(f'{n}: {lines[n-1]}')
+          out.append(f'index_chars={len(s)}')
 
-          out.append('\n=== BEAUTIFY THEME OCCURRENCES ===')
-          theme_re=re.compile(r'(?:^|["\'`])((?:\d{1,2}[_\. -][^"\'`\\\n]{1,80})|(?:JRYS[^"\'`\\\n]{1,80})|(?:LineKitty[^"\'`\\\n]{1,80}))')
-          found=[]
-          for i,line in enumerate(lines,1):
-              if any(k in line for k in ('聊天1内置气泡框样式库','JRYS','LineKitty','eve_','miu','Miu_','微信夜间','古早微信','WhatsApp','叶_')):
-                  found.append(i)
-          # output compact around first chunks that look like registries
-          seen=[]
-          for n in found:
-              if seen and n-seen[-1] < 5: continue
-              seen.append(n)
-          out.append(f'theme_related_lines_sample={seen[:120]} total_raw={len(found)}')
-          for wi,n in enumerate(seen[:30],1):
-              a=max(1,n-3); b=min(len(lines),n+7)
-              out.append(f'--- THEME WINDOW {wi} L{a}-L{b} ---')
-              for x in range(a,b+1): out.append(f'{x}: {lines[x-1]}')
+          def contexts(label, pattern, flags=0, limit=20, radius=1800):
+              out.append(f'\n=== {label} ===')
+              ms=list(re.finditer(pattern,s,flags))
+              out.append(f'matches={len(ms)}')
+              for i,m in enumerate(ms[:limit],1):
+                  a=max(0,m.start()-radius); b=min(len(s),m.end()+radius)
+                  out.append(f'--- {label} #{i} chars {a}-{b} ---')
+                  out.append(s[a:b])
 
-          out.append('\n=== KNOWN THEME NAME TOKENS / COUNTS ===')
-          known=['JRYS兔丸粉白奶黄','LineKitty黑边白气泡','29_网页聊天版粉黄圆角_换色模板','26_古早微信绿色_通过版','24_微信夜间','23_miu仿iOS6蓝灰渐变','22_叶_简化稳定叶子气泡','20_miu简讯蓝','19_miu简讯粉','18_仿WhatsApp灰白上角尾巴','17_miu_仿黑X私信黑版','16_miu_仿黑X私信蓝版','11_miu_米菲记事簿粉版','09_eve_iMessage透明黑版','06_eve_iMessage短信绿版','05_eve_iMessage蓝版','04_eve_一起听灰粉版_v2','03_eve_一起听黑灰版_v2']
-          for k in known: out.append(f'{k}: {s.count(k)}')
+          # Sticker catalog/store/renderer/bridge. Exact surrounding source lets us distinguish
+          # the 615 physical assets from the intended 496 selectable entries.
+          contexts('STICKER STORE', r'xiaoshuStickerStore', limit=30, radius=2600)
+          contexts('SHARED STICKER POOL', r'xiaoshuGetSharedStickerPool', limit=30, radius=2600)
+          contexts('STICKER ASSET PATHS', r'assets/stickers/', limit=12, radius=1200)
+          contexts('CHAT2 STICKER BRIDGE', r'(?:stickerLibraryUpdated|sharedSticker|stickerPool|registerChat2Sticker)', re.I, limit=30, radius=2200)
+          contexts('SAFE RESOURCE URL', r'safeResourceUrl', limit=15, radius=2200)
+          contexts('STICKER EMPTY TEXT', r'暂无', limit=30, radius=1400)
 
-          # Locate code that applies/stores beautify selection.
-          out.append('\n=== BEAUTIFY LOGIC WINDOWS ===')
-          logic_hits=[]
-          for i,line in enumerate(lines,1):
-              low=line.lower()
-              if ('beaut' in low or '美化' in line or 'customcss' in low or 'chat1' in low) and any(w in low for w in ('apply','active','builtin','render','save','load','theme','css')):
-                  logic_hits.append(i)
-          for wi,n in enumerate(logic_hits[:30],1):
-              a=max(1,n-3); b=min(len(lines),n+8)
-              out.append(f'--- BEAUTIFY LOGIC {wi} L{a}-L{b} ---')
-              for x in range(a,b+1): out.append(f'{x}: {lines[x-1]}')
+          # Find likely rendering caps / batching around code that also mentions sticker.
+          out.append('\n=== STICKER NUMERIC / SLICE WINDOWS ===')
+          for m in list(re.finditer(r'(?:slice\s*\([^)]*\)|pageSize|batchSize|renderCount|visibleCount|loadMore|IntersectionObserver|\b100\b)',s,re.I)):
+              a=max(0,m.start()-1200); b=min(len(s),m.end()+1200)
+              win=s[a:b]
+              if re.search(r'sticker|表情',win,re.I):
+                  out.append(f'--- numeric char {m.start()} token={m.group(0)!r} ---')
+                  out.append(win)
 
-          Path('_diag_drawer_beautify.txt').write_text('\n'.join(out),encoding='utf-8')
+          # Call state ownership + card layout.
+          contexts('CALL REJECT COPY', r'(?:已拒绝语音来电|已拒绝视频来电|对方已拒绝|我已拒绝|reject|decline)', re.I, limit=50, radius=2400)
+          contexts('CALL RECORD CSS DOM', r'(?:xs-main-call-record|call-record|call-status|通话记录)', re.I, limit=40, radius=2200)
+
+          # Beautify sources and bridge.
+          contexts('BEAUTY MAIN REGISTRY', r'xiaoshu-builtin-bubble-css-data', limit=10, radius=1800)
+          contexts('BEAUTY CHAT2 REGISTRY', r'BUILTIN_KEYBOARD_BEAUTY_STYLES', limit=10, radius=1800)
+          contexts('BEAUTY BRIDGE', r'(?:xiaoshu-chat2-beauty-imported|kkk35gMigrateLegacyBeautyState|state\.customCss|applyActiveKeyboardBeauty)', re.I, limit=30, radius=2200)
+
+          # Drawer hot path.
+          contexts('MAIN DRAWER', r'(?:function\s+openDrawer\s*\(|xiaoshuAppDrawer|xiaoshu-drawer-open|touchMove)', limit=35, radius=2000)
+
+          # Compact structural facts useful for RED/GREEN assertions.
+          out.append('\n=== COUNTS ===')
+          out.append(f"physical_sticker_refs_in_html={s.count('assets/stickers/')}")
+          out.append(f"copy_已拒绝语音来电={s.count('已拒绝语音来电')}")
+          out.append(f"copy_已拒绝视频来电={s.count('已拒绝视频来电')}")
+          out.append(f"copy_对方已拒绝={s.count('对方已拒绝')}")
+          out.append(f"copy_我已拒绝={s.count('我已拒绝')}")
+
+          # Built-in bubble and keyboard registries: report names/count only.
+          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
+          if m:
+              try:
+                  arr=json.loads(m.group(1)); out.append(f'chat1_beauty_count={len(arr)}'); out.append('chat1_beauty_names='+repr([x.get('name') for x in arr]))
+              except Exception as e: out.append('chat1_beauty_parse_error='+repr(e))
+          km=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId',s,re.S)
+          if km:
+              try:
+                  arr=json.loads(km.group(1)); out.append(f'chat2_beauty_count={len(arr)}'); out.append('chat2_beauty_names='+repr([x.get('name') for x in arr]))
+              except Exception as e: out.append('chat2_beauty_parse_error='+repr(e))
+
+          Path('_diag_direct_fix.txt').write_text('\n'.join(out),encoding='utf-8')
+          print('wrote _diag_direct_fix.txt', len('\n'.join(out)))
           PY
       - name: Commit diagnostics
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add _diag_drawer_beautify.txt
-          git commit -m 'test: record drawer and beautify diagnostics'
+          git add _diag_direct_fix.txt
+          git commit -m 'test: record exact chat defect diagnostics'
           git push

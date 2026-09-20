@@ -1,0 +1,60 @@
+name: Fix sticker recovery
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-sticker-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply sticker recovery fix
+        run: python tools/fix_sticker_recovery.py
+      - name: Run sticker recovery regression
+        run: python tools/test_sticker_recovery.py
+      - name: Check executable script syntax
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile, sys
+          text=Path('index.html').read_text(encoding='utf-8')
+          blocks=re.findall(r'<script(?![^>]*type=["\'](?:application/json|text/plain)["\'])[^>]*>(.*?)</script>',text,re.S|re.I)
+          checked=0
+          for i,body in enumerate(blocks):
+              if not body.strip():
+                  continue
+              # Embedded Chat2 source intentionally contains a script-close placeholder and is text/plain;
+              # JSON/text blocks were excluded above. Remaining blocks should parse as JS.
+              with tempfile.NamedTemporaryFile('w',suffix='.js',encoding='utf-8',delete=False) as f:
+                  f.write(body)
+                  name=f.name
+              r=subprocess.run(['node','--check',name],capture_output=True,text=True)
+              Path(name).unlink(missing_ok=True)
+              if r.returncode:
+                  print('SCRIPT SYNTAX FAIL block',i)
+                  print(r.stderr)
+                  sys.exit(r.returncode)
+              checked+=1
+          print('script syntax blocks checked:',checked)
+          PY
+      - name: Commit repaired sticker catalog and Chat2 path handling
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No index.html changes needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'fix: restore full sticker pool in chat2'
+          git push origin HEAD:main

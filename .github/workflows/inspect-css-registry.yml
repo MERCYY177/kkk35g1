@@ -11,38 +11,59 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Compare rabbit CSS with original
+      - name: Verify requested CSS cleanup
         shell: bash
         run: |
           python - <<'PY'
-          import json,re,subprocess,hashlib
           from pathlib import Path
-          cur=Path('index.html').read_text(encoding='utf-8')
+          import json,re,subprocess
+          s=Path('index.html').read_text(encoding='utf-8')
           old=subprocess.check_output(['git','show','eb322d951c021c4e09c7c1a0347358c60ab51be6:index.html'],text=True,encoding='utf-8')
-          def bubble_obj(s,obj_id):
-              m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
-              arr=json.loads(m.group(1))
-              return next(x for x in arr if x.get('id')==obj_id)
-          def kb_obj(s,obj_id):
-              m=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);',s,re.S)
-              arr=json.loads(m.group(1))
-              return next((x for x in arr if x.get('id')==obj_id),None)
-          rid='builtin_xiaoshu_jrys_tuwan_pink_kkk35g_v1'
-          kid='builtin_parent_builtin_xiaoshu_jrys_tuwan_pink_kkk35g_v1'
-          for label,fn,oid in [('bubble',bubble_obj,rid),('keyboard',kb_obj,kid)]:
-              a=fn(old,oid); b=fn(cur,oid)
-              print(label,'old exists',a is not None,'current exists',b is not None)
-              if a is None or b is None: continue
-              field='chatCss' if label=='bubble' else 'css'
-              av=str(a.get(field,'')); bv=str(b.get(field,''))
-              print(label,'old len',len(av),'current len',len(bv))
-              print(label,'old sha',hashlib.sha256(av.encode()).hexdigest())
-              print(label,'current sha',hashlib.sha256(bv.encode()).hexdigest())
-              print(label,'same',av==bv)
-              if av!=bv:
-                  # Print first differing window only.
-                  n=min(len(av),len(bv)); p=next((i for i in range(n) if av[i]!=bv[i]),n)
-                  print(label,'first diff at',p)
-                  print('OLD',repr(av[max(0,p-220):p+500]))
-                  print('CUR',repr(bv[max(0,p-220):p+500]))
+          targets={
+            '07_eve_iMessage透明蓝版','08_eve_iMessage透明绿版','10_eve_iMessage蓝灰圆弧尾巴',
+            '12_Miu_微信版','13_Miu_日间浅蓝版','14_miu_iMessage透明绿版','15_miu_iMessage透明黑版',
+            '21_miu简讯紫','25_淡盐气泡_通过版','27_氧气感粉色_通过版','28_Eve古早微信灰黑_通过版'
+          }
+          phase_ids={
+            'builtin_xiaoshu_ig_mono_system_v1','builtin_xiaoshu_ig_gradient_system_v1',
+            'builtin_xiaoshu_wechat_system_v1','builtin_xiaoshu_ios6_retro_system_v1'
+          }
+          def bubbles(text):
+            m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',text,re.S)
+            assert m
+            return json.loads(m.group(1))
+          def keyboard(text):
+            m=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);',text,re.S)
+            assert m
+            return json.loads(m.group(1))
+          b=bubbles(s); k=keyboard(s); ob=bubbles(old); ok=keyboard(old)
+          bnames={x.get('name') for x in b}; knames={x.get('name') for x in k}
+          assert not (targets & bnames), targets & bnames
+          assert not (targets & knames), targets & knames
+          assert all(x not in s for x in phase_ids)
+          assert 'XIAOSHU_PHASE1_BUILTINS' not in s
+          kitty='builtin_xiaoshu_line_kitty_black_white_kkk35g_v1'
+          kittyk='builtin_parent_builtin_xiaoshu_line_kitty_black_white_kkk35g_v1'
+          rabbit='builtin_xiaoshu_jrys_tuwan_pink_kkk35g_v1'
+          rabbitk='builtin_parent_builtin_xiaoshu_jrys_tuwan_pink_kkk35g_v1'
+          assert sum(x.get('id')==kitty for x in b)==1
+          assert sum(x.get('id')==kittyk for x in k)==1
+          assert sum(x.get('id')==rabbit for x in b)==1
+          assert sum(x.get('id')==rabbitk for x in k)==1
+          cur_r=next(x for x in b if x.get('id')==rabbit)['chatCss']
+          old_r=next(x for x in ob if x.get('id')==rabbit)['chatCss']
+          cur_k=next(x for x in k if x.get('id')==rabbitk)['css']
+          old_k=next(x for x in ok if x.get('id')==rabbitk)['css']
+          assert cur_r==old_r
+          assert cur_k==old_k
+          assert 'fa-ellipsis-h' not in s
+          assert "b.textContent='⋯';" in s
+          print('PASS')
+          print('bubble count',len(b))
+          print('keyboard count',len(k))
+          print('HelloKitty preserved')
+          print('Rabbit restored exactly to original CSS')
+          print('Four follow-system themes absent')
+          print('Requested numbered presets absent')
+          print('More button uses text ellipsis')
           PY

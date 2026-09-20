@@ -9,37 +9,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect CSS registries and more button
+        with:
+          fetch-depth: 0
+      - name: Trace preset introduction commits
         shell: bash
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re,json
-          s=Path('index.html').read_text(encoding='utf-8')
-          def meta(o):
-              return {k:o.get(k) for k in ('id','name','title','label','key','author') if isinstance(o,dict) and o.get(k) not in (None,'')}
-          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
-          print('BUBBLE BLOCK',bool(m))
-          if m:
-              arr=json.loads(m.group(1)); print('BUBBLE COUNT',len(arr))
-              for i,o in enumerate(arr,1):
-                  css=str(o.get('chatCss','') or '')
-                  print('BUBBLE',i,meta(o),'csslen',len(css),'rabbit',any(x in css.lower() for x in ['兔','rabbit','bunny']))
-          m2=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);',s,re.S)
-          print('KEYBOARD BLOCK',bool(m2))
-          if m2:
-              arr=json.loads(m2.group(1)); print('KEYBOARD COUNT',len(arr))
-              for i,o in enumerate(arr,1):
-                  css=str(o.get('css','') or '')
-                  print('KEYBOARD',i,meta(o),'csslen',len(css),'rabbit',any(x in css.lower() for x in ['兔','rabbit','bunny']))
-          print('RABBIT CONTEXTS')
-          for pat in ['兔丸','兔','rabbit','bunny']:
-              starts=[m.start() for m in re.finditer(re.escape(pat),s,re.I)]
-              print(pat,'count',len(starts))
-              for p in starts[:10]: print(repr(s[max(0,p-220):p+420]))
-          print('MORE BUTTON CONTEXTS')
-          for needle in ['xs-chat-more-button','fa-ellipsis-h']:
-              ps=[m.start() for m in re.finditer(re.escape(needle),s)]
-              print(needle,'count',len(ps))
-              for p in ps[:8]: print(repr(s[max(0,p-300):p+500]))
-          PY
+          set -e
+          echo '=== preset introduction history ==='
+          for token in \
+            builtin_xiaoshu_jrys_tuwan_pink_kkk35g_v1 \
+            builtin_xiaoshu_line_kitty_black_white_kkk35g_v1 \
+            builtin_xiaoshu_webchat_pink_yellow_round_template_v1 \
+            builtin_pass_01_淡盐气泡_通过版_feb33a \
+            builtin_pass_02_古早微信绿色_通过版_1b51ef \
+            builtin_pass_03_氧气感粉色_通过版_3f7645 \
+            builtin_pass_09_Eve古早微信灰黑_通过版_481d26; do
+            echo "TOKEN $token"
+            git log --all --date=iso --format='%H %ad %s' -S "$token" -- index.html | head -12 || true
+          done
+          echo '=== recent index commits ==='
+          git log -30 --date=iso --format='%H %ad %s' -- index.html

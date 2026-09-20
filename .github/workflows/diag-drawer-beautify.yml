@@ -20,77 +20,55 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re, json
-
           s=Path('index.html').read_text(encoding='utf-8')
           out=[]
-          out.append(f'index_chars={len(s)}')
-
-          def contexts(label, pattern, flags=0, limit=20, radius=1800):
-              out.append(f'\n=== {label} ===')
+          def one_line(x): return re.sub(r'\s+',' ',x).strip()
+          def hits(label, pattern, flags=0, limit=30, radius=500):
               ms=list(re.finditer(pattern,s,flags))
-              out.append(f'matches={len(ms)}')
+              out.append(f'\n## {label} count={len(ms)}')
               for i,m in enumerate(ms[:limit],1):
                   a=max(0,m.start()-radius); b=min(len(s),m.end()+radius)
-                  out.append(f'--- {label} #{i} chars {a}-{b} ---')
-                  out.append(s[a:b])
-
-          # Sticker catalog/store/renderer/bridge. Exact surrounding source lets us distinguish
-          # the 615 physical assets from the intended 496 selectable entries.
-          contexts('STICKER STORE', r'xiaoshuStickerStore', limit=30, radius=2600)
-          contexts('SHARED STICKER POOL', r'xiaoshuGetSharedStickerPool', limit=30, radius=2600)
-          contexts('STICKER ASSET PATHS', r'assets/stickers/', limit=12, radius=1200)
-          contexts('CHAT2 STICKER BRIDGE', r'(?:stickerLibraryUpdated|sharedSticker|stickerPool|registerChat2Sticker)', re.I, limit=30, radius=2200)
-          contexts('SAFE RESOURCE URL', r'safeResourceUrl', limit=15, radius=2200)
-          contexts('STICKER EMPTY TEXT', r'暂无', limit=30, radius=1400)
-
-          # Find likely rendering caps / batching around code that also mentions sticker.
-          out.append('\n=== STICKER NUMERIC / SLICE WINDOWS ===')
-          for m in list(re.finditer(r'(?:slice\s*\([^)]*\)|pageSize|batchSize|renderCount|visibleCount|loadMore|IntersectionObserver|\b100\b)',s,re.I)):
-              a=max(0,m.start()-1200); b=min(len(s),m.end()+1200)
-              win=s[a:b]
-              if re.search(r'sticker|表情',win,re.I):
-                  out.append(f'--- numeric char {m.start()} token={m.group(0)!r} ---')
-                  out.append(win)
-
-          # Call state ownership + card layout.
-          contexts('CALL REJECT COPY', r'(?:已拒绝语音来电|已拒绝视频来电|对方已拒绝|我已拒绝|reject|decline)', re.I, limit=50, radius=2400)
-          contexts('CALL RECORD CSS DOM', r'(?:xs-main-call-record|call-record|call-status|通话记录)', re.I, limit=40, radius=2200)
-
-          # Beautify sources and bridge.
-          contexts('BEAUTY MAIN REGISTRY', r'xiaoshu-builtin-bubble-css-data', limit=10, radius=1800)
-          contexts('BEAUTY CHAT2 REGISTRY', r'BUILTIN_KEYBOARD_BEAUTY_STYLES', limit=10, radius=1800)
-          contexts('BEAUTY BRIDGE', r'(?:xiaoshu-chat2-beauty-imported|kkk35gMigrateLegacyBeautyState|state\.customCss|applyActiveKeyboardBeauty)', re.I, limit=30, radius=2200)
-
-          # Drawer hot path.
-          contexts('MAIN DRAWER', r'(?:function\s+openDrawer\s*\(|xiaoshuAppDrawer|xiaoshu-drawer-open|touchMove)', limit=35, radius=2000)
-
-          # Compact structural facts useful for RED/GREEN assertions.
-          out.append('\n=== COUNTS ===')
-          out.append(f"physical_sticker_refs_in_html={s.count('assets/stickers/')}")
-          out.append(f"copy_已拒绝语音来电={s.count('已拒绝语音来电')}")
-          out.append(f"copy_已拒绝视频来电={s.count('已拒绝视频来电')}")
-          out.append(f"copy_对方已拒绝={s.count('对方已拒绝')}")
-          out.append(f"copy_我已拒绝={s.count('我已拒绝')}")
-
-          # Built-in bubble and keyboard registries: report names/count only.
+                  out.append(f'{i}@{m.start()}: '+one_line(s[a:b]))
+          out.append(f'index_chars={len(s)}')
+          hits('xiaoshuStickerStore',r'xiaoshuStickerStore',limit=20,radius=750)
+          hits('xiaoshuGetSharedStickerPool',r'xiaoshuGetSharedStickerPool',limit=20,radius=750)
+          hits('sticker renderer tokens',r'(?:render[A-Za-z0-9_]*Sticker|Sticker[A-Za-z0-9_]*render|stickerGrid|sticker-grid|stickerList|sticker-list)',re.I,limit=30,radius=650)
+          hits('sticker slice/limit',r'(?:slice\s*\([^)]*\)|pageSize|batchSize|renderCount|visibleCount|loadMore|IntersectionObserver|\b100\b)',re.I,limit=80,radius=350)
+          hits('Chat2 sticker bridge',r'(?:stickerLibraryUpdated|sharedSticker|stickerPool|registerChat2Sticker)',re.I,limit=30,radius=700)
+          hits('safeResourceUrl',r'safeResourceUrl',limit=15,radius=800)
+          hits('empty sticker copy',r'暂无',limit=20,radius=500)
+          hits('call rejection',r'(?:已拒绝语音来电|已拒绝视频来电|对方已拒绝|我已拒绝|reject|decline)',re.I,limit=40,radius=800)
+          hits('call record/status DOM CSS',r'(?:xs-main-call-record|call-record|call-status)',re.I,limit=35,radius=800)
+          hits('beauty bridge',r'(?:xiaoshu-chat2-beauty-imported|kkk35gMigrateLegacyBeautyState|state\.customCss|applyActiveKeyboardBeauty)',re.I,limit=30,radius=700)
+          hits('main drawer',r'(?:xiaoshuAppDrawer|xiaoshu-drawer-open|touchMove)',limit=25,radius=650)
+          # Only keep slice/limit hits that are genuinely sticker-adjacent.
+          out.append('\n## STICKER_ADJACENT_NUMERIC_ONLY')
+          n=0
+          for m in re.finditer(r'(?:slice\s*\([^)]*\)|pageSize|batchSize|renderCount|visibleCount|loadMore|IntersectionObserver|\b100\b)',s,re.I):
+              a=max(0,m.start()-900); b=min(len(s),m.end()+900); w=s[a:b]
+              if re.search(r'sticker|表情',w,re.I):
+                  n+=1; out.append(f'{n}@{m.start()} token={m.group(0)!r}: '+one_line(w[:1800]))
+                  if n>=35: break
+          # Parse beauty registries and basic counts.
+          out.append('\n## COUNTS')
+          out.append('asset_path_occurrences='+str(s.count('assets/stickers/')))
+          for t in ['已拒绝语音来电','已拒绝视频来电','对方已拒绝','我已拒绝']:
+              out.append(f'{t}={s.count(t)}')
           m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
           if m:
-              try:
-                  arr=json.loads(m.group(1)); out.append(f'chat1_beauty_count={len(arr)}'); out.append('chat1_beauty_names='+repr([x.get('name') for x in arr]))
-              except Exception as e: out.append('chat1_beauty_parse_error='+repr(e))
+              arr=json.loads(m.group(1)); out.append('chat1_beauty_count='+str(len(arr))); out.append('chat1_beauty_names='+repr([x.get('name') for x in arr]))
           km=re.search(r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId',s,re.S)
           if km:
-              try:
-                  arr=json.loads(km.group(1)); out.append(f'chat2_beauty_count={len(arr)}'); out.append('chat2_beauty_names='+repr([x.get('name') for x in arr]))
-              except Exception as e: out.append('chat2_beauty_parse_error='+repr(e))
-
-          Path('_diag_direct_fix.txt').write_text('\n'.join(out),encoding='utf-8')
-          print('wrote _diag_direct_fix.txt', len('\n'.join(out)))
+              arr=json.loads(km.group(1)); out.append('chat2_beauty_count='+str(len(arr))); out.append('chat2_beauty_names='+repr([x.get('name') for x in arr]))
+          text='\n'.join(out)
+          Path('_diag_compact.txt').write_text(text,encoding='utf-8')
+          print(text[:10000])
+          print('\nREPORT_CHARS',len(text))
           PY
-      - name: Commit diagnostics
+      - name: Commit compact diagnostics
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add _diag_direct_fix.txt
-          git commit -m 'test: record exact chat defect diagnostics'
+          git add _diag_compact.txt
+          git commit -m 'test: record compact defect diagnostics'
           git push

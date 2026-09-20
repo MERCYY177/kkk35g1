@@ -4,6 +4,9 @@ on:
   push:
     paths:
       - '.github/workflows/diag-sticker-recovery.yml'
+      - 'tools/test_sticker_recovery.py'
+      - 'index.html'
+      - 'assets/stickers/**'
   workflow_dispatch:
 
 jobs:
@@ -13,44 +16,5 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Trace Chat2 sticker bridge
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import subprocess
-
-          text=Path('index.html').read_text(encoding='utf-8')
-          needles=[
-            'xiaoshu-big-keyboard-stickers-request',
-            'xiaoshu-big-keyboard-stickers',
-            'big-keyboard-stickers',
-            'sharedStickerPool',
-            'normalizeSharedStickerPool',
-            'bigKeyboardStickerPool()',
-          ]
-          for n in needles:
-              print('\n===',n,'count',text.count(n),'===')
-              pos=0
-              for k in range(12):
-                  i=text.find(n,pos)
-                  if i<0: break
-                  print('CTX',k+1,text[max(0,i-900):min(len(text),i+1900)].replace('\n','\\n'))
-                  pos=i+len(n)
-
-          print('\n=== commits changing exact request token ===')
-          try:
-              out=subprocess.check_output(['git','log','--all','-Sxiaoshu-big-keyboard-stickers-request','--format=%H%x09%ad%x09%s','--date=iso','--','index.html'],text=True,errors='replace')
-              print(out)
-          except subprocess.CalledProcessError as e:
-              print(e.output)
-
-          print('\n=== commits changing sharedStickerPool ===')
-          try:
-              out=subprocess.check_output(['git','log','--all','-SsharedStickerPool','--format=%H%x09%ad%x09%s','--date=iso','--','index.html'],text=True,errors='replace')
-              print(out[:12000])
-          except subprocess.CalledProcessError as e:
-              print(e.output)
-
-          print('DIAG CHAT2 STICKER BRIDGE DONE')
-          PY
+      - name: Run sticker recovery regression
+        run: python tools/test_sticker_recovery.py

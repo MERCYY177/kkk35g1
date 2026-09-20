@@ -1,4 +1,4 @@
-name: Fix sticker recovery
+name: Cleanup sticker recovery tooling
 
 on:
   push:
@@ -10,27 +10,39 @@ permissions:
   contents: write
 
 jobs:
-  fix:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply sticker recovery fix
-        run: python tools/fix_sticker_recovery.py
-      - name: Run sticker recovery regression
+      - name: Verify repaired sticker state before cleanup
         run: python tools/test_sticker_recovery.py
-      - name: Check patch integrity
-        run: git diff --check -- index.html
-      - name: Commit repaired sticker catalog and Chat2 path handling
+      - name: Verify business fix is still present
         shell: bash
         run: |
-          if git diff --quiet -- index.html; then
-            echo 'No index.html changes needed.'
-            exit 0
-          fi
+          python - <<'PY'
+          from pathlib import Path
+          import re, json
+          text=Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',text,re.S|re.I)
+          data=json.loads(m.group(1))
+          refs={str(it.get('src','')).strip() for p in data for it in (p.get('items') or []) if isinstance(it,dict) and str(it.get('src','')).strip()}
+          assets={p.as_posix() for p in Path('assets/stickers').rglob('*') if p.is_file()}
+          if refs != assets: raise SystemExit(f'pack/assets mismatch refs={len(refs)} assets={len(assets)}')
+          if "assets/stickers/" not in text[text.find("function safeResourceUrl(value,kind='image'){"):text.find("function safeCssUrl",text.find("function safeResourceUrl(value,kind='image'){"))]:
+              raise SystemExit('Chat2 local sticker guard missing')
+          print('FINAL PRE-CLEAN VERIFY GREEN',len(refs))
+          PY
+      - name: Remove temporary sticker recovery tooling
+        shell: bash
+        run: |
+          git rm .github/workflows/diag-sticker-recovery.yml \
+                 .github/workflows/fix-sticker-recovery.yml \
+                 tools/test_sticker_recovery.py \
+                 tools/fix_sticker_recovery.py
+          git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html
-          git commit -m 'fix: restore full sticker pool in chat2'
+          git commit -m 'chore: remove temporary sticker recovery tooling'
           git push origin HEAD:main

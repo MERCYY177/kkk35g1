@@ -1,0 +1,118 @@
+name: Restore Chat1 18 beautify themes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-chat18-now.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
+
+      - name: Restore Chat1 18 and trim Chat2 to the same 18
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, json, subprocess
+
+          current_path=Path('index.html')
+          s=current_path.read_text(encoding='utf-8')
+          # Parent of the bad beauty-expansion commit: contains the user's original Chat1 18-theme registry.
+          old=subprocess.check_output(['git','show','905d34627af41bafad8443d6753b87e1449b3f95:index.html'],text=True,encoding='utf-8')
+
+          main_pat=r'(<script id="xiaoshu-builtin-bubble-css-data" type="application/json">)(.*?)(</script>)'
+          kb_pat=r'(const BUILTIN_KEYBOARD_BEAUTY_STYLES=)(\[.*?\])(;\s*let editingKeyboardBeautyId)'
+          om=re.search(main_pat,old,re.S)
+          cm=re.search(main_pat,s,re.S)
+          ck=re.search(kb_pat,s,re.S)
+          if not om or not cm or not ck:
+              raise SystemExit('beautify registry missing')
+
+          original18=json.loads(om.group(2))
+          current_kb=json.loads(ck.group(2))
+          if len(original18)!=18:
+              raise SystemExit(f'expected original Chat1 18 themes, got {len(original18)}')
+
+          def key(name):
+              return re.sub(r'^\d{1,2}[\s_.-]*','',str(name or '')).strip()
+
+          kb_map={key(x.get('name')):x for x in current_kb}
+          trimmed=[]
+          missing=[]
+          for item in original18:
+              k=key(item.get('name'))
+              src=kb_map.get(k)
+              if not src:
+                  missing.append(k)
+                  continue
+              out=dict(src)
+              out['name']=item.get('name')
+              trimmed.append(out)
+          if missing or len(trimmed)!=18:
+              raise SystemExit(f'cannot map Chat2 to the same 18 themes: missing={missing}, count={len(trimmed)}')
+
+          # Restore Chat1 registry byte-semantically from the pre-expansion commit.
+          restored_main=json.dumps(original18,ensure_ascii=False,separators=(',',':'))
+          s=s[:cm.start(2)]+restored_main+s[cm.end(2):]
+
+          # Re-find after length change, then trim Chat2 to exactly the same 18 names/order.
+          ck=re.search(kb_pat,s,re.S)
+          trimmed_json=json.dumps(trimmed,ensure_ascii=False,separators=(',',':'))
+          s=s[:ck.start(2)]+trimmed_json+s[ck.end(2):]
+
+          current_path.write_text(s,encoding='utf-8')
+          print('Chat1 restored:',len(original18),[x.get('name') for x in original18])
+          print('Chat2 trimmed:',len(trimmed),[x.get('name') for x in trimmed])
+          PY
+
+      - name: Verify 18-theme scope and keep other fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          s=Path('index.html').read_text(encoding='utf-8')
+          errs=[]
+          main_pat=r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>'
+          kb_pat=r'const BUILTIN_KEYBOARD_BEAUTY_STYLES=(\[.*?\]);\s*let editingKeyboardBeautyId'
+          m=re.search(main_pat,s,re.S); k=re.search(kb_pat,s,re.S)
+          if not m or not k: raise SystemExit('beautify registry missing')
+          a=json.loads(m.group(1)); b=json.loads(k.group(1))
+          def key(name): return re.sub(r'^\d{1,2}[\s_.-]*','',str(name or '')).strip()
+          if len(a)!=18: errs.append(f'Chat1 count={len(a)}')
+          if len(b)!=18: errs.append(f'Chat2 count={len(b)}')
+          if [key(x.get('name')) for x in a] != [key(x.get('name')) for x in b]: errs.append('Chat1/Chat2 theme names/order differ')
+
+          # Ensure the unrelated fixes from the immediately previous commit remain present.
+          if "sendBigKeyboardStickers(frame)" not in s: errs.append('Chat2 sticker bridge missing')
+          if "writeEventOnce(call,'fa-phone-slash','我已拒绝','')" not in s: errs.append('incoming reject text regressed')
+          if 'while(stickerRenderedCount<stickerPool.length)appendStickerBatch()' not in s: errs.append('Chat1 complete sticker render regressed')
+          if 'while(sharedStickerRenderedCount<sharedStickerPool.length)appendSharedStickerBatch()' not in s: errs.append('Chat2 complete sticker render regressed')
+          if "if((raw.startsWith('assets/stickers/')||raw.startsWith('./assets/stickers/'))&&!raw.includes('..')" not in s: errs.append('Chat2 local sticker path support regressed')
+
+          print('Chat1 themes:',len(a),[x.get('name') for x in a])
+          print('Chat2 themes:',len(b),[x.get('name') for x in b])
+          print('errors:',errs)
+          if errs: raise SystemExit(1)
+          print('18-THEME SCOPE GREEN')
+          PY
+
+      - name: Cleanup diagnostics and commit
+        shell: bash
+        run: |
+          rm -f _diag_*.txt
+          rm -f .github/workflows/diag-drawer-beautify.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: keep only Chat1 18 beautify themes'
+          git push

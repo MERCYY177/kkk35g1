@@ -9,17 +9,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect appended CSS presets
+      - name: List appended CSS preset ids
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           import re
           s=Path('index.html').read_text(encoding='utf-8')
-          needle='XIAOSHU_PHASE1_BUILTINS'
-          ps=[m.start() for m in re.finditer(needle,s)]
-          print('count',len(ps))
-          for p in ps:
-              print('\n--- context ---')
-              print(s[max(0,p-1000):p+8000])
+          m=re.search(r'var XIAOSHU_PHASE1_BUILTINS=\[(.*?)\n\];\nvar BUILTIN=',s,re.S)
+          if not m: raise SystemExit('phase1 block missing')
+          block=m.group(1)
+          ids=re.findall(r"\bid:'([^']+)'",block)
+          names=re.findall(r"\bname:'([^']+)'",block)
+          files=re.findall(r"\bfile:'([^']+)'",block)
+          print('COUNT',len(ids))
+          for i,(a,b,c) in enumerate(zip(ids,names,files),1): print(i,a,b,c)
           PY

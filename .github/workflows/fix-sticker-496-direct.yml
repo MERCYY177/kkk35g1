@@ -21,40 +21,38 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re, json
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-
           marker_decl="var CANONICAL_HIDDEN_KEY = 'disabledStickerItems';"
-          marker_new="var CANONICAL_HIDDEN_KEY = 'disabledStickerItems';\nvar BUILTIN_VISIBILITY_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_v1';"
+          marker_new=marker_decl+"\nvar BUILTIN_VISIBILITY_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_v1';"
           if 'BUILTIN_VISIBILITY_REPAIR_KEY' not in s:
               if marker_decl not in s: raise SystemExit('hidden-key anchor missing')
               s=s.replace(marker_decl,marker_new,1)
-
           anchor="for(var j=0;j<hkeys.length;j++){try{var hv=await window.localforage.getItem(hkeys[j]);if(Array.isArray(hv)){migrationState.legacyHiddenItems+=hv.length;mergeHidden(hv);}}catch(e){}}"
-          repair="""for(var j=0;j<hkeys.length;j++){try{var hv=await window.localforage.getItem(hkeys[j]);if(Array.isArray(hv)){migrationState.legacyHiddenItems+=hv.length;mergeHidden(hv);}}catch(e){}}
-// v496 visibility repair: old builds could persist hundreds of wanted builtin stickers as hidden.
-// Run once after ALL legacy/canonical hidden stores have been merged, restore only current builtins,
-// preserve hidden uploaded stickers, then purge stale IDB/session hidden sources before marking complete.
-try{
-  var repairLs=safeWebStorage('localStorage'),repairSs=safeWebStorage('sessionStorage');
-  var visibilityRepairDone=!!(repairLs&&repairLs.getItem(BUILTIN_VISIBILITY_REPAIR_KEY)==='1');
-  if(!visibilityRepairDone){
-    var wantedBuiltinSet=new Set(builtinSrcs().map(norm)),restoredBuiltinCount=0;
-    Array.from(hidden).forEach(function(src){if(wantedBuiltinSet.has(norm(src))){hidden.delete(src);restoredBuiltinCount++;}});
-    removeStorageKey(repairSs,CANONICAL_HIDDEN_KEY);
-    LEGACY_HIDDEN_KEYS.forEach(function(k){removeStorageKey(repairLs,k);removeStorageKey(repairSs,k);});
-    if(window.localforage){
-      for(var rh=0;rh<hkeys.length;rh++){try{await window.localforage.removeItem(hkeys[rh]);}catch(e){}}
-    }
-    if(repairLs)repairLs.setItem(BUILTIN_VISIBILITY_REPAIR_KEY,'1');
-    migrationState.restoredBuiltinItems=restoredBuiltinCount;
-  }
-}catch(e){console.warn('[共享表情包] 496内置表情可见性修复失败',e);}"""
+          repair_lines=[
+              anchor,
+              "// v496 visibility repair: old builds could persist hundreds of wanted builtin stickers as hidden.",
+              "// Run once after all legacy/canonical hidden stores are merged; preserve hidden uploads.",
+              "try{",
+              "  var repairLs=safeWebStorage('localStorage'),repairSs=safeWebStorage('sessionStorage');",
+              "  var visibilityRepairDone=!!(repairLs&&repairLs.getItem(BUILTIN_VISIBILITY_REPAIR_KEY)==='1');",
+              "  if(!visibilityRepairDone){",
+              "    var wantedBuiltinSet=new Set(builtinSrcs().map(norm)),restoredBuiltinCount=0;",
+              "    Array.from(hidden).forEach(function(src){if(wantedBuiltinSet.has(norm(src))){hidden.delete(src);restoredBuiltinCount++;}});",
+              "    removeStorageKey(repairSs,CANONICAL_HIDDEN_KEY);",
+              "    LEGACY_HIDDEN_KEYS.forEach(function(k){removeStorageKey(repairLs,k);removeStorageKey(repairSs,k);});",
+              "    if(window.localforage){",
+              "      for(var rh=0;rh<hkeys.length;rh++){try{await window.localforage.removeItem(hkeys[rh]);}catch(e){}}",
+              "    }",
+              "    if(repairLs)repairLs.setItem(BUILTIN_VISIBILITY_REPAIR_KEY,'1');",
+              "    migrationState.restoredBuiltinItems=restoredBuiltinCount;",
+              "  }",
+              "}catch(e){console.warn('[共享表情包] 496内置表情可见性修复失败',e);}"
+          ]
+          repair="\n".join(repair_lines)
           if 'v496 visibility repair:' not in s:
               if anchor not in s: raise SystemExit('hydrate hidden merge anchor missing')
               s=s.replace(anchor,repair,1)
-
           p.write_text(s,encoding='utf-8')
           PY
 
@@ -77,22 +75,19 @@ try{
           assert "if(repairLs)repairLs.setItem(BUILTIN_VISIBILITY_REPAIR_KEY,'1');" in s
           assert 'stickerPool=getSharedStickers()' in s
           assert 'scheduleStickerGridFill(stickerLoadGeneration)' in s
-
-          # Semantic regression test: hundreds of stale-hidden wanted builtins are restored,
-          # while a hidden user-upload item remains hidden.
           canonical=list(dict.fromkeys(refs))
           stale=set(canonical[:350])
           uploaded_hidden='data:image/png;base64,USER_UPLOAD_HIDDEN'
           stale.add(uploaded_hidden)
-          wanted={x.strip() for x in canonical}
-          repaired={x for x in stale if x.strip() not in wanted}
-          visible=[x for x in canonical if x.strip() not in repaired]
+          wanted=set(canonical)
+          repaired={x for x in stale if x not in wanted}
+          visible=[x for x in canonical if x not in repaired]
           assert len(visible)==496
           assert uploaded_hidden in repaired
           print('PASS canonical source = 496 unique wanted stickers')
           print('PASS stale hidden simulation restores all 496 wanted builtins')
           print('PASS hidden uploaded sticker remains hidden')
-          print('PASS actual Chat1 source is shared getPool and progressive renderer remains active')
+          print('PASS actual Chat1 source and progressive renderer remain active')
           PY
           git diff --check
 

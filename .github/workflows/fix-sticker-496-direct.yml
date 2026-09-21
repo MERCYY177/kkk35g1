@@ -1,4 +1,4 @@
-name: Diagnose 119 dropped canonical stickers
+name: Diagnose builtin pack dropping
 
 on:
   push:
@@ -14,66 +14,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print pool filter definitions
+      - name: Inspect builtinPacks and embedded pack
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
+          import re,json
           s=Path('index.html').read_text(encoding='utf-8')
-          for name in ['isImage','uniq','norm','buildPool','builtinSrcs']:
-              pats=[r'function\s+'+name+r'\s*\([^)]*\)\s*\{',r'(?:var|let|const)\s+'+name+r'\s*=']
-              pos=-1
-              for pat in pats:
-                  m=re.search(pat,s)
-                  if m: pos=m.start(); break
-              print('\n===',name,'===')
-              print(s[pos:pos+2600] if pos>=0 else 'NOT FOUND')
+          m=re.search(r'function\s+builtinPacks\s*\([^)]*\)\s*\{',s)
+          print('=== builtinPacks source ===')
+          print(s[m.start():m.start()+5000] if m else 'NOT FOUND')
+          dm=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
+          packs=json.loads(dm.group(1))
+          print('\n=== embedded JSON packs ===')
+          for p in packs:
+              items=p.get('items') or []
+              embedded=sum(1 for i in items if isinstance(i,dict) and '/embedded/' in str(i.get('src','')))
+              print('id=',p.get('id'),'name=',p.get('name'),'items=',len(items),'embedded=',embedded)
           PY
       - name: Install Selenium
         run: python -m pip install --quiet selenium
-      - name: Compare canonical 496 to real clean-browser pool
+      - name: Inspect actual runtime packs
         shell: bash
         run: |
-          cat > blank.html <<'EOF'
-          <!doctype html><meta charset="utf-8"><title>blank</title>
-          EOF
           python -m http.server 8000 >/tmp/http.log 2>&1 &
           python - <<'PY'
-          from pathlib import Path
-          import re,json,shutil,collections,os
+          import shutil
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
           from selenium.webdriver.support.ui import WebDriverWait
-          s=Path('index.html').read_text(encoding='utf-8')
-          m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
-          dta=json.loads(m.group(1)); refs=[]
-          for p in dta:
-              for i in p.get('items') or []:
-                  if isinstance(i,dict) and str(i.get('src','')).strip(): refs.append(str(i['src']).strip())
-          refs=list(dict.fromkeys(refs)); assert len(refs)==496
-          chrome=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser')
-          o=Options();o.binary_location=chrome
+          c=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser')
+          o=Options();o.binary_location=c
           for a in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu']:o.add_argument(a)
           d=webdriver.Chrome(options=o)
           try:
-              d.get('http://127.0.0.1:8000/blank.html')
-              d.execute_script('localStorage.clear();sessionStorage.clear();')
               d.get('http://127.0.0.1:8000/index.html')
-              WebDriverWait(d,20).until(lambda x:x.execute_script('return !!(window.xiaoshuStickerStore&&window.xiaoshuStickerStore.getPool)'))
-              pool=d.execute_script('return window.xiaoshuStickerStore.getPool().slice();')
-              hidden=d.execute_script('return window.xiaoshuStickerStore.getHidden().slice();')
-              missing=[x for x in refs if x not in pool]
-              extra=[x for x in pool if x not in refs]
-              print('CANONICAL=',len(refs),'POOL=',len(pool),'HIDDEN=',len(hidden),'MISSING=',len(missing),'EXTRA=',len(extra))
-              print('MISSING_SAMPLE:')
-              for x in missing[:60]: print(x)
-              ext=collections.Counter(os.path.splitext(x.split('?',1)[0])[1].lower() or '<none>' for x in missing)
-              print('MISSING_EXTENSIONS',dict(ext))
-              # Ask the page's own filter about every canonical ref.
-              verdict=d.execute_script('return arguments[0].map(function(x){return {x:x,ok:(typeof isImage==="function"?isImage(x):null)};});',refs)
-              bad=[v['x'] for v in verdict if v['ok'] is False]
-              print('ISIMAGE_FALSE=',len(bad))
-              for x in bad[:60]: print('BAD',x)
+              WebDriverWait(d,20).until(lambda x:x.execute_script('return !!window.xiaoshuStickerStore'))
+              info=d.execute_script('return (typeof builtinPacks==="function"?builtinPacks():[]).map(function(p){return {id:p.id,name:p.name,n:(p.items||[]).length,embedded:(p.items||[]).filter(function(i){return String((i&&i.src)||i||"").indexOf("/embedded/")>=0;}).length};});')
+              bs=d.execute_script('return typeof builtinSrcs==="function"?builtinSrcs():[];')
+              print('RUNTIME_PACKS',info)
+              print('RUNTIME_BUILTIN_SRCS',len(bs),'EMBEDDED',sum('/embedded/' in x for x in bs))
           finally:d.quit()
           PY

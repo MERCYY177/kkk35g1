@@ -1,4 +1,4 @@
-name: Diagnose builtin pack dropping
+name: Diagnose builtin loader bootstrap
 
 on:
   push:
@@ -14,45 +14,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect builtinPacks and embedded pack
+      - name: Inspect builtin loader definitions and order
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re,json
           s=Path('index.html').read_text(encoding='utf-8')
-          m=re.search(r'function\s+builtinPacks\s*\([^)]*\)\s*\{',s)
-          print('=== builtinPacks source ===')
-          print(s[m.start():m.start()+5000] if m else 'NOT FOUND')
-          dm=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
-          packs=json.loads(dm.group(1))
-          print('\n=== embedded JSON packs ===')
-          for p in packs:
-              items=p.get('items') or []
-              embedded=sum(1 for i in items if isinstance(i,dict) and '/embedded/' in str(i.get('src','')))
-              print('id=',p.get('id'),'name=',p.get('name'),'items=',len(items),'embedded=',embedded)
-          PY
-      - name: Install Selenium
-        run: python -m pip install --quiet selenium
-      - name: Inspect actual runtime packs
-        shell: bash
-        run: |
-          python -m http.server 8000 >/tmp/http.log 2>&1 &
-          python - <<'PY'
-          import shutil
-          from selenium import webdriver
-          from selenium.webdriver.chrome.options import Options
-          from selenium.webdriver.support.ui import WebDriverWait
-          c=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser')
-          o=Options();o.binary_location=c
-          for a in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu']:o.add_argument(a)
-          d=webdriver.Chrome(options=o)
-          try:
-              d.get('http://127.0.0.1:8000/index.html')
-              WebDriverWait(d,20).until(lambda x:x.execute_script('return !!window.xiaoshuStickerStore'))
-              info=d.execute_script('return (typeof builtinPacks==="function"?builtinPacks():[]).map(function(p){return {id:p.id,name:p.name,n:(p.items||[]).length,embedded:(p.items||[]).filter(function(i){return String((i&&i.src)||i||"").indexOf("/embedded/")>=0;}).length};});')
-              bs=d.execute_script('return typeof builtinSrcs==="function"?builtinSrcs():[];')
-              print('RUNTIME_PACKS',info)
-              print('RUNTIME_BUILTIN_SRCS',len(bs),'EMBEDDED',sum('/embedded/' in x for x in bs))
-          finally:d.quit()
+          terms=['xiaoshuEnsureBuiltinStickerPacks','xiaoshuBuiltinStickerPacks','xiaoshu-builtin-sticker-packs-data-v1','function builtinPacks','loadSyncState();','window.xiaoshuStickerStore=api']
+          for t in terms:
+              print('\n====',t,'====')
+              pos=0;n=0
+              while True:
+                  i=s.find(t,pos)
+                  if i<0: break
+                  n+=1
+                  print('POS',i)
+                  print(s[max(0,i-1800):min(len(s),i+4200)])
+                  pos=i+len(t)
+                  if n>=8: break
+              print('COUNT',n)
           PY

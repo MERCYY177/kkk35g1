@@ -1,4 +1,4 @@
-name: Diagnose sticker init order
+name: Diagnose exact hidden remerge point
 
 on:
   push:
@@ -14,15 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print sticker init call order
+      - name: Print exact store init contexts
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          s=Path('index.html').read_text(encoding='utf-8')
-          lines=s.splitlines()
-          terms=['migrateLegacySync','mergeHidden(','persistHidden(','syncRuntime(','hydrate(','xiaoshuStickerStore=api','xiaoshuGetSharedStickerPool=getPool','builtinSrcs()','repairBuiltinWebHiddenOnce']
-          for i,line in enumerate(lines,1):
-              if 17635 <= i <= 18145 and any(t in line for t in terms):
-                  print(f'{i}: {line[:2400]}')
+          lines=Path('index.html').read_text(encoding='utf-8').splitlines()
+          for lo,hi in [(17760,17805),(18135,18170)]:
+              print(f'===== {lo}-{hi} =====')
+              for i in range(lo,hi+1): print(f'{i}: {lines[i-1][:2600]}')
           PY

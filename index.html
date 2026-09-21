@@ -17643,6 +17643,7 @@ window.__xiaoshuSharedStickerControllerV6 = true;
 var CANONICAL_UPLOAD_NAME = 'myStickerLibrary';
 var CANONICAL_RUNTIME_NAME = 'stickerLibrary';
 var CANONICAL_HIDDEN_KEY = 'disabledStickerItems';
+var BUILTIN_VISIBILITY_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_v1';
 var CANONICAL_MESSAGE_RESOURCE_NAME = 'stickerMessageResourcesV1';
 var LEGACY_GROUP_NAME = 'customStickerGroups';
 var LEGACY_UPLOAD_LOCAL_KEYS = ['xiaoshu_user_uploaded_shared_stickers_v1'];
@@ -18099,6 +18100,23 @@ try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}
 }
 var hkeys=[CANONICAL_HIDDEN_KEY].concat(LEGACY_HIDDEN_KEYS);
 for(var j=0;j<hkeys.length;j++){try{var hv=await window.localforage.getItem(hkeys[j]);if(Array.isArray(hv)){migrationState.legacyHiddenItems+=hv.length;mergeHidden(hv);}}catch(e){}}
+// v496 visibility repair: old builds could persist hundreds of wanted builtin stickers as hidden.
+// Run once after all legacy/canonical hidden stores are merged; preserve hidden uploads.
+try{
+  var repairLs=safeWebStorage('localStorage'),repairSs=safeWebStorage('sessionStorage');
+  var visibilityRepairDone=!!(repairLs&&repairLs.getItem(BUILTIN_VISIBILITY_REPAIR_KEY)==='1');
+  if(!visibilityRepairDone){
+    var wantedBuiltinSet=new Set(builtinSrcs().map(norm)),restoredBuiltinCount=0;
+    Array.from(hidden).forEach(function(src){if(wantedBuiltinSet.has(norm(src))){hidden.delete(src);restoredBuiltinCount++;}});
+    removeStorageKey(repairSs,CANONICAL_HIDDEN_KEY);
+    LEGACY_HIDDEN_KEYS.forEach(function(k){removeStorageKey(repairLs,k);removeStorageKey(repairSs,k);});
+    if(window.localforage){
+      for(var rh=0;rh<hkeys.length;rh++){try{await window.localforage.removeItem(hkeys[rh]);}catch(e){}}
+    }
+    if(repairLs)repairLs.setItem(BUILTIN_VISIBILITY_REPAIR_KEY,'1');
+    migrationState.restoredBuiltinItems=restoredBuiltinCount;
+  }
+}catch(e){console.warn('[共享表情包] 496内置表情可见性修复失败',e);}
 }
 }catch(e){
 console.warn('[共享表情包] 读取当前会话数据失败，已停止回写以保护原数据',e);

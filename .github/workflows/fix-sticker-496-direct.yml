@@ -1,167 +1,63 @@
-name: Direct repair 496 sticker pool
+name: Diagnose sticker runtime chain
 
 on:
   push:
-    branches: [main]
+    branches: [debug-sticker-runtime-20260921]
     paths:
       - '.github/workflows/fix-sticker-496-direct.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  fix:
+  diagnose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Restore canonical 496 pool and remove Chat1 all-at-once render
+      - name: Trace current sticker data and render chain
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json, re, subprocess, hashlib
-
-          HIST='bd884979aec7822e1fd307b3fc1a593942f2082d'
-          p=Path('index.html')
-          cur=p.read_text(encoding='utf-8')
-          old=subprocess.check_output(['git','show',f'{HIST}:index.html'],text=True,encoding='utf-8',errors='strict')
-
-          pack_pat=r'(<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>)(.*?)(</script>)'
-          cm=re.search(pack_pat,cur,re.S|re.I)
-          hm=re.search(pack_pat,old,re.S|re.I)
-          if not cm or not hm:
-              raise SystemExit('sticker pack data block missing in current or canonical history')
-
-          canonical=json.loads(hm.group(2).strip() or '[]')
-          current=json.loads(cm.group(2).strip() or '[]')
-
-          def refs(data):
-              out=[]
-              for pack in data if isinstance(data,list) else []:
-                  if not isinstance(pack,dict): continue
-                  for item in pack.get('items') or []:
-                      if isinstance(item,dict) and str(item.get('src','')).strip():
-                          out.append(str(item['src']).strip())
-              return out
-
-          canonical_refs=refs(canonical)
-          current_refs=refs(current)
-          if len(canonical_refs)!=496 or len(set(canonical_refs))!=496:
-              raise SystemExit(f'canonical history is not the expected 496 unique refs: total={len(canonical_refs)} unique={len(set(canonical_refs))}')
-
-          missing=[s for s in canonical_refs if not Path(s).is_file()]
-          if missing:
-              raise SystemExit(f'canonical 496 references missing current assets: {missing[:20]} total={len(missing)}')
-
-          assets=[x for x in Path('assets/stickers').rglob('*') if x.is_file()]
-          if len(assets)!=615:
-              raise SystemExit(f'physical sticker assets changed unexpectedly: {len(assets)} (expected 615)')
-
-          excluded=set(x.as_posix() for x in assets)-set(canonical_refs)
-          if len(excluded)!=119:
-              raise SystemExit(f'excluded physical resources must remain 119, got {len(excluded)}')
-
-          # Diagnostic only: compare visual/binary duplication in the current recovered pool vs canonical pool.
-          def duplicate_hash_groups(paths):
-              groups={}
-              for s in paths:
-                  h=hashlib.sha256(Path(s).read_bytes()).hexdigest()
-                  groups.setdefault(h,[]).append(s)
-              return [g for g in groups.values() if len(g)>1]
-          cur_dups=duplicate_hash_groups([s for s in current_refs if Path(s).is_file()])
-          can_dups=duplicate_hash_groups(canonical_refs)
-          print('CURRENT pack refs:',len(current_refs),'unique paths:',len(set(current_refs)),'binary duplicate groups:',len(cur_dups))
-          print('CANONICAL pack refs:',len(canonical_refs),'unique paths:',len(set(canonical_refs)),'binary duplicate groups:',len(can_dups))
-          if cur_dups:
-              print('CURRENT duplicate sample:',cur_dups[:10])
-          if can_dups:
-              print('CANONICAL duplicate sample:',can_dups[:10])
-
-          # Restore the exact historical 496 built-in catalogue. This fixes the corrupted recovery source
-          # without touching the 119 intentionally excluded physical files or user-uploaded localStorage data.
-          canonical_json=json.dumps(canonical,ensure_ascii=False,separators=(',',':'))
-          cur=cur[:cm.start(2)]+canonical_json+cur[cm.end(2):]
-
-          # Keep Chat2 local-path support and bridge fixes. Do not regress them.
-          required=[
-              "if((raw.startsWith('assets/stickers/')||raw.startsWith('./assets/stickers/'))&&!raw.includes('..')",
-              'sendBigKeyboardStickers(frame)',
-              'normalizeSharedStickerPool(data.stickers)',
-          ]
-          for token in required:
-              if token not in cur:
-                  raise SystemExit('required Chat2 sticker fix missing: '+token)
-
-          # The previous emergency fix forced Chat1 to create all sticker DOM nodes immediately.
-          # That is the cause of Chat1's scroll hitch. Return Chat1 to incremental rendering;
-          # bindStickerGrid remains responsible for loading later batches while scrolling.
-          all_at_once='if(grid){while(stickerRenderedCount<stickerPool.length)appendStickerBatch();bindStickerGrid(grid,a);}'
-          incremental='if(grid){appendStickerBatch();bindStickerGrid(grid,a);}'
-          if all_at_once in cur:
-              cur=cur.replace(all_at_once,incremental,1)
-          elif incremental not in cur:
-              raise SystemExit('Chat1 sticker render target not found; refusing a blind rewrite')
-
-          # Keep Chat2's current complete render because it is smooth in the actual UI and guarantees all 496
-          # are immediately reachable there. The source is now canonical so no duplicate recovery entries remain.
-
-          # Remove stale comments that describe the incorrect recovery state.
-          cur=cur.replace('最终版：使用统一共享表情池；内置可选表情保持用户确认的496张，另含用户上传项。','最终版：使用历史确认的496张内置表情作为唯一内置源；119张实体资源保持排除，用户上传项继续单独合并。')
-          cur=cur.replace('最终版：仅保留用户筛选后的499张本地表情，已删除隐藏项、重复项和失效外链。','最终版：使用历史确认的496张内置表情作为唯一内置源；119张实体资源保持排除，用户上传项继续单独合并。')
-
-          p.write_text(cur,encoding='utf-8')
-          PY
-
-      - name: Verify exact product invariants
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import json,re,subprocess
-
-          HIST='bd884979aec7822e1fd307b3fc1a593942f2082d'
+          import re, json
           s=Path('index.html').read_text(encoding='utf-8')
-          old=subprocess.check_output(['git','show',f'{HIST}:index.html'],text=True,encoding='utf-8')
+
           pat=r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>'
-          m=re.search(pat,s,re.S|re.I); h=re.search(pat,old,re.S|re.I)
-          if not m or not h: raise SystemExit('pack missing after patch')
-          data=json.loads(m.group(1)); hist=json.loads(h.group(1))
+          m=re.search(pat,s,re.S|re.I)
+          if not m:
+              raise SystemExit('builtin sticker data missing')
+          data=json.loads(m.group(1))
+          refs=[str(i.get('src','')).strip() for p in data for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
+          print('BUILTIN_REFS_TOTAL',len(refs),'UNIQUE',len(set(refs)))
 
-          def refs(d):
-              return [str(i.get('src','')).strip() for p in d for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
-          r=refs(data); hr=refs(hist)
-          assets={x.as_posix() for x in Path('assets/stickers').rglob('*') if x.is_file()}
-          errs=[]
-          if len(assets)!=615: errs.append(f'assets={len(assets)}')
-          if len(r)!=496: errs.append(f'pack total={len(r)}')
-          if len(set(r))!=496: errs.append(f'pack unique paths={len(set(r))}')
-          if set(r)!=set(hr) or r!=hr: errs.append('pack does not exactly match canonical historical 496 order/content')
-          if len(assets-set(r))!=119: errs.append(f'excluded={len(assets-set(r))}')
-          if any(x not in assets for x in r): errs.append('pack references missing assets')
-          if 'while(stickerRenderedCount<stickerPool.length)appendStickerBatch()' in s: errs.append('Chat1 still renders all stickers at once')
-          if 'if(grid){appendStickerBatch();bindStickerGrid(grid,a);}' not in s: errs.append('Chat1 incremental render missing')
-          if 'while(sharedStickerRenderedCount<sharedStickerPool.length)appendSharedStickerBatch()' not in s: errs.append('Chat2 complete render missing')
-          if "if((raw.startsWith('assets/stickers/')||raw.startsWith('./assets/stickers/'))&&!raw.includes('..')" not in s: errs.append('Chat2 local sticker path rule missing')
-          if 'sendBigKeyboardStickers(frame)' not in s: errs.append('Chat2 parent sticker push missing')
-          if 'normalizeSharedStickerPool(data.stickers)' not in s: errs.append('Chat2 pool normalization missing')
-          print('assets=',len(assets),'builtin=',len(r),'unique=',len(set(r)),'excluded=',len(assets-set(r)))
-          print('errors=',errs)
-          if errs: raise SystemExit(1)
-          print('STICKER 496 DIRECT REPAIR GREEN')
+          keys=['stickerPool','stickerRenderedCount','STICKER_BATCH_SIZE','stickerBatchSize','appendStickerBatch','bindStickerGrid','scheduleStickerGridFill','xiaoshuStickerStore','xiaoshuGetSharedStickerPool','normalizeSticker','getPool','merge','slice(','splice(','filter(','Set(']
+          lines=s.splitlines()
+          for idx,line in enumerate(lines,1):
+              if any(k in line for k in keys):
+                  lo=max(1,idx-2); hi=min(len(lines),idx+3)
+                  print(f'\n--- L{lo}-L{hi} hit L{idx} ---')
+                  for j in range(lo,hi+1):
+                      print(f'{j}: {lines[j-1][:1200]}')
+
+          # Extract compact function bodies by brace matching for the important functions.
+          def show_func(name):
+              mm=re.search(r'(?:function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{|(?:const|let|var)\s+'+re.escape(name)+r'\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{)',s)
+              if not mm:
+                  print('\nFUNC_NOT_FOUND',name); return
+              start=mm.start(); brace=s.find('{',mm.start(),mm.end()+2)
+              depth=0; end=None
+              for k in range(brace,len(s)):
+                  c=s[k]
+                  if c=='{': depth+=1
+                  elif c=='}':
+                      depth-=1
+                      if depth==0:
+                          end=k+1; break
+              body=s[start:end or min(len(s),start+5000)]
+              print('\n=== FUNCTION',name,'===\n',body[:12000])
+          for name in ['appendStickerBatch','bindStickerGrid','scheduleStickerGridFill','activateStickerTab','loadStickerPool','getStickerPool','bigKeyboardStickerPool','renderSharedStickerGrid']:
+              show_func(name)
           PY
-
-      - name: Commit repair
-        shell: bash
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html
-          if git diff --cached --quiet; then
-            echo 'No index change needed'
-            exit 0
-          fi
-          git commit -m 'fix: restore canonical 496 stickers and smooth Chat1'
-          git push

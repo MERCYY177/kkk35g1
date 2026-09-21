@@ -1,4 +1,4 @@
-name: Diagnose sticker runtime storage
+name: Diagnose actual sticker source
 
 on:
   push:
@@ -14,77 +14,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Trace sticker storage and lifecycle
+      - name: Inspect actual shared pool and hidden-item logic
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re, json
+          import re
           s=Path('index.html').read_text(encoding='utf-8')
-          lines=s.splitlines()
-
-          def show_func(name):
-              patterns=[
-                r'function\s+'+re.escape(name)+r'\s*\([^)]*\)\s*\{',
-                r'(?:const|let|var)\s+'+re.escape(name)+r'\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{',
-                r'(?:const|let|var)\s+'+re.escape(name)+r'\s*=\s*function\s*\([^)]*\)\s*\{'
-              ]
-              mm=None
-              for p in patterns:
-                  mm=re.search(p,s)
-                  if mm: break
-              if not mm:
-                  print('\nFUNC_NOT_FOUND',name); return
-              start=mm.start(); brace=s.find('{',mm.start(),mm.end()+2)
-              depth=0; end=None; quote=None; esc=False
-              for k in range(brace,len(s)):
-                  c=s[k]
-                  if quote:
-                      if esc: esc=False
-                      elif c=='\\': esc=True
-                      elif c==quote: quote=None
-                      continue
-                  if c in "'\"`": quote=c; continue
-                  if c=='{': depth+=1
-                  elif c=='}':
-                      depth-=1
-                      if depth==0:
-                          end=k+1; break
-              body=s[start:end or min(len(s),start+12000)]
-              print('\n=== FUNCTION',name,'===\n'+body[:20000])
-
-          for name in [
-            'getStickerPacks','getFlatStickers','saveStickerPacks','mergeStickerPacks',
-            'normalizeStickerPacks','normalizeStickerItem','migrateFromLegacyStickerLibrary',
-            'migrateFromLegacyChatStickers','_storeRead','_storePool','_storeWrite',
-            'resetStickerRuntime','appendStickerBatch','scheduleStickerGridFill'
-          ]:
-              show_func(name)
-
-          print('\n=== STORAGE/VERSION CONSTANT CONTEXT ===')
-          for idx,line in enumerate(lines,1):
-              if any(k in line for k in ['STICKER_PACKS_KEY','STICKER_DATA','STICKER_VERSION','BUILTIN_STICKER','DEFAULT_STICKER_PACKS','xiaoshu-builtin-sticker','localStorage']):
-                  if 'sticker' in line.lower() or 'STICKER' in line:
-                      print(f'{idx}: {line[:1800]}')
-
-          print('\n=== LIFECYCLE OCCURRENCES ===')
-          needles=['stickerLoadGeneration++','++stickerLoadGeneration','resetStickerRuntime(','stickerPanelActive=','stickerPanelActive =','stickerRenderedCount=','stickerRenderedCount =','stickerPool=getFlatStickers','stickerPool = getFlatStickers']
-          for needle in needles:
-              hits=[]
-              for idx,line in enumerate(lines,1):
-                  if needle in line:
-                      hits.append((idx,line[:1600]))
-              print('\nNEEDLE',needle,'COUNT',len(hits))
-              for idx,line in hits:
-                  print(f'{idx}: {line}')
-
-          # Confirm embedded corpus.
-          m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
-          data=json.loads(m.group(1)) if m else []
-          refs=[str(i.get('src','')).strip() for p in data for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
-          print('\nBUILTIN_REFS_TOTAL',len(refs),'UNIQUE',len(set(refs)))
-          print('PACKS',[(p.get('id'),p.get('name'),len(p.get('items') or [])) for p in data])
+          terms=['getSharedStickers','disabledStickerItems','myStickerLibrary','xiaoshuStickerStore','getBuiltinStickerPacks','builtinSticker','normalizeBuiltin','stickerPool=getSharedStickers','STICKER_BATCH_SIZE']
+          for term in terms:
+              print('\n==========',term,'==========')
+              pos=0;n=0
+              while True:
+                  i=s.find(term,pos)
+                  if i<0: break
+                  n+=1
+                  lo=max(0,i-2200); hi=min(len(s),i+5000)
+                  print('\n--- HIT',n,'AT',i,'---\n'+s[lo:hi])
+                  pos=i+len(term)
+                  if n>=12: break
+              print('TOTAL_SHOWN',n)
           PY

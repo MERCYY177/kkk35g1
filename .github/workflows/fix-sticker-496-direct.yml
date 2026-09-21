@@ -1,4 +1,4 @@
-name: Diagnose actual sticker source compact
+name: Diagnose sticker store core
 
 on:
   push:
@@ -14,44 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compact sticker source report
+      - name: Inspect canonical store core
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re, json
           s=Path('index.html').read_text(encoding='utf-8')
           lines=s.splitlines()
-
-          # canonical embedded count
-          m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
-          data=json.loads(m.group(1)) if m else []
-          refs=[str(i.get('src','')).strip() for p in data for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
-          print('CANONICAL',len(refs),'UNIQUE',len(set(refs)))
-
-          def hits(term, maxn=20):
-              out=[]
-              for i,line in enumerate(lines,1):
-                  if term in line:
-                      out.append((i,line.strip()[:1400]))
-              print(f'\n[{term}] count={len(out)}')
-              for i,line in out[:maxn]: print(f'{i}: {line}')
-
-          for term in ['getSharedStickers','disabledStickerItems','myStickerLibrary','xiaoshuStickerStore','stickerPool=getSharedStickers','failedStickerSources','stickerRenderedCount','stickerBatchSize']:
-              hits(term)
-
-          # exact compact contexts around actual getSharedStickers definition(s)
-          print('\n=== getSharedStickers contexts ===')
-          for i,line in enumerate(lines,1):
-              if ('function getSharedStickers' in line or 'getSharedStickers=' in line or 'getSharedStickers =' in line):
-                  lo=max(1,i-8); hi=min(len(lines),i+28)
-                  print(f'-- context {lo}-{hi} --')
-                  for j in range(lo,hi+1): print(f'{j}: {lines[j-1][:1600]}')
-
-          print('\n=== disabledStickerItems contexts ===')
-          loc=[i for i,line in enumerate(lines,1) if 'disabledStickerItems' in line]
-          for i in loc[:8]:
-              lo=max(1,i-4); hi=min(len(lines),i+8)
-              print(f'-- context {lo}-{hi} --')
-              for j in range(lo,hi+1): print(f'{j}: {lines[j-1][:1600]}')
+          lo,hi=17640,18130
+          terms=('builtin','hidden','disabled','getPool','pool','uploads','hydrate','api=','api =','CANONICAL','migrate','refresh','filter(','uniq(','saveHidden','loadHidden')
+          for i in range(lo,hi+1):
+              line=lines[i-1]
+              if any(t.lower() in line.lower() for t in terms):
+                  print(f'{i}: {line[:2200]}')
           PY

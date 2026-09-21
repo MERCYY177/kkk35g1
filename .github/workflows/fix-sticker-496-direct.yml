@@ -1,4 +1,4 @@
-name: Repair exact post-load sticker visibility
+name: Diagnose 119 dropped canonical stickers
 
 on:
   push:
@@ -7,139 +7,73 @@ on:
       - '.github/workflows/fix-sticker-496-direct.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  repair-runtime:
+  diagnose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Patch visibility repair after loadSyncState
+      - name: Print pool filter definitions
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          p=Path('index.html'); s=p.read_text(encoding='utf-8')
-          decl="var BUILTIN_VISIBILITY_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_v1';"
-          if 'BUILTIN_VISIBILITY_WEB_REPAIR_KEY' not in s:
-              if decl not in s: raise SystemExit('existing IDB repair marker missing')
-              s=s.replace(decl,decl+"\nvar BUILTIN_VISIBILITY_WEB_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_web_v2';",1)
-          idb_loop="for(var j=0;j<hkeys.length;j++){try{var hv=await window.localforage.getItem(hkeys[j]);if(Array.isArray(hv)){migrationState.legacyHiddenItems+=hv.length;mergeHidden(hv);}}catch(e){}}"
-          if 'hiddenBeforeIdbRepair' not in s:
-              if idb_loop not in s: raise SystemExit('IDB hidden merge loop missing')
-              s=s.replace(idb_loop,"var hiddenBeforeIdbRepair=new Set(Array.from(hidden).map(norm));\n"+idb_loop,1)
-          old_delete="Array.from(hidden).forEach(function(src){if(wantedBuiltinSet.has(norm(src))){hidden.delete(src);restoredBuiltinCount++;}});"
-          new_delete="Array.from(hidden).forEach(function(src){var ns=norm(src);if(wantedBuiltinSet.has(ns)&&!hiddenBeforeIdbRepair.has(ns)){hidden.delete(src);restoredBuiltinCount++;}});"
-          if old_delete in s: s=s.replace(old_delete,new_delete,1)
-          elif new_delete not in s: raise SystemExit('IDB repair deletion line missing')
-          if 'restoredWebBuiltinItems' not in s:
-              anchor='loadSyncState();'
-              if anchor not in s: raise SystemExit('loadSyncState anchor missing')
-              lines=[
-                anchor,
-                'try{',
-                "  var visibilityRepairLs=safeWebStorage('localStorage');",
-                "  if(!(visibilityRepairLs&&visibilityRepairLs.getItem(BUILTIN_VISIBILITY_WEB_REPAIR_KEY)==='1')){",
-                '    var visibilityWantedBuiltins=new Set(builtinSrcs().map(norm)),visibilityRestored=0;',
-                '    Array.from(hidden).forEach(function(src){var ns=norm(src);if(visibilityWantedBuiltins.has(ns)){hidden.delete(src);visibilityRestored++;}});',
-                '    persistHidden();',
-                '    cleanupLegacySyncStores();',
-                "    if(visibilityRepairLs)visibilityRepairLs.setItem(BUILTIN_VISIBILITY_WEB_REPAIR_KEY,'1');",
-                '    migrationState.restoredWebBuiltinItems=visibilityRestored;',
-                '  }',
-                "}catch(e){console.warn('[共享表情包] 496内置表情同步可见性修复失败',e);}"
-              ]
-              s=s.replace(anchor,'\n'.join(lines),1)
-          p.write_text(s,encoding='utf-8')
+          import re
+          s=Path('index.html').read_text(encoding='utf-8')
+          for name in ['isImage','uniq','norm','buildPool','builtinSrcs']:
+              pats=[r'function\s+'+name+r'\s*\([^)]*\)\s*\{',r'(?:var|let|const)\s+'+name+r'\s*=']
+              pos=-1
+              for pat in pats:
+                  m=re.search(pat,s)
+                  if m: pos=m.start(); break
+              print('\n===',name,'===')
+              print(s[pos:pos+2600] if pos>=0 else 'NOT FOUND')
           PY
-          git diff --check
-
       - name: Install Selenium
         run: python -m pip install --quiet selenium
-
-      - name: Real Chrome regression with 430 poisoned wanted stickers
+      - name: Compare canonical 496 to real clean-browser pool
         shell: bash
         run: |
           cat > blank.html <<'EOF'
           <!doctype html><meta charset="utf-8"><title>blank</title>
           EOF
-          python -m http.server 8000 >/tmp/xs-http.log 2>&1 &
+          python -m http.server 8000 >/tmp/http.log 2>&1 &
           python - <<'PY'
           from pathlib import Path
-          import re,json,shutil
+          import re,json,shutil,collections,os
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
           from selenium.webdriver.support.ui import WebDriverWait
           s=Path('index.html').read_text(encoding='utf-8')
           m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
-          data=json.loads(m.group(1)); refs=[]
-          for p in data:
+          dta=json.loads(m.group(1)); refs=[]
+          for p in dta:
               for i in p.get('items') or []:
                   if isinstance(i,dict) and str(i.get('src','')).strip(): refs.append(str(i['src']).strip())
-          refs=list(dict.fromkeys(refs)); assert len(refs)==496,len(refs)
-          chrome=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'); assert chrome
-          opt=Options();opt.binary_location=chrome
-          for a in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--window-size=1280,1200']:opt.add_argument(a)
-          d=webdriver.Chrome(options=opt); wait=WebDriverWait(d,30)
+          refs=list(dict.fromkeys(refs)); assert len(refs)==496
+          chrome=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser')
+          o=Options();o.binary_location=chrome
+          for a in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu']:o.add_argument(a)
+          d=webdriver.Chrome(options=o)
           try:
               d.get('http://127.0.0.1:8000/blank.html')
-              d.execute_script("localStorage.setItem('disabledStickerItems',JSON.stringify(arguments[0]));",refs[:330])
-              d.execute_script("localStorage.setItem('xiaoshu_hidden_sticker_items_v7',JSON.stringify(arguments[0]));",refs[330:410])
-              d.execute_script("sessionStorage.setItem('disabledStickerItems',JSON.stringify(arguments[0]));",refs[410:430])
+              d.execute_script('localStorage.clear();sessionStorage.clear();')
               d.get('http://127.0.0.1:8000/index.html')
-              wait.until(lambda x:x.execute_script("return !!(window.xiaoshuStickerStore&&window.xiaoshuStickerStore.getPool)"))
-              wait.until(lambda x:x.execute_script("return localStorage.getItem('xiaoshu_builtin_sticker_visibility_496_web_v2')==='1'"))
+              WebDriverWait(d,20).until(lambda x:x.execute_script('return !!(window.xiaoshuStickerStore&&window.xiaoshuStickerStore.getPool)'))
               pool=d.execute_script('return window.xiaoshuStickerStore.getPool().slice();')
               hidden=d.execute_script('return window.xiaoshuStickerStore.getHidden().slice();')
-              canonical_hidden=[x for x in refs if x in hidden]
-              current=d.execute_script("return JSON.parse(localStorage.getItem('disabledStickerItems')||'[]');")
-              legacy=d.execute_script("return localStorage.getItem('xiaoshu_hidden_sticker_items_v7');")
-              sess=d.execute_script("return sessionStorage.getItem('disabledStickerItems');")
-              print('AFTER_REPAIR pool=',len(pool),'hidden=',len(hidden),'canonical_hidden=',len(canonical_hidden),'canonical_store=',len(current))
-              assert len(pool)==496,(len(pool),len(hidden),len(canonical_hidden))
-              assert len(canonical_hidden)==0 and current==[] and legacy is None and sess is None
-              chosen=pool[0]
-              d.execute_script('window.xiaoshuStickerStore.hide(arguments[0],true);',chosen)
-              wait.until(lambda x:x.execute_script('return window.xiaoshuStickerStore.getPool().length===495'))
-              d.refresh()
-              wait.until(lambda x:x.execute_script("return !!(window.xiaoshuStickerStore&&window.xiaoshuStickerStore.getPool)"))
-              wait.until(lambda x:x.execute_script('return window.xiaoshuStickerStore.getPool().length===495'))
-              after=d.execute_script('return window.xiaoshuStickerStore.getPool().length;')
-              hidden2=d.execute_script('return window.xiaoshuStickerStore.getHidden().slice();')
-              print('AFTER_INTENTIONAL_HIDE_RELOAD pool=',after,'chosen_hidden=',chosen in hidden2)
-              assert after==495 and chosen in hidden2
-              print('RUNTIME_BROWSER_TEST_PASSED')
+              missing=[x for x in refs if x not in pool]
+              extra=[x for x in pool if x not in refs]
+              print('CANONICAL=',len(refs),'POOL=',len(pool),'HIDDEN=',len(hidden),'MISSING=',len(missing),'EXTRA=',len(extra))
+              print('MISSING_SAMPLE:')
+              for x in missing[:60]: print(x)
+              ext=collections.Counter(os.path.splitext(x.split('?',1)[0])[1].lower() or '<none>' for x in missing)
+              print('MISSING_EXTENSIONS',dict(ext))
+              # Ask the page's own filter about every canonical ref.
+              verdict=d.execute_script('return arguments[0].map(function(x){return {x:x,ok:(typeof isImage==="function"?isImage(x):null)};});',refs)
+              bad=[v['x'] for v in verdict if v['ok'] is False]
+              print('ISIMAGE_FALSE=',len(bad))
+              for x in bad[:60]: print('BAD',x)
           finally:d.quit()
           PY
-
-      - name: Verify invariants and commit index only
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re,json
-          s=Path('index.html').read_text(encoding='utf-8')
-          m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
-          data=json.loads(m.group(1)); refs=[str(i.get('src','')).strip() for p in data for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
-          assert len(refs)==496 and len(set(refs))==496
-          assert 'restoredWebBuiltinItems' in s
-          assert s.index('loadSyncState();') < s.index('restoredWebBuiltinItems') < s.index('window.xiaoshuStickerStore=api;')
-          assert 'hiddenBeforeIdbRepair' in s
-          assert 'scheduleStickerGridFill(stickerLoadGeneration)' in s
-          assert 'while(sharedStickerRenderedCount<sharedStickerPool.length)appendSharedStickerBatch()' in s
-          assert 'sendBigKeyboardStickers(frame)' in s
-          assert 'normalizeSharedStickerPool(data.stickers)' in s
-          assert '我已拒绝' in s
-          print('SOURCE_INVARIANTS_PASSED')
-          PY
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html
-          if ! git diff --cached --quiet; then
-            git commit -m 'fix: recover 496 stickers after legacy hidden migration'
-            git push origin HEAD:debug-sticker-runtime-20260921
-          fi

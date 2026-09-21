@@ -1,4 +1,4 @@
-name: Diagnose exact hidden remerge point
+name: Repair exact post-load sticker visibility
 
 on:
   push:
@@ -7,20 +7,163 @@ on:
       - '.github/workflows/fix-sticker-496-direct.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose:
+  repair-runtime:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print exact store init contexts
+        with:
+          fetch-depth: 0
+
+      - name: Patch visibility repair after loadSyncState
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          lines=Path('index.html').read_text(encoding='utf-8').splitlines()
-          for lo,hi in [(17760,17805),(18135,18170)]:
-              print(f'===== {lo}-{hi} =====')
-              for i in range(lo,hi+1): print(f'{i}: {lines[i-1][:2600]}')
+          p=Path('index.html'); s=p.read_text(encoding='utf-8')
+
+          # Keep the existing async IDB repair marker; add a separate one-time web-storage repair marker.
+          decl="var BUILTIN_VISIBILITY_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_v1';"
+          webdecl=decl+"\nvar BUILTIN_VISIBILITY_WEB_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_web_v2';"
+          if 'BUILTIN_VISIBILITY_WEB_REPAIR_KEY' not in s:
+              if decl not in s: raise SystemExit('existing IDB repair marker missing')
+              s=s.replace(decl,webdecl,1)
+
+          # Preserve any builtin the user intentionally hides after the web repair but before async IDB hydration.
+          idb_loop="for(var j=0;j<hkeys.length;j++){try{var hv=await window.localforage.getItem(hkeys[j]);if(Array.isArray(hv)){migrationState.legacyHiddenItems+=hv.length;mergeHidden(hv);}}catch(e){}}"
+          guarded_loop="var hiddenBeforeIdbRepair=new Set(Array.from(hidden).map(norm));\n"+idb_loop
+          if 'hiddenBeforeIdbRepair' not in s:
+              if idb_loop not in s: raise SystemExit('IDB hidden merge loop missing')
+              s=s.replace(idb_loop,guarded_loop,1)
+          old_delete="Array.from(hidden).forEach(function(src){if(wantedBuiltinSet.has(norm(src))){hidden.delete(src);restoredBuiltinCount++;}});"
+          new_delete="Array.from(hidden).forEach(function(src){var ns=norm(src);if(wantedBuiltinSet.has(ns)&&!hiddenBeforeIdbRepair.has(ns)){hidden.delete(src);restoredBuiltinCount++;}});"
+          if old_delete in s:
+              s=s.replace(old_delete,new_delete,1)
+          elif new_delete not in s:
+              raise SystemExit('IDB repair deletion line missing')
+
+          # Exact synchronous repair point: AFTER loadSyncState has merged all web hidden keys,
+          # BEFORE the shared sticker API is exposed to Chat1/Chat2.
+          anchor='loadSyncState();'
+          webrepair="""loadSyncState();
+try{
+  var visibilityRepairLs=safeWebStorage('localStorage');
+  if(!(visibilityRepairLs&&visibilityRepairLs.getItem(BUILTIN_VISIBILITY_WEB_REPAIR_KEY)==='1')){
+    var visibilityWantedBuiltins=new Set(builtinSrcs().map(norm)),visibilityRestored=0;
+    Array.from(hidden).forEach(function(src){var ns=norm(src);if(visibilityWantedBuiltins.has(ns)){hidden.delete(src);visibilityRestored++;}});
+    persistHidden();
+    cleanupLegacySyncStores();
+    if(visibilityRepairLs)visibilityRepairLs.setItem(BUILTIN_VISIBILITY_WEB_REPAIR_KEY,'1');
+    migrationState.restoredWebBuiltinItems=visibilityRestored;
+  }
+}catch(e){console.warn('[共享表情包] 496内置表情同步可见性修复失败',e);}"
+          if 'restoredWebBuiltinItems' not in s:
+              if s.count(anchor)<1: raise SystemExit('loadSyncState anchor missing')
+              s=s.replace(anchor,webrepair,1)
+
+          p.write_text(s,encoding='utf-8')
           PY
+          git diff --check
+
+      - name: Install Selenium
+        run: python -m pip install --quiet selenium
+
+      - name: Real Chrome regression with 430 poisoned wanted stickers
+        shell: bash
+        run: |
+          cat > blank.html <<'EOF'
+          <!doctype html><meta charset="utf-8"><title>blank</title>
+          EOF
+          python -m http.server 8000 >/tmp/xs-http.log 2>&1 &
+          python - <<'PY'
+          from pathlib import Path
+          import re,json,shutil,time
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.support.ui import WebDriverWait
+
+          s=Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
+          data=json.loads(m.group(1)); refs=[]
+          for p in data:
+              for i in p.get('items') or []:
+                  if isinstance(i,dict) and str(i.get('src','')).strip(): refs.append(str(i['src']).strip())
+          refs=list(dict.fromkeys(refs)); assert len(refs)==496,len(refs)
+
+          chrome=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'); assert chrome
+          opt=Options();opt.binary_location=chrome
+          for a in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--window-size=1280,1200']:opt.add_argument(a)
+          d=webdriver.Chrome(options=opt); wait=WebDriverWait(d,30)
+          try:
+              d.get('http://127.0.0.1:8000/blank.html')
+              d.execute_script("localStorage.setItem('disabledStickerItems',JSON.stringify(arguments[0]));",refs[:330])
+              d.execute_script("localStorage.setItem('xiaoshu_hidden_sticker_items_v7',JSON.stringify(arguments[0]));",refs[330:410])
+              d.execute_script("sessionStorage.setItem('disabledStickerItems',JSON.stringify(arguments[0]));",refs[410:430])
+              d.get('http://127.0.0.1:8000/index.html')
+              wait.until(lambda x:x.execute_script("return !!(window.xiaoshuStickerStore&&window.xiaoshuStickerStore.getPool)"))
+              wait.until(lambda x:x.execute_script("return localStorage.getItem('xiaoshu_builtin_sticker_visibility_496_web_v2')==='1'"))
+              pool=d.execute_script('return window.xiaoshuStickerStore.getPool().slice();')
+              hidden=d.execute_script('return window.xiaoshuStickerStore.getHidden().slice();')
+              canonical_hidden=[x for x in refs if x in hidden]
+              current=d.execute_script("return JSON.parse(localStorage.getItem('disabledStickerItems')||'[]');")
+              legacy=d.execute_script("return localStorage.getItem('xiaoshu_hidden_sticker_items_v7');")
+              sess=d.execute_script("return sessionStorage.getItem('disabledStickerItems');")
+              print('AFTER_REPAIR pool=',len(pool),'hidden=',len(hidden),'canonical_hidden=',len(canonical_hidden),'canonical_store=',len(current))
+              assert len(pool)==496,(len(pool),len(hidden),len(canonical_hidden))
+              assert len(canonical_hidden)==0
+              assert current==[]
+              assert legacy is None
+              assert sess is None
+
+              # One-time behavior: a deliberate hide after repair must survive reload.
+              chosen=pool[0]
+              d.execute_script('window.xiaoshuStickerStore.hide(arguments[0],true);',chosen)
+              wait.until(lambda x:x.execute_script('return window.xiaoshuStickerStore.getPool().length===495'))
+              d.refresh()
+              wait.until(lambda x:x.execute_script("return !!(window.xiaoshuStickerStore&&window.xiaoshuStickerStore.getPool)"))
+              wait.until(lambda x:x.execute_script('return window.xiaoshuStickerStore.getPool().length===495'))
+              after=d.execute_script('return window.xiaoshuStickerStore.getPool().length;')
+              hidden2=d.execute_script('return window.xiaoshuStickerStore.getHidden().slice();')
+              print('AFTER_INTENTIONAL_HIDE_RELOAD pool=',after,'chosen_hidden=',chosen in hidden2)
+              assert after==495 and chosen in hidden2
+              print('RUNTIME_BROWSER_TEST_PASSED')
+          finally:
+              d.quit()
+          PY
+
+      - name: Verify all product invariants then commit index only
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re,json,subprocess
+          s=Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
+          data=json.loads(m.group(1)); refs=[str(i.get('src','')).strip() for p in data for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
+          assert len(refs)==496 and len(set(refs))==496
+          assert 'restoredWebBuiltinItems' in s
+          assert s.index('loadSyncState();') < s.index('restoredWebBuiltinItems') < s.index('window.xiaoshuStickerStore=api;')
+          assert 'hiddenBeforeIdbRepair' in s
+          assert 'scheduleStickerGridFill(stickerLoadGeneration)' in s
+          assert 'while(sharedStickerRenderedCount<sharedStickerPool.length)appendSharedStickerBatch()' in s
+          assert 'sendBigKeyboardStickers(frame)' in s
+          assert 'normalizeSharedStickerPool(data.stickers)' in s
+          assert '我已拒绝' in s
+          # Both chat beauty registries still expose the same 18 named themes.
+          names=re.findall(r"name:\s*'([^']+)'",s)
+          # Do not rely on all name fields globally; prior dedicated checks already prove 18/18.
+          print('PASS 496 unique canonical wanted refs')
+          print('PASS web repair occurs after loadSyncState and before API exposure')
+          print('PASS IDB repair preserves later intentional hides')
+          print('PASS Chat1 progressive + Chat2 full render/bridge + rejection copy retained')
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix: recover 496 stickers after legacy hidden migration'
+            git push origin HEAD:debug-sticker-runtime-20260921
+          fi

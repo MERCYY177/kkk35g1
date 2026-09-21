@@ -1,4 +1,4 @@
-name: Runtime verify 496 sticker recovery
+name: Repair and runtime verify 496 visibility
 
 on:
   push:
@@ -7,16 +7,72 @@ on:
       - '.github/workflows/fix-sticker-496-direct.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  runtime:
+  repair-runtime:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install browser driver library
+        with:
+          fetch-depth: 0
+      - name: Move web-storage recovery before session hydration
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html'); s=p.read_text(encoding='utf-8')
+          old="var BUILTIN_VISIBILITY_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_v1';"
+          new="var BUILTIN_VISIBILITY_WEB_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_web_v1';\nvar BUILTIN_VISIBILITY_IDB_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_idb_v1';"
+          if old in s: s=s.replace(old,new,1)
+          s=s.replace('BUILTIN_VISIBILITY_REPAIR_KEY', 'BUILTIN_VISIBILITY_IDB_REPAIR_KEY')
+
+          if 'function repairBuiltinWebHiddenOnce()' not in s:
+              start=s.find('function builtinSrcs(){')
+              if start<0: raise SystemExit('builtinSrcs definition missing')
+              brace=s.find('{',start); depth=0; quote=None; esc=False; end=None
+              for i in range(brace,len(s)):
+                  c=s[i]
+                  if quote:
+                      if esc: esc=False
+                      elif c=='\\': esc=True
+                      elif c==quote: quote=None
+                      continue
+                  if c in "'\"`": quote=c; continue
+                  if c=='{': depth+=1
+                  elif c=='}':
+                      depth-=1
+                      if depth==0: end=i+1; break
+              if not end: raise SystemExit('builtinSrcs end missing')
+              block="\n".join([
+                '',
+                '  function repairBuiltinWebHiddenOnce(){',
+                "    var ls=safeWebStorage('localStorage'),ss=safeWebStorage('sessionStorage');",
+                "    try{if(ls&&ls.getItem(BUILTIN_VISIBILITY_WEB_REPAIR_KEY)==='1')return false;}catch(e){}",
+                '    var wanted=new Set(builtinSrcs().map(norm)),keep=[];',
+                '    function collect(store,key){readJsonFrom(store,key).forEach(function(src){src=norm(src);if(src&&!wanted.has(src))keep.push(src);});}',
+                '    collect(ls,CANONICAL_HIDDEN_KEY);collect(ss,CANONICAL_HIDDEN_KEY);',
+                '    LEGACY_HIDDEN_KEYS.forEach(function(k){collect(ls,k);collect(ss,k);});',
+                '    hidden.forEach(function(src){src=norm(src);if(src&&!wanted.has(src))keep.push(src);});',
+                '    hidden.clear();uniq(keep).forEach(function(src){hidden.add(src);});',
+                '    writeJsonTo(ls,CANONICAL_HIDDEN_KEY,Array.from(hidden));',
+                '    removeStorageKey(ss,CANONICAL_HIDDEN_KEY);',
+                '    LEGACY_HIDDEN_KEYS.forEach(function(k){removeStorageKey(ls,k);removeStorageKey(ss,k);});',
+                "    try{if(ls)ls.setItem(BUILTIN_VISIBILITY_WEB_REPAIR_KEY,'1');}catch(e){}",
+                '    return true;',
+                '  }',
+                '  repairBuiltinWebHiddenOnce();',
+                ''
+              ])
+              s=s[:end]+block+s[end:]
+          p.write_text(s,encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Install Selenium
         run: python -m pip install --quiet selenium
-      - name: Run real-browser stale-hidden recovery test
+
+      - name: Real-browser poisoned-storage regression
         shell: bash
         run: |
           cat > blank.html <<'EOF'
@@ -25,58 +81,67 @@ jobs:
           python -m http.server 8000 >/tmp/xs-http.log 2>&1 &
           python - <<'PY'
           from pathlib import Path
-          import re,json,time,shutil
+          import re,json,shutil
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
           from selenium.webdriver.support.ui import WebDriverWait
-
           s=Path('index.html').read_text(encoding='utf-8')
           m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
-          assert m,'builtin corpus missing'
-          packs=json.loads(m.group(1))
-          refs=[str(i.get('src','')).strip() for p in packs for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
-          refs=list(dict.fromkeys(refs))
-          assert len(refs)==496,len(refs)
-
-          chrome=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser')
-          assert chrome,'Chrome/Chromium not found on runner'
-          opt=Options(); opt.binary_location=chrome
-          for arg in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--window-size=1280,1200']:
-              opt.add_argument(arg)
-          d=webdriver.Chrome(options=opt)
-          wait=WebDriverWait(d,35)
+          packs=json.loads(m.group(1)); refs=[]
+          for p in packs:
+              for i in p.get('items') or []:
+                  if isinstance(i,dict) and str(i.get('src','')).strip(): refs.append(str(i['src']).strip())
+          refs=list(dict.fromkeys(refs)); assert len(refs)==496
+          chrome=shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'); assert chrome
+          opt=Options();opt.binary_location=chrome
+          for a in ['--headless=new','--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--window-size=1280,1200']:opt.add_argument(a)
+          d=webdriver.Chrome(options=opt); wait=WebDriverWait(d,30)
           try:
               d.get('http://127.0.0.1:8000/blank.html')
-              # Reproduce the user's poisoned browser state: hundreds of wanted builtins were persisted hidden.
-              d.execute_script("localStorage.setItem('disabledStickerItems', JSON.stringify(arguments[0]));",refs[:330])
-              d.execute_script("localStorage.setItem('xiaoshu_hidden_sticker_items_v7', JSON.stringify(arguments[0]));",refs[330:410])
-              d.execute_script("sessionStorage.setItem('disabledStickerItems', JSON.stringify(arguments[0]));",refs[410:430])
+              d.execute_script("localStorage.setItem('disabledStickerItems',JSON.stringify(arguments[0]));",refs[:330])
+              d.execute_script("localStorage.setItem('xiaoshu_hidden_sticker_items_v7',JSON.stringify(arguments[0]));",refs[330:410])
+              d.execute_script("sessionStorage.setItem('disabledStickerItems',JSON.stringify(arguments[0]));",refs[410:430])
               d.get('http://127.0.0.1:8000/index.html')
               wait.until(lambda x:x.execute_script("return !!(window.xiaoshuStickerStore&&window.xiaoshuStickerStore.getPool)"))
-              wait.until(lambda x:x.execute_script("return localStorage.getItem('xiaoshu_builtin_sticker_visibility_496_v1')==='1'"))
+              wait.until(lambda x:x.execute_script("return localStorage.getItem('xiaoshu_builtin_sticker_visibility_496_web_v1')==='1'"))
               wait.until(lambda x:x.execute_script("return window.xiaoshuStickerStore.getPool().length===496"))
-              pool=d.execute_script("return window.xiaoshuStickerStore.getPool().slice();")
-              hidden=d.execute_script("return window.xiaoshuStickerStore.getHidden().slice();")
-              marker=d.execute_script("return localStorage.getItem('xiaoshu_builtin_sticker_visibility_496_v1');")
-              canon_hidden=sum(1 for x in refs if x in hidden)
-              print('RUNTIME pool after poisoned-state recovery =',len(pool))
-              print('RUNTIME canonical stickers still hidden =',canon_hidden)
-              print('RUNTIME repair marker =',marker)
-              assert len(pool)==496
-              assert canon_hidden==0
-              assert marker=='1'
-
-              # Prove it is one-time recovery, not a permanent ban on the hide feature.
+              pool=d.execute_script('return window.xiaoshuStickerStore.getPool().slice();')
+              hidden=d.execute_script('return window.xiaoshuStickerStore.getHidden().slice();')
+              assert len(pool)==496,(len(pool),len(hidden))
+              assert not any(x in hidden for x in refs)
+              assert json.loads(d.execute_script("return localStorage.getItem('disabledStickerItems');") or '[]')==[]
+              print('RUNTIME RECOVERY pool=',len(pool),' hidden=',len(hidden))
               chosen=pool[0]
-              d.execute_script("window.xiaoshuStickerStore.hide(arguments[0],true);",chosen)
-              wait.until(lambda x:x.execute_script("return window.xiaoshuStickerStore.getPool().length===495"))
+              d.execute_script('window.xiaoshuStickerStore.hide(arguments[0],true);',chosen)
+              wait.until(lambda x:x.execute_script('return window.xiaoshuStickerStore.getPool().length===495'))
               d.refresh()
               wait.until(lambda x:x.execute_script("return !!(window.xiaoshuStickerStore&&window.xiaoshuStickerStore.getPool)"))
-              wait.until(lambda x:x.execute_script("return window.xiaoshuStickerStore.getPool().length===495"))
-              after=d.execute_script("return window.xiaoshuStickerStore.getPool().length;")
-              print('RUNTIME pool after intentional post-repair hide + reload =',after)
-              assert after==495
+              wait.until(lambda x:x.execute_script('return window.xiaoshuStickerStore.getPool().length===495'))
+              assert chosen in d.execute_script('return window.xiaoshuStickerStore.getHidden().slice();')
+              print('RUNTIME RELOAD intentional hide preserved; pool=495')
               print('RUNTIME_BROWSER_TEST_PASSED')
-          finally:
-              d.quit()
+          finally:d.quit()
           PY
+
+      - name: Verify source invariants and commit only after browser pass
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          s=Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
+          d=json.loads(m.group(1));r=[str(i.get('src','')).strip() for p in d for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
+          assert len(r)==496 and len(set(r))==496
+          assert 'repairBuiltinWebHiddenOnce();' in s
+          assert 'BUILTIN_VISIBILITY_IDB_REPAIR_KEY' in s
+          assert 'scheduleStickerGridFill(stickerLoadGeneration)' in s
+          print('SOURCE_INVARIANTS_PASSED')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix: recover 496 stickers before session hydration'
+            git push origin HEAD:debug-sticker-runtime-20260921
+          fi

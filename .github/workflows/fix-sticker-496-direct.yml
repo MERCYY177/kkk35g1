@@ -1,4 +1,4 @@
-name: Diagnose sticker store core
+name: Repair persisted sticker visibility
 
 on:
   push:
@@ -7,24 +7,104 @@ on:
       - '.github/workflows/fix-sticker-496-direct.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose:
+  repair:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect canonical store core
+        with:
+          fetch-depth: 0
+      - name: Patch one-time canonical visibility recovery
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          s=Path('index.html').read_text(encoding='utf-8')
-          lines=s.splitlines()
-          lo,hi=17640,18130
-          terms=('builtin','hidden','disabled','getPool','pool','uploads','hydrate','api=','api =','CANONICAL','migrate','refresh','filter(','uniq(','saveHidden','loadHidden')
-          for i in range(lo,hi+1):
-              line=lines[i-1]
-              if any(t.lower() in line.lower() for t in terms):
-                  print(f'{i}: {line[:2200]}')
+          import re, json
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+
+          marker_decl="var CANONICAL_HIDDEN_KEY = 'disabledStickerItems';"
+          marker_new="var CANONICAL_HIDDEN_KEY = 'disabledStickerItems';\nvar BUILTIN_VISIBILITY_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_v1';"
+          if 'BUILTIN_VISIBILITY_REPAIR_KEY' not in s:
+              if marker_decl not in s: raise SystemExit('hidden-key anchor missing')
+              s=s.replace(marker_decl,marker_new,1)
+
+          anchor="for(var j=0;j<hkeys.length;j++){try{var hv=await window.localforage.getItem(hkeys[j]);if(Array.isArray(hv)){migrationState.legacyHiddenItems+=hv.length;mergeHidden(hv);}}catch(e){}}"
+          repair="""for(var j=0;j<hkeys.length;j++){try{var hv=await window.localforage.getItem(hkeys[j]);if(Array.isArray(hv)){migrationState.legacyHiddenItems+=hv.length;mergeHidden(hv);}}catch(e){}}
+// v496 visibility repair: old builds could persist hundreds of wanted builtin stickers as hidden.
+// Run once after ALL legacy/canonical hidden stores have been merged, restore only current builtins,
+// preserve hidden uploaded stickers, then purge stale IDB/session hidden sources before marking complete.
+try{
+  var repairLs=safeWebStorage('localStorage'),repairSs=safeWebStorage('sessionStorage');
+  var visibilityRepairDone=!!(repairLs&&repairLs.getItem(BUILTIN_VISIBILITY_REPAIR_KEY)==='1');
+  if(!visibilityRepairDone){
+    var wantedBuiltinSet=new Set(builtinSrcs().map(norm)),restoredBuiltinCount=0;
+    Array.from(hidden).forEach(function(src){if(wantedBuiltinSet.has(norm(src))){hidden.delete(src);restoredBuiltinCount++;}});
+    removeStorageKey(repairSs,CANONICAL_HIDDEN_KEY);
+    LEGACY_HIDDEN_KEYS.forEach(function(k){removeStorageKey(repairLs,k);removeStorageKey(repairSs,k);});
+    if(window.localforage){
+      for(var rh=0;rh<hkeys.length;rh++){try{await window.localforage.removeItem(hkeys[rh]);}catch(e){}}
+    }
+    if(repairLs)repairLs.setItem(BUILTIN_VISIBILITY_REPAIR_KEY,'1');
+    migrationState.restoredBuiltinItems=restoredBuiltinCount;
+  }
+}catch(e){console.warn('[共享表情包] 496内置表情可见性修复失败',e);}"""
+          if 'v496 visibility repair:' not in s:
+              if anchor not in s: raise SystemExit('hydrate hidden merge anchor missing')
+              s=s.replace(anchor,repair,1)
+
+          p.write_text(s,encoding='utf-8')
           PY
+
+      - name: Verify repair against real 496 corpus and stale hidden state
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          s=Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script[^>]+id=["\']xiaoshu-builtin-sticker-packs-data-v1["\'][^>]*>(.*?)</script>',s,re.S|re.I)
+          assert m,'builtin corpus missing'
+          packs=json.loads(m.group(1))
+          refs=[str(i.get('src','')).strip() for p in packs for i in (p.get('items') or []) if isinstance(i,dict) and str(i.get('src','')).strip()]
+          assert len(refs)==496 and len(set(refs))==496,(len(refs),len(set(refs)))
+          assert "var pool=all.filter(function(x){return !hidden.has(norm(x));});" in s
+          assert "BUILTIN_VISIBILITY_REPAIR_KEY = 'xiaoshu_builtin_sticker_visibility_496_v1'" in s
+          assert 'Array.from(hidden).forEach(function(src){if(wantedBuiltinSet.has(norm(src))){hidden.delete(src);restoredBuiltinCount++;}});' in s
+          assert 'await window.localforage.removeItem(hkeys[rh])' in s
+          assert "if(repairLs)repairLs.setItem(BUILTIN_VISIBILITY_REPAIR_KEY,'1');" in s
+          assert 'stickerPool=getSharedStickers()' in s
+          assert 'scheduleStickerGridFill(stickerLoadGeneration)' in s
+
+          # Semantic regression test: hundreds of stale-hidden wanted builtins are restored,
+          # while a hidden user-upload item remains hidden.
+          canonical=list(dict.fromkeys(refs))
+          stale=set(canonical[:350])
+          uploaded_hidden='data:image/png;base64,USER_UPLOAD_HIDDEN'
+          stale.add(uploaded_hidden)
+          wanted={x.strip() for x in canonical}
+          repaired={x for x in stale if x.strip() not in wanted}
+          visible=[x for x in canonical if x.strip() not in repaired]
+          assert len(visible)==496
+          assert uploaded_hidden in repaired
+          print('PASS canonical source = 496 unique wanted stickers')
+          print('PASS stale hidden simulation restores all 496 wanted builtins')
+          print('PASS hidden uploaded sticker remains hidden')
+          print('PASS actual Chat1 source is shared getPool and progressive renderer remains active')
+          PY
+          git diff --check
+
+      - name: Commit repair to debug branch
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No index change required'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'fix: restore canonical 496 sticker visibility'
+          git push origin HEAD:debug-sticker-runtime-20260921

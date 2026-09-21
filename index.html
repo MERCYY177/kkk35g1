@@ -13549,7 +13549,7 @@ if(window.__xiaoshuBehaviorSettingsV1)return;window.__xiaoshuBehaviorSettingsV1=
 function S(){try{return settings}catch(e){return window.settings||{}}}
 function persist(){try{if(typeof throttledSaveData==='function')return throttledSaveData()}catch(e){}try{if(window.saveData)return window.saveData()}catch(e){}}
 function normalize(){var s=S();if(typeof s.autoStickerEnabled!=='boolean')s.autoStickerEnabled=false;if(!Number.isFinite(Number(s.autoStickerChance)))s.autoStickerChance=25;s.autoStickerChance=Math.max(0,Math.min(100,Number(s.autoStickerChance)));if(typeof s.randomCardComboEnabled!=='boolean')s.randomCardComboEnabled=true;s.randomCardComboMax=Math.max(2,Math.min(3,Number(s.randomCardComboMax)||3));return s}
-window.xiaoshuSendPartnerStickerNow=function(){var s=normalize(),pool=[];try{if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.getPool==='function')pool=window.xiaoshuStickerStore.getPool()||[];else if(typeof window.xiaoshuGetSharedStickerPool==='function')pool=window.xiaoshuGetSharedStickerPool()||[]}catch(e){pool=[]}pool=pool.filter(Boolean);if(!pool.length)return false;var raw=pool[Math.floor(Math.random()*pool.length)],stickerId='';try{if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.register==='function')stickerId=window.xiaoshuStickerStore.register(raw)||''}catch(e){}if(!stickerId)return false;try{if(typeof addMessage!=='function')return false;addMessage({id:'auto_sticker_'+Date.now()+'_'+Math.random().toString(36).slice(2),sender:s.partnerName||'对方',text:'',timestamp:new Date(),stickerId:stickerId,messageKind:'sticker',status:'received',favorited:false,note:null,type:'normal',conversationId:'card'});try{if(typeof playSound==='function')playSound('message')}catch(e){}try{if(typeof window._sendPartnerNotification==='function')window._sendPartnerNotification(s.partnerName||'对方','[表情包]')}catch(e){}return true}catch(e){console.warn('[auto-sticker] 发送失败',e);return false}}
+window.xiaoshuSendPartnerStickerNow=function(){var s=normalize(),pool=[];try{if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.getPool==='function')pool=window.xiaoshuStickerStore.getPool()||[];if((!Array.isArray(pool)||!pool.length)&&typeof window.xiaoshuGetSharedStickerPool==='function')pool=window.xiaoshuGetSharedStickerPool()||[];if((!Array.isArray(pool)||!pool.length)&&Array.isArray(window._stickerLibrary))pool=window._stickerLibrary}catch(e){pool=[]}pool=pool.filter(Boolean);if(!pool.length)return false;var raw=pool[Math.floor(Math.random()*pool.length)],stickerId='';try{if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.register==='function')stickerId=window.xiaoshuStickerStore.register(raw)||''}catch(e){}if(!stickerId)return false;try{if(typeof addMessage!=='function')return false;addMessage({id:'auto_sticker_'+Date.now()+'_'+Math.random().toString(36).slice(2),sender:s.partnerName||'对方',text:'',timestamp:new Date(),stickerId:stickerId,messageKind:'sticker',status:'received',favorited:false,note:null,type:'normal',conversationId:'card'});try{if(typeof playSound==='function')playSound('message')}catch(e){}try{if(typeof window._sendPartnerNotification==='function')window._sendPartnerNotification(s.partnerName||'对方','[表情包]')}catch(e){}return true}catch(e){console.warn('[auto-sticker] 发送失败',e);return false}}
 function mount(){var s=normalize(),auto=document.getElementById('auto-send-control'),autoCard=auto&&auto.closest('.cs-card');if(autoCard&&!document.getElementById('xs-auto-sticker-toggle')){var wrap=document.createElement('div');wrap.className='xs-behavior-inline';wrap.innerHTML='<div class="setting-pill-row" id="xs-auto-sticker-toggle"><span class="setting-pill-icon"><i class="fas fa-icons"></i></span><span class="setting-pill-label">主动发表情包</span><div class="setting-pill-switch"><div class="setting-pill-knob"></div></div></div><div id="xs-auto-sticker-control" class="cs-slider-row" style="display:none"><span class="cs-slider-label">出现概率</span><input class="font-size-slider" id="xs-auto-sticker-chance" max="100" min="0" step="5" type="range"><span class="cs-slider-val" id="xs-auto-sticker-chance-value"></span></div>';autoCard.appendChild(wrap);var toggle=wrap.querySelector('#xs-auto-sticker-toggle'),control=wrap.querySelector('#xs-auto-sticker-control'),slider=wrap.querySelector('#xs-auto-sticker-chance'),value=wrap.querySelector('#xs-auto-sticker-chance-value');function sync(){s=normalize();toggle.classList.toggle('active',!!s.autoStickerEnabled);control.style.display=s.autoStickerEnabled?'flex':'none';var sharedInterval=document.getElementById('auto-send-control');if(sharedInterval)sharedInterval.style.display=(s.autoSendEnabled||s.autoStickerEnabled)?'flex':'none';slider.value=s.autoStickerChance;value.textContent=s.autoStickerChance+'%'}toggle.addEventListener('click',function(){s.autoStickerEnabled=!s.autoStickerEnabled;sync();persist();try{if(typeof manageAutoSendTimer==='function')manageAutoSendTimer()}catch(e){}});slider.addEventListener('input',function(){s.autoStickerChance=Number(this.value);value.textContent=this.value+'%'});slider.addEventListener('change',persist);sync()}
 if(autoCard&&!document.getElementById('xs-random-card-combo')){var label=document.createElement('p');label.className='cs-group-label';label.style.marginTop='4px';label.textContent='字卡回复';var card=document.createElement('div');card.className='cs-card';card.id='xs-random-card-combo';card.innerHTML='<div class="setting-pill-row" id="xs-random-card-combo-toggle"><span class="setting-pill-icon"><i class="fas fa-layer-group"></i></span><span class="setting-pill-label">随机组合字卡</span><div class="setting-pill-switch"><div class="setting-pill-knob"></div></div></div><div class="cs-slider-row" id="xs-random-card-combo-control"><span class="cs-slider-label">最多组合</span><select class="xs-behavior-select" id="xs-random-card-combo-max"><option value="2">2 张</option><option value="3">3 张</option></select></div>';var parent=autoCard.parentNode,ref=autoCard.nextSibling;parent.insertBefore(label,ref);parent.insertBefore(card,label.nextSibling);var ct=card.querySelector('#xs-random-card-combo-toggle'),cc=card.querySelector('#xs-random-card-combo-control'),cm=card.querySelector('#xs-random-card-combo-max');function syncCombo(){s=normalize();ct.classList.toggle('active',!!s.randomCardComboEnabled);cc.style.display=s.randomCardComboEnabled?'flex':'none';cm.value=String(s.randomCardComboMax)}ct.addEventListener('click',function(){s.randomCardComboEnabled=!s.randomCardComboEnabled;syncCombo();persist()});cm.addEventListener('change',function(){s.randomCardComboMax=Number(this.value);persist()});syncCombo()}}
 function resetAndMount(){var sticker=document.getElementById('xs-auto-sticker-toggle');if(sticker){var wrap=sticker.closest('.xs-behavior-inline');if(wrap)wrap.remove()}var combo=document.getElementById('xs-random-card-combo');if(combo){var label=combo.previousElementSibling;combo.remove();if(label&&label.classList.contains('cs-group-label')&&label.textContent==='字卡回复')label.remove()}mount()}
@@ -14930,7 +14930,18 @@ function renderSharedStickerGrid(reset=true){
 const grid=$('stickerGrid');if(!grid)return;
 clearStickerDeleteButton();
 if(reset){sharedStickerLoadGeneration++;disconnectSharedStickerImageObserver();sharedStickerLoadQueue=[];sharedStickerActiveLoads=0;sharedStickerPool=sharedStickerPool.filter(src=>!(sharedStickerFailedSources.has(src)&&Date.now()-sharedStickerFailedSources.get(src)<300000));grid.innerHTML='';sharedStickerRenderedCount=0;grid.scrollTop=0;}
-if(!sharedStickerPool.length){if(!grid.firstChild){const empty=document.createElement('div');empty.className='kb-sticker-empty';empty.textContent='暂无';grid.appendChild(empty);}return;}
+if(!sharedStickerPool.length){
+try{
+if(window.parent&&window.parent!==window){
+let parentPool=[];
+if(window.parent.xiaoshuStickerStore&&typeof window.parent.xiaoshuStickerStore.getPool==='function')parentPool=window.parent.xiaoshuStickerStore.getPool()||[];
+if((!Array.isArray(parentPool)||!parentPool.length)&&typeof window.parent.xiaoshuGetSharedStickerPool==='function')parentPool=window.parent.xiaoshuGetSharedStickerPool()||[];
+if((!Array.isArray(parentPool)||!parentPool.length)&&Array.isArray(window.parent._stickerLibrary))parentPool=window.parent._stickerLibrary;
+sharedStickerPool=normalizeSharedStickerPool(parentPool);
+}
+}catch(_e){}
+}
+if(!sharedStickerPool.length){requestSharedStickerPool();if(!grid.firstChild){const empty=document.createElement('div');empty.className='kb-sticker-empty';empty.textContent='暂无';grid.appendChild(empty);}return;}
 while(sharedStickerRenderedCount<sharedStickerPool.length)appendSharedStickerBatch();
 }
 function openSharedStickers(){
@@ -16964,9 +16975,9 @@ try{if(frame&&frame.contentWindow)frame.contentWindow.postMessage({type:'xiaoshu
 function bigKeyboardStickerPool(){
 var pool=[];
 try{
-if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.getPool==='function')pool=window.xiaoshuStickerStore.getPool();
-else if(typeof window.xiaoshuGetSharedStickerPool==='function')pool=window.xiaoshuGetSharedStickerPool();
-else if(Array.isArray(window._stickerLibrary))pool=window._stickerLibrary;
+if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.getPool==='function')pool=window.xiaoshuStickerStore.getPool()||[];
+if((!Array.isArray(pool)||!pool.length)&&typeof window.xiaoshuGetSharedStickerPool==='function')pool=window.xiaoshuGetSharedStickerPool()||[];
+if((!Array.isArray(pool)||!pool.length)&&Array.isArray(window._stickerLibrary))pool=window._stickerLibrary;
 }catch(e){pool=[];}
 var seen=new Set();
 return (Array.isArray(pool)?pool:[]).map(function(x){return String(x||'').trim();}).filter(function(x){if(!x||seen.has(x))return false;seen.add(x);return true;});
@@ -18259,6 +18270,15 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
     }
     grid.appendChild(frag);pending.forEach(function(img){queueStickerThumb(img,img.__stickerSrc,false);});
   }
+function scheduleStickerGridFill(generation){
+  if(generation!==stickerLoadGeneration)return;
+  var grid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
+  if(!grid||!grid.isConnected||stickerRenderedCount>=stickerPool.length)return;
+  appendStickerBatch();
+  if(generation!==stickerLoadGeneration||stickerRenderedCount>=stickerPool.length)return;
+  var next=function(){scheduleStickerGridFill(generation);};
+  if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(next,{timeout:120});else setTimeout(next,16);
+}
   function hideStickerFromGrid(src){
     src=norm(src);if(!src)return;clearStickerDeleteButton();
     if(window.xiaoshuStickerStore)window.xiaoshuStickerStore.hide(src);else if(window.xiaoshuHideStickerNow)window.xiaoshuHideStickerNow(src);
@@ -18296,7 +18316,7 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
     a.innerHTML=uploadRow()+(stickerPool.length?'<div class="xs-final-sticker-bar"><span>共享表情包 · '+stickerPool.length+' 个</span></div><div class="xs-final-sticker-grid"></div>':'<div class="xs-final-empty">暂无</div>');a.scrollTop=0;
     var upload=a.querySelector('[data-xs-final-upload-sticker]');if(upload)upload.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();if(window.xiaoshuStickerStore)window.xiaoshuStickerStore.openUpload();else if(window.xiaoshuOpenSharedStickerUpload)window.xiaoshuOpenSharedStickerUpload();},true);
     var manage=a.querySelector('[data-xs-final-manage-sticker]');if(manage)manage.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();if(window.xiaoshuStickerStore&&window.xiaoshuStickerStore.openAdmin)window.xiaoshuStickerStore.openAdmin();else if(window.xiaoshuOpenStickerAdmin)window.xiaoshuOpenStickerAdmin();},true);
-    var grid=a.querySelector('.xs-final-sticker-grid');if(grid){appendStickerBatch();bindStickerGrid(grid,a);}
+    var grid=a.querySelector('.xs-final-sticker-grid');if(grid){appendStickerBatch();bindStickerGrid(grid,a);scheduleStickerGridFill(stickerLoadGeneration);}
   }
   function getPokes(){var out=[];try{if(typeof myPokes!=='undefined'&&Array.isArray(myPokes))out=out.concat(myPokes);}catch(e){}try{if(typeof customPokes!=='undefined'&&Array.isArray(customPokes))out=out.concat(customPokes);}catch(e){}return uniq(out);}
   function sendPoke(text){text=String(text||'').trim();if(!text)return;try{var targetConversation='card';var clean=(typeof window._sanitizePokeTextForDisplay==='function')?window._sanitizePokeTextForDisplay(text):text;if(typeof addMessage==='function')addMessage({id:Date.now(),text:(typeof _formatPokeText==='function'?_formatPokeText((settings.myName||'我')+' '+clean):(settings.myName||'我')+' '+clean),timestamp:new Date(),type:'system',conversationId:targetConversation});if(typeof playSound==='function')playSound('poke');setTimeout(function(){if(typeof simulateReply==='function')simulateReply(targetConversation);},1500);}catch(e){}closePicker();}

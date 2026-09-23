@@ -2408,7 +2408,159 @@ global.ChatBackup={
 };
 })(typeof window!=='undefined'?window:this);
 </script>
-<script src="behavior-core.js"></script>
+<script id="xiaoshu-behavior-core-inline">
+(function (global) {
+  'use strict';
+
+  function clampInteger(value, min, max, fallback) {
+    var number = Number(value);
+    if (!Number.isFinite(number)) number = fallback;
+    return Math.max(min, Math.min(max, Math.round(number)));
+  }
+
+  function normalizeBehaviorSettings(source) {
+    var input = source && typeof source === 'object' ? source : {};
+    var output = Object.assign({}, input);
+    output.autoStickerEnabled = input.autoStickerEnabled === true;
+    output.autoStickerChance = clampInteger(input.autoStickerChance, 0, 100, 25);
+    output.autoStickerInterval = clampInteger(
+      input.autoStickerInterval,
+      1,
+      180,
+      clampInteger(input.autoSendInterval, 1, 180, 5)
+    );
+    output.randomCardComboEnabled = input.randomCardComboEnabled === true;
+    output.fixedCardReplyCount = clampInteger(input.fixedCardReplyCount, 1, 8, 1);
+    output.randomCardComboMin = clampInteger(input.randomCardComboMin, 2, 8, 2);
+    output.randomCardComboMax = clampInteger(input.randomCardComboMax, 2, 8, 3);
+    if (output.randomCardComboMin > output.randomCardComboMax) {
+      output.randomCardComboMax = output.randomCardComboMin;
+    }
+    return output;
+  }
+
+  function resolveCardReplyCount(source, randomFn) {
+    var settings = normalizeBehaviorSettings(source);
+    if (!settings.randomCardComboEnabled) return settings.fixedCardReplyCount;
+    var random = typeof randomFn === 'function' ? randomFn : Math.random;
+    var span = settings.randomCardComboMax - settings.randomCardComboMin + 1;
+    return settings.randomCardComboMin + Math.min(span - 1, Math.floor(Math.max(0, Math.min(0.999999999, Number(random()) || 0)) * span));
+  }
+
+  function uniqueCards(cards) {
+    var seen = Object.create(null);
+    return (Array.isArray(cards) ? cards : []).map(function (card) {
+      return String(card == null ? '' : card).trim();
+    }).filter(function (card) {
+      if (!card || seen[card]) return false;
+      seen[card] = true;
+      return true;
+    });
+  }
+
+  function selectUniqueCards(cards, count, randomFn) {
+    var pool = uniqueCards(cards);
+    var wanted = Math.min(pool.length, Math.max(0, Number(count) || 0));
+    var random = typeof randomFn === 'function' ? randomFn : Math.random;
+    var selected = [];
+    while (selected.length < wanted && pool.length) {
+      var value = Math.max(0, Math.min(0.999999999, Number(random()) || 0));
+      selected.push(pool.splice(Math.floor(value * pool.length), 1)[0]);
+    }
+    return selected;
+  }
+
+  function combineCardTexts(cards) {
+    return uniqueCards(cards).map(function (card) {
+      return card.replace(/\s+/g, ' ').trim();
+    }).filter(Boolean).reduce(function (result, card) {
+      if (!result) return card;
+      var previousMark = result.match(/[。！？!?….,，；;：:]$/);
+      var next = card.replace(/^[。！？!?….,，；;：:]+/, '');
+      if (!next) return result;
+      return result + (previousMark ? '' : '。') + next;
+    }, '');
+  }
+
+  function buildCardReplyPayloads(source, cards, randomFn) {
+    var settings = normalizeBehaviorSettings(source);
+    var selected = selectUniqueCards(cards, resolveCardReplyCount(settings, randomFn), randomFn);
+    if (!selected.length) return [];
+    if (settings.randomCardComboEnabled) {
+      var combined = combineCardTexts(selected);
+      return combined ? [{ text: combined, cardFragments: selected.slice() }] : [];
+    }
+    return selected.map(function (card) { return { text: card, cardFragments: [card] }; });
+  }
+
+  function trySendPartnerSticker(source, dependencies, randomFn) {
+    var settings = normalizeBehaviorSettings(source);
+    if (!settings.autoStickerEnabled) return false;
+    var random = typeof randomFn === 'function' ? randomFn : Math.random;
+    if ((Number(random()) || 0) * 100 >= settings.autoStickerChance) return false;
+    var deps = dependencies && typeof dependencies === 'object' ? dependencies : {};
+    var pool;
+    try { pool = uniqueCards(typeof deps.getPool === 'function' ? deps.getPool() : []); }
+    catch (error) { return false; }
+    if (!pool.length || typeof deps.register !== 'function' || typeof deps.send !== 'function') return false;
+    var raw = pool[Math.floor(Math.max(0, Math.min(0.999999999, Number(random()) || 0)) * pool.length)];
+    var id;
+    try { id = deps.register(raw); }
+    catch (error) { return false; }
+    if (!id) return false;
+    try { deps.send(id); return true; }
+    catch (error) { return false; }
+  }
+
+  function getProactiveScheduleFlags(source) {
+    var settings = source && typeof source === 'object' ? source : {};
+    return { text: settings.autoSendEnabled === true, sticker: settings.autoStickerEnabled === true };
+  }
+
+  function reconcileIncomingCallPlan(source, sessionId, now, delayFn) {
+    var settings = Object.assign({}, source && typeof source === 'object' ? source : {});
+    var enabled = settings.enabled !== false && settings.allowIncoming !== false &&
+      (settings.allowVoiceIncoming !== false || settings.allowVideoIncoming !== false);
+    if (!enabled || !sessionId) {
+      settings.nextIncomingAt = 0;
+      settings.plannedSessionId = '';
+      return Object.assign(settings, { shouldSchedule: false, dueNow: false });
+    }
+    var current = Math.max(0, Number(now) || Date.now());
+    var planned = Math.max(0, Number(settings.nextIncomingAt) || 0);
+    if (settings.plannedSessionId !== sessionId || planned <= current) {
+      var delay = Math.max(1, Number(typeof delayFn === 'function' ? delayFn(settings.frequency) : 1) || 1);
+      planned = current + delay;
+    }
+    settings.nextIncomingAt = planned;
+    settings.plannedSessionId = sessionId;
+    settings.shouldSchedule = true;
+    settings.dueNow = false;
+    return settings;
+  }
+
+  function buildReplyComposeState(letter) {
+    var source = letter && typeof letter === 'object' ? letter : null;
+    return {
+      replyToId: source && source.id != null ? String(source.id) : '',
+      subject: source ? '回复 · ' + (String(source.title || '').trim() || '你的来信') : ''
+    };
+  }
+
+  global.XiaoshuBehaviorCore = {
+    normalizeBehaviorSettings: normalizeBehaviorSettings,
+    resolveCardReplyCount: resolveCardReplyCount,
+    selectUniqueCards: selectUniqueCards,
+    combineCardTexts: combineCardTexts,
+    buildCardReplyPayloads: buildCardReplyPayloads,
+    trySendPartnerSticker: trySendPartnerSticker,
+    getProactiveScheduleFlags: getProactiveScheduleFlags,
+    reconcileIncomingCallPlan: reconcileIncomingCallPlan,
+    buildReplyComposeState: buildReplyComposeState
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
 <script data-inlined-from="js/state.js">/**
 * state.js - Application State Variables & DOM Elements
 * 应用状态变量与DOM元素引用
@@ -13622,66 +13774,6 @@ __XIAOSHU_CIRCLE_SCRIPT_CLOSE__
 
 <script>window.xiaoshuEmergencySnapshot=function(){try{return JSON.parse(JSON.stringify(state));}catch(e){return {__error:String(e&&e.message||e)}};};__XIAOSHU_CIRCLE_SCRIPT_CLOSE__
 
-<style id="xiaoshu-behavior-settings-v1-css">
-.xs-behavior-inline{margin-top:10px;border-top:1px solid var(--border-color);padding-top:8px}.xs-behavior-select{min-width:88px;height:36px;border:1px solid var(--border-color);border-radius:10px;background:var(--primary-bg);color:var(--text-primary);padding:0 8px}
-</style>
-<script id="xiaoshu-behavior-settings-v2">(function(){
-'use strict';
-if(window.__xiaoshuBehaviorSettingsV2)return;window.__xiaoshuBehaviorSettingsV2=true;
-var core=window.XiaoshuBehaviorCore;
-function current(){try{return settings}catch(e){return window.settings||{}}}
-function normalize(){var target=current(),normalized=core.normalizeBehaviorSettings(target);Object.keys(normalized).forEach(function(key){target[key]=normalized[key]});return target}
-function persistNow(){try{if(typeof window.saveData==='function')return Promise.resolve(window.saveData({skipChatMessages:true}))}catch(e){console.warn('[聊天行为设置] 保存失败',e)}return Promise.resolve(false)}
-window.xiaoshuNormalizeBehaviorSettings=normalize;
-window.xiaoshuResolveCardReplyCount=core.resolveCardReplyCount;
-window.xiaoshuSendPartnerStickerNow=function(){
-var s=normalize();
-return core.trySendPartnerSticker(s,{
-getPool:function(){
-var pool=[];
-try{if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.getPool==='function')pool=window.xiaoshuStickerStore.getPool()||[];
-else if(typeof window.xiaoshuGetSharedStickerPool==='function')pool=window.xiaoshuGetSharedStickerPool()||[];
-else if(Array.isArray(window._stickerLibrary))pool=window._stickerLibrary.slice()}catch(e){pool=[]}
-var disabled=new Set();try{disabled=new Set(JSON.parse(localStorage.getItem('disabledStickerItems')||'[]'))}catch(e){}
-return (Array.isArray(pool)?pool:[]).filter(function(item){return item&&!disabled.has(item)})
-},
-register:function(raw){return window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.register==='function'?window.xiaoshuStickerStore.register(raw):''},
-send:function(stickerId){
-if(typeof addMessage!=='function')throw new Error('addMessage unavailable');
-addMessage({id:'auto_sticker_'+Date.now()+'_'+Math.random().toString(36).slice(2),sender:s.partnerName||'对方',text:'',timestamp:new Date(),stickerId:stickerId,messageKind:'sticker',status:'received',favorited:false,note:null,type:'normal',conversationId:'card',replySource:'auto-sticker'});
-if(typeof playSound==='function')playSound('message');
-if(typeof window._sendPartnerNotification==='function')window._sendPartnerNotification(s.partnerName||'对方','[表情包]')
-}
-},Math.random)
-};
-function byId(id){return document.getElementById(id)}
-function sync(){
-var s=normalize(),stickerToggle=byId('xs-auto-sticker-toggle'),stickerControl=byId('xs-auto-sticker-control'),interval=byId('xs-auto-sticker-interval'),chance=byId('xs-auto-sticker-chance'),comboToggle=byId('xs-random-card-combo-toggle'),fixedControl=byId('xs-fixed-card-reply-control'),comboControl=byId('xs-random-card-combo-control');
-if(stickerToggle)stickerToggle.classList.toggle('active',s.autoStickerEnabled);
-if(stickerControl)stickerControl.style.display=s.autoStickerEnabled?'block':'none';
-if(interval){interval.value=String(s.autoStickerInterval);byId('xs-auto-sticker-interval-value').textContent=s.autoStickerInterval+'分钟'}
-if(chance){chance.value=String(s.autoStickerChance);byId('xs-auto-sticker-chance-value').textContent=s.autoStickerChance+'%'}
-if(comboToggle)comboToggle.classList.toggle('active',s.randomCardComboEnabled);
-if(fixedControl)fixedControl.style.display=s.randomCardComboEnabled?'none':'flex';
-if(comboControl)comboControl.style.display=s.randomCardComboEnabled?'block':'none';
-if(byId('xs-fixed-card-reply-count'))byId('xs-fixed-card-reply-count').value=String(s.fixedCardReplyCount);
-if(byId('xs-random-card-combo-min'))byId('xs-random-card-combo-min').value=String(s.randomCardComboMin);
-if(byId('xs-random-card-combo-max'))byId('xs-random-card-combo-max').value=String(s.randomCardComboMax)
-}
-function bind(){
-[['xs-auto-sticker-toggle',function(s){s.autoStickerEnabled=!s.autoStickerEnabled;manageAutoStickerTimer()}],['xs-random-card-combo-toggle',function(s){s.randomCardComboEnabled=!s.randomCardComboEnabled}]].forEach(function(pair){var el=byId(pair[0]);if(el&&!el.__xsBound){el.__xsBound=true;el.addEventListener('click',function(){pair[1](normalize());sync();persistNow()})}});
-var interval=byId('xs-auto-sticker-interval');if(interval&&!interval.__xsBound){interval.__xsBound=true;interval.addEventListener('input',function(){normalize().autoStickerInterval=Number(this.value);byId('xs-auto-sticker-interval-value').textContent=this.value+'分钟';manageAutoStickerTimer();persistNow()})}
-var chance=byId('xs-auto-sticker-chance');if(chance&&!chance.__xsBound){chance.__xsBound=true;chance.addEventListener('input',function(){normalize().autoStickerChance=Number(this.value);byId('xs-auto-sticker-chance-value').textContent=this.value+'%';persistNow()})}
-var fixed=byId('xs-fixed-card-reply-count');if(fixed&&!fixed.__xsBound){fixed.__xsBound=true;fixed.addEventListener('change',function(){normalize().fixedCardReplyCount=Number(this.value);persistNow()})}
-var min=byId('xs-random-card-combo-min'),max=byId('xs-random-card-combo-max');
-if(min&&!min.__xsBound){min.__xsBound=true;min.addEventListener('change',function(){var s=normalize();s.randomCardComboMin=Number(this.value);if(s.randomCardComboMin>s.randomCardComboMax)s.randomCardComboMax=s.randomCardComboMin;sync();persistNow()})}
-if(max&&!max.__xsBound){max.__xsBound=true;max.addEventListener('change',function(){var s=normalize();s.randomCardComboMax=Number(this.value);if(s.randomCardComboMax<s.randomCardComboMin)s.randomCardComboMin=s.randomCardComboMax;sync();persistNow()})}
-sync()
-}
-window.xiaoshuSyncBehaviorControls=sync;
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind,{once:true});else bind();
-window.addEventListener('xiaoshu-session-data-ready',function(){setTimeout(function(){normalize();manageAutoSendTimer();manageAutoStickerTimer();sync()},0)})
-})();</script>
 
 </body>
 </html>
@@ -21557,6 +21649,101 @@ function expose(){window.xiaoshuOpenMainPhone=restoreOrOpen;window.xiaoshuCloseM
 function boot(){ensureCallButton();ensureSettingsEntry();bind();bindMoreMenuKeyboard();setupMiniDrag();expose();hydrateRecords(sid());hydrateSettings(sid());updateCallButton()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();</script>
-<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v122-mail-call-sticker-card-behavior';</script>
+<style id="xiaoshu-behavior-settings-v2-css">
+.xs-behavior-inline{margin-top:10px;border-top:1px solid var(--border-color);padding-top:8px}.xs-behavior-select{min-width:88px;height:36px;border:1px solid var(--border-color);border-radius:10px;background:var(--primary-bg);color:var(--text-primary);padding:0 8px}
+</style>
+<script id="xiaoshu-behavior-settings-v2">(function(){
+'use strict';
+if(window.__xiaoshuBehaviorSettingsV2)return;
+var core=window.XiaoshuBehaviorCore;
+function byId(id){return document.getElementById(id)}
+function notifyError(message,error){
+console.error('[聊天行为设置] '+message,error||'');
+try{if(typeof showNotification==='function')showNotification(message,'error',5000);else if(window.showNotification)window.showNotification(message,'error',5000)}catch(_e){}
+}
+function markCoreUnavailable(){
+var message='聊天行为核心加载失败，请重新部署完整 index.html';
+document.documentElement.dataset.xiaoshuBehaviorCore='error';
+['xs-auto-sticker-toggle','xs-random-card-combo-toggle'].forEach(function(id){var el=byId(id);if(el){el.setAttribute('aria-disabled','true');el.dataset.behaviorCoreError='true';el.title=message}});
+document.addEventListener('click',function(event){var target=event.target&&event.target.closest&&event.target.closest('#xs-auto-sticker-toggle,#xs-random-card-combo-toggle');if(target){event.preventDefault();notifyError(message)}},true);
+notifyError(message,new Error('window.XiaoshuBehaviorCore is unavailable'))
+}
+if(!core||typeof core.normalizeBehaviorSettings!=='function'||typeof core.resolveCardReplyCount!=='function'||typeof core.trySendPartnerSticker!=='function'){
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',markCoreUnavailable,{once:true});else markCoreUnavailable();
+return
+}
+window.__xiaoshuBehaviorSettingsV2=true;
+document.documentElement.dataset.xiaoshuBehaviorCore='ready';
+function current(){try{return settings}catch(e){return window.settings||{}}}
+function normalize(){var target=current(),normalized=core.normalizeBehaviorSettings(target);Object.keys(normalized).forEach(function(key){target[key]=normalized[key]});return target}
+function persistNow(){
+var result;
+try{if(typeof window.saveData!=='function')throw new Error('saveData is unavailable');result=window.saveData({skipChatMessages:true})}
+catch(error){notifyError('聊天行为设置保存失败',error);return Promise.resolve(false)}
+return Promise.resolve(result).then(function(report){if(report&&report.ok===false)throw new Error((report.errors||[]).join('；')||'保存未完成');return true}).catch(function(error){notifyError('聊天行为设置保存失败',error);return false})
+}
+window.xiaoshuNormalizeBehaviorSettings=normalize;
+window.xiaoshuResolveCardReplyCount=core.resolveCardReplyCount;
+window.xiaoshuSendPartnerStickerNow=function(){
+var s=normalize();
+return core.trySendPartnerSticker(s,{
+getPool:function(){
+var pool=[];
+try{if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.getPool==='function')pool=window.xiaoshuStickerStore.getPool()||[];
+else if(typeof window.xiaoshuGetSharedStickerPool==='function')pool=window.xiaoshuGetSharedStickerPool()||[];
+else if(Array.isArray(window._stickerLibrary))pool=window._stickerLibrary.slice()}catch(e){pool=[]}
+var disabled=new Set();try{disabled=new Set(JSON.parse(localStorage.getItem('disabledStickerItems')||'[]'))}catch(e){}
+return (Array.isArray(pool)?pool:[]).filter(function(item){return item&&!disabled.has(item)})
+},
+register:function(raw){return window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.register==='function'?window.xiaoshuStickerStore.register(raw):''},
+send:function(stickerId){
+if(typeof addMessage!=='function')throw new Error('addMessage unavailable');
+addMessage({id:'auto_sticker_'+Date.now()+'_'+Math.random().toString(36).slice(2),sender:s.partnerName||'对方',text:'',timestamp:new Date(),stickerId:stickerId,messageKind:'sticker',status:'received',favorited:false,note:null,type:'normal',conversationId:'card',replySource:'auto-sticker'});
+if(typeof playSound==='function')playSound('message');
+if(typeof window._sendPartnerNotification==='function')window._sendPartnerNotification(s.partnerName||'对方','[表情包]')
+}
+},Math.random)
+};
+function sync(){
+var s=normalize(),stickerToggle=byId('xs-auto-sticker-toggle'),stickerControl=byId('xs-auto-sticker-control'),interval=byId('xs-auto-sticker-interval'),chance=byId('xs-auto-sticker-chance'),comboToggle=byId('xs-random-card-combo-toggle'),fixedControl=byId('xs-fixed-card-reply-control'),comboControl=byId('xs-random-card-combo-control');
+if(stickerToggle){stickerToggle.classList.toggle('active',s.autoStickerEnabled);stickerToggle.removeAttribute('aria-disabled')}
+if(stickerControl)stickerControl.style.display=s.autoStickerEnabled?'block':'none';
+if(interval){interval.value=String(s.autoStickerInterval);var intervalValue=byId('xs-auto-sticker-interval-value');if(intervalValue)intervalValue.textContent=s.autoStickerInterval+'分钟'}
+if(chance){chance.value=String(s.autoStickerChance);var chanceValue=byId('xs-auto-sticker-chance-value');if(chanceValue)chanceValue.textContent=s.autoStickerChance+'%'}
+if(comboToggle){comboToggle.classList.toggle('active',s.randomCardComboEnabled);comboToggle.removeAttribute('aria-disabled')}
+if(fixedControl)fixedControl.style.display=s.randomCardComboEnabled?'none':'flex';
+if(comboControl)comboControl.style.display=s.randomCardComboEnabled?'block':'none';
+if(byId('xs-fixed-card-reply-count'))byId('xs-fixed-card-reply-count').value=String(s.fixedCardReplyCount);
+if(byId('xs-random-card-combo-min'))byId('xs-random-card-combo-min').value=String(s.randomCardComboMin);
+if(byId('xs-random-card-combo-max'))byId('xs-random-card-combo-max').value=String(s.randomCardComboMax)
+}
+function restartStickerTimer(){try{if(typeof manageAutoStickerTimer==='function')manageAutoStickerTimer();else throw new Error('manageAutoStickerTimer is unavailable')}catch(error){notifyError('主动表情包计时器更新失败',error)}}
+function handleClick(event){
+var target=event.target&&event.target.closest&&event.target.closest('#xs-auto-sticker-toggle,#xs-random-card-combo-toggle');if(!target)return;
+event.preventDefault();
+var s=normalize();
+if(target.id==='xs-auto-sticker-toggle'){s.autoStickerEnabled=!s.autoStickerEnabled;sync();restartStickerTimer();persistNow();return}
+s.randomCardComboEnabled=!s.randomCardComboEnabled;sync();persistNow()
+}
+function handleInput(event){
+var target=event.target;if(!target)return;
+if(target.id==='xs-auto-sticker-interval'){var s=normalize();s.autoStickerInterval=Number(target.value);var intervalValue=byId('xs-auto-sticker-interval-value');if(intervalValue)intervalValue.textContent=target.value+'分钟';restartStickerTimer();persistNow()}
+else if(target.id==='xs-auto-sticker-chance'){normalize().autoStickerChance=Number(target.value);var chanceValue=byId('xs-auto-sticker-chance-value');if(chanceValue)chanceValue.textContent=target.value+'%';persistNow()}
+}
+function handleChange(event){
+var target=event.target,s;
+if(!target)return;
+if(target.id==='xs-fixed-card-reply-count'){normalize().fixedCardReplyCount=Number(target.value);persistNow()}
+else if(target.id==='xs-random-card-combo-min'){s=normalize();s.randomCardComboMin=Number(target.value);if(s.randomCardComboMin>s.randomCardComboMax)s.randomCardComboMax=s.randomCardComboMin;sync();persistNow()}
+else if(target.id==='xs-random-card-combo-max'){s=normalize();s.randomCardComboMax=Number(target.value);if(s.randomCardComboMax<s.randomCardComboMin)s.randomCardComboMin=s.randomCardComboMax;sync();persistNow()}
+}
+document.addEventListener('click',handleClick,false);
+document.addEventListener('input',handleInput,false);
+document.addEventListener('change',handleChange,false);
+window.xiaoshuSyncBehaviorControls=sync;
+window.addEventListener('xiaoshu-session-data-ready',function(){setTimeout(function(){normalize();if(typeof manageAutoSendTimer==='function')manageAutoSendTimer();restartStickerTimer();sync()},0)});
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',sync,{once:true});else sync()
+})();</script>
+<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v123-stable-behavior-toggle-binding';</script>
 
 </body></html>

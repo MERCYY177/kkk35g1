@@ -676,6 +676,45 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 </div>
 </div>
 </div>
+<p class="cs-group-label" style="margin-top:4px;">主动发表情包</p>
+<div class="cs-card" id="xs-auto-sticker-settings">
+<div class="setting-pill-row" id="xs-auto-sticker-toggle">
+<span class="setting-pill-icon"><i class="fas fa-icons"></i></span>
+<span class="setting-pill-label">允许主动发表情包</span>
+<div class="setting-pill-switch"><div class="setting-pill-knob"></div></div>
+</div>
+<div id="xs-auto-sticker-control" style="display:none;">
+<div class="cs-slider-row">
+<span class="cs-slider-label">发送间隔</span>
+<input class="font-size-slider" id="xs-auto-sticker-interval" max="180" min="1" step="1" type="range" value="5"/>
+<span class="cs-slider-val" id="xs-auto-sticker-interval-value">5分钟</span>
+</div>
+<div class="cs-slider-row">
+<span class="cs-slider-label">发送概率</span>
+<input class="font-size-slider" id="xs-auto-sticker-chance" max="100" min="0" step="5" type="range" value="25"/>
+<span class="cs-slider-val" id="xs-auto-sticker-chance-value">25%</span>
+</div>
+</div>
+</div>
+<p class="cs-group-label" style="margin-top:4px;">字卡回复</p>
+<div class="cs-card" id="xs-card-reply-settings">
+<div class="setting-pill-row" id="xs-random-card-combo-toggle">
+<span class="setting-pill-icon"><i class="fas fa-layer-group"></i></span>
+<span class="setting-pill-label">随机组合字卡</span>
+<div class="setting-pill-switch"><div class="setting-pill-knob"></div></div>
+</div>
+<div class="cs-slider-row" id="xs-fixed-card-reply-control">
+<span class="cs-slider-label">固定回复条数</span>
+<select class="xs-behavior-select" id="xs-fixed-card-reply-count">
+<option value="1">1 条</option><option value="2">2 条</option><option value="3">3 条</option><option value="4">4 条</option>
+<option value="5">5 条</option><option value="6">6 条</option><option value="7">7 条</option><option value="8">8 条</option>
+</select>
+</div>
+<div id="xs-random-card-combo-control" style="display:none;">
+<div class="cs-slider-row"><span class="cs-slider-label">最少组合字卡数</span><select class="xs-behavior-select" id="xs-random-card-combo-min"><option value="2">2 张</option><option value="3">3 张</option><option value="4">4 张</option><option value="5">5 张</option><option value="6">6 张</option><option value="7">7 张</option><option value="8">8 张</option></select></div>
+<div class="cs-slider-row"><span class="cs-slider-label">最多组合字卡数</span><select class="xs-behavior-select" id="xs-random-card-combo-max"><option value="2">2 张</option><option value="3">3 张</option><option value="4">4 张</option><option value="5">5 张</option><option value="6">6 张</option><option value="7">7 张</option><option value="8">8 张</option></select></div>
+</div>
+</div>
 <p class="cs-group-label" style="margin-top:4px;">消息节奏</p>
 <div class="cs-card">
 <div class="setting-pill-row" id="emoji-mix-toggle">
@@ -2369,6 +2408,7 @@ global.ChatBackup={
 };
 })(typeof window!=='undefined'?window:this);
 </script>
+<script src="behavior-core.js"></script>
 <script data-inlined-from="js/state.js">/**
 * state.js - Application State Variables & DOM Elements
 * 应用状态变量与DOM元素引用
@@ -2376,6 +2416,7 @@ global.ChatBackup={
 */
 let SESSION_ID = null;
 let autoSendTimer = null;
+let autoStickerTimer = null;
 let sessionList = [];
 let messages = [];
 window.__xiaoshuPendingReplyTimer = window.__xiaoshuPendingReplyTimer || null;
@@ -2587,7 +2628,9 @@ autoSendEnabled: false,
 autoSendInterval: 5,
 autoStickerEnabled: false,
 autoStickerChance: 25,
-randomCardComboEnabled: true,
+autoStickerInterval: 5,
+randomCardComboEnabled: false,
+randomCardComboMin: 2,
 randomCardComboMax: 3,
 fixedCardReplyCount: 1,
 // 主页绑定会话开关（默认关闭）
@@ -2775,7 +2818,13 @@ const savedVoiceGroups = getVal(24);
 const savedRecentDrawnReplies = getVal(25);
 if (savedPartnerPersonas) partnerPersonas = savedPartnerPersonas;
 if (savedSettings) safeAssignOwn(settings, savedSettings);
+if (savedSettings && !Object.prototype.hasOwnProperty.call(savedSettings, 'autoStickerInterval')) {
+settings.autoStickerInterval = Number(savedSettings.autoSendInterval) || 5;
+}
 stripRetiredChatSettings(settings);
+if (window.XiaoshuBehaviorCore) {
+settings = window.XiaoshuBehaviorCore.normalizeBehaviorSettings(settings);
+}
 // v109：保留当前会话已经保存的昵称；仅在存档确实没有有效昵称时使用默认称呼。
 settings.myName = String(settings.myName || '').trim() || '我';
 settings.partnerName = String(settings.partnerName || '').trim() || '对方';
@@ -2884,6 +2933,7 @@ displayedMessageCount = HISTORY_BATCH_SIZE;
 setTimeout(() => {
 if (typeof applyAllAvatarFrames === 'function') applyAllAvatarFrames();
 if (typeof manageAutoSendTimer === 'function') manageAutoSendTimer();
+if (typeof manageAutoStickerTimer === 'function') manageAutoStickerTimer();
 if (typeof updateUI === 'function') updateUI();
 if (settings.customBubbleCss) {
 try { applyCustomBubbleCss(settings.customBubbleCss); } catch(e) {}
@@ -3323,13 +3373,27 @@ if (autoSendTimer) {
 clearInterval(autoSendTimer);
 autoSendTimer = null;
 }
-if (settings.autoSendEnabled || settings.autoStickerEnabled) {
+if (settings.autoSendEnabled) {
 const intervalMs = settings.autoSendInterval * 60 * 1000;
+const timerSessionId = SESSION_ID;
 autoSendTimer = setInterval(() => {
-if (!document.body.classList.contains('batch-favorite-mode')) {
-const __xsAutoStickerChance = Math.max(0, Math.min(100, Number(settings.autoStickerChance == null ? 25 : settings.autoStickerChance))) / 100;
-if (settings.autoStickerEnabled && Math.random() < __xsAutoStickerChance && window.xiaoshuSendPartnerStickerNow && window.xiaoshuSendPartnerStickerNow()) return;
-if (settings.autoSendEnabled) simulateReply();
+if (timerSessionId !== SESSION_ID || !settings.autoSendEnabled) return manageAutoSendTimer();
+if (!document.body.classList.contains('batch-favorite-mode')) simulateReply('card');
+}, intervalMs);
+}
+}
+function manageAutoStickerTimer() {
+if (autoStickerTimer) {
+clearInterval(autoStickerTimer);
+autoStickerTimer = null;
+}
+if (settings.autoStickerEnabled) {
+const intervalMs = Math.max(1, Number(settings.autoStickerInterval) || 5) * 60 * 1000;
+const timerSessionId = SESSION_ID;
+autoStickerTimer = setInterval(() => {
+if (timerSessionId !== SESSION_ID || !settings.autoStickerEnabled) return manageAutoStickerTimer();
+if (!document.body.classList.contains('batch-favorite-mode') && window.xiaoshuSendPartnerStickerNow) {
+window.xiaoshuSendPartnerStickerNow();
 }
 }, intervalMs);
 }
@@ -4714,15 +4778,24 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 // 拍一拍是附加互动，继续生成正常回复，避免空拍一拍吞掉整轮消息。
             }
 
-            // 关闭随机组合时严格采用用户设置的固定条数；开启后沿用 milk 的随机节奏。
-            const replyCount = window.xiaoshuResolveCardReplyCount(settings, Math.random);
+            // 固定模式发送多个独立气泡；随机组合模式把多张字卡合并为一个气泡。
+            const replyCount = window.XiaoshuBehaviorCore.resolveCardReplyCount(settings, Math.random);
             if (!customReplies || customReplies.length === 0) {
                 showNotification('回复库为空，请先到「自定义回复」中添加内容', 'info', 3500);
                 return;
             }
+            let disabledRepliesOnce = new Set();
+            try {
+                disabledRepliesOnce = typeof _getDisabledItemsSet === 'function'
+                    ? _getDisabledItemsSet()
+                    : new Set(JSON.parse(localStorage.getItem('disabledReplyItems') || '[]'));
+                (window.customReplyGroups || []).forEach(group => {
+                    if (group && group.disabled) (group.items || []).forEach(item => disabledRepliesOnce.add(String(item || '').trim()));
+                });
+            } catch (_disabledReplyError) {}
             const replyPoolOnce = customReplies
                 .map(r => String(r || '').trim())
-                .filter(Boolean);
+                .filter((text, index, list) => text && !disabledRepliesOnce.has(text) && list.indexOf(text) === index);
             if (!replyPoolOnce.length) {
                 showNotification('回复库为空，请先到「自定义回复」中添加内容', 'info', 4000);
                 return;
@@ -4747,16 +4820,27 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 const usedIndex = availableReplies.findIndex(item => String(item || '').trim() === picked);
                 if (usedIndex >= 0) availableReplies.splice(usedIndex, 1);
             }
-            if (!selectedReplies.length) return;
+            if (!selectedReplies.length) {
+                showNotification('当前没有可用字卡，未发送空白消息', 'info', 3500);
+                return;
+            }
+            const replyPayloads = settings.randomCardComboEnabled
+                ? [{
+                    text: window.XiaoshuBehaviorCore.combineCardTexts(selectedReplies),
+                    cardFragments: selectedReplies.slice()
+                }]
+                : selectedReplies.map(text => ({ text, cardFragments: [text] }));
+            if (!replyPayloads.length || !replyPayloads[0].text) return;
 
             // 确认有可用回复后再展示“正在输入中”，避免空转
             let delay = 0;
-            for (let i = 0; i < selectedReplies.length; i++) {
+            for (let i = 0; i < replyPayloads.length; i++) {
                 const delayRange = settings.replyDelayMax - settings.replyDelayMin;
                 delay += settings.replyDelayMin + Math.random() * delayRange;
                 xsScheduleConversationTask(__xsReplyConversation, () => {
                     try {
-                    const replyText = selectedReplies[i];
+                    const payload = replyPayloads[i];
+                    const replyText = payload.text;
                     if (!replyText) {
                         return;
                     }
@@ -4782,7 +4866,7 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                     enabledStickerPool = (enabledStickerPool || []).filter(Boolean);
                     // 上一条是表情包时，对方从当前本地表情池中追加回复。
                     // 随机组合时只在最后一张字卡后追加一次表情，避免一轮连续刷出多张表情包。
-                    const shouldSendSticker = enabledStickerPool.length > 0 && __xsUserJustSentSticker && i === selectedReplies.length - 1;
+                    const shouldSendSticker = enabledStickerPool.length > 0 && __xsUserJustSentSticker && i === replyPayloads.length - 1;
 
                     let finalText = replyText;
                     let separateEmoji = null;
@@ -4815,7 +4899,9 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                     // 先登记本次确定要发出的字卡。原版放在 addMessage 之后，
                     // 某些浏览器中 addMessage 后续保存抛错时会导致登记语句被跳过。
                     if (typeof window.xiaoshuRecordRecentDrawnReply === 'function') {
-                        try { window.xiaoshuRecordRecentDrawnReply(replyText); } catch (_recentErr) { console.warn('[最近抽过] 登记失败', _recentErr); }
+                        payload.cardFragments.forEach(fragment => {
+                            try { window.xiaoshuRecordRecentDrawnReply(fragment); } catch (_recentErr) { console.warn('[最近抽过] 登记失败', _recentErr); }
+                        });
                     }
                     addMessage({
                         id: Date.now() + i,
@@ -4827,8 +4913,9 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                         note: null,
                         replyTo: null,
                         type: 'normal',
-                        conversationId: 'card',
-                        replySource: 'card'
+                        conversationId: __xsReplyConversation,
+                        replySource: 'card',
+                        cardFragments: payload.cardFragments.slice()
                     });
                     if (typeof window._sendPartnerNotification === 'function') {
                         window._sendPartnerNotification(settings.partnerName || '对方', finalText);
@@ -4939,7 +5026,7 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                         }, 500 + Math.random() * 800);
                     }
 
-                    if (i === replyCount - 1) {
+                    if (i === replyPayloads.length - 1) {
                     }
                     } catch (e) {
                         console.error('[simulateReply] 渲染/回填出错:', e);
@@ -10127,6 +10214,7 @@ opt.classList.toggle('active', opt.dataset.fmt === (settings.timeFormat || 'HH:m
 const autoToggle = document.getElementById('auto-send-toggle');
 if (autoToggle) autoToggle.classList.toggle('active', !!settings.autoSendEnabled);
 updateAutoSendUI();
+if (typeof window.xiaoshuSyncBehaviorControls === 'function') window.xiaoshuSyncBehaviorControls();
 updateDelayUI();
 const rrStyle = settings.readReceiptStyle || 'icon';
 const rrIconBtn = document.getElementById('rr-style-icon');
@@ -10304,7 +10392,7 @@ const autoSendSlider = document.getElementById('auto-send-slider');
 const autoSendValue = document.getElementById('auto-send-value');
 const updateAutoSendUI = () => {
 autoSendToggle.classList.toggle('active', !!settings.autoSendEnabled);
-autoSendControl.style.display = (settings.autoSendEnabled || settings.autoStickerEnabled) ? "flex" : "none";
+autoSendControl.style.display = settings.autoSendEnabled ? "flex" : "none";
 const currentVal = settings.autoSendInterval || 5;
 autoSendSlider.value = currentVal;
 autoSendValue.textContent = `${currentVal}分钟`;
@@ -10314,7 +10402,7 @@ autoSendToggle.addEventListener('click', () => {
 settings.autoSendEnabled = !settings.autoSendEnabled;
 updateAutoSendUI();
 manageAutoSendTimer();
-throttledSaveData();
+saveData({ skipChatMessages: true });
 showNotification(`主动发送已${settings.autoSendEnabled ? '开启' : '关闭'}`, 'success');
 });
 autoSendSlider.value = settings.autoSendInterval || 5;
@@ -10326,7 +10414,7 @@ autoSendValue.textContent = `${val}分钟`;
 });
 autoSendSlider.addEventListener('change', () => {
 manageAutoSendTimer();
-throttledSaveData();
+saveData({ skipChatMessages: true });
 });
 // 拼字卡运行逻辑保留；旧设置控件已移除。
 const resetBgBtn = document.getElementById('reset-default-bg');
@@ -13537,20 +13625,62 @@ __XIAOSHU_CIRCLE_SCRIPT_CLOSE__
 <style id="xiaoshu-behavior-settings-v1-css">
 .xs-behavior-inline{margin-top:10px;border-top:1px solid var(--border-color);padding-top:8px}.xs-behavior-select{min-width:88px;height:36px;border:1px solid var(--border-color);border-radius:10px;background:var(--primary-bg);color:var(--text-primary);padding:0 8px}
 </style>
-<script id="xiaoshu-behavior-settings-v1">(function(){
+<script id="xiaoshu-behavior-settings-v2">(function(){
 'use strict';
-if(window.__xiaoshuBehaviorSettingsV1)return;window.__xiaoshuBehaviorSettingsV1=true;
-function S(){try{return settings}catch(e){return window.settings||{}}}
-function persist(){try{if(typeof throttledSaveData==='function')return throttledSaveData()}catch(e){}try{if(window.saveData)return window.saveData()}catch(e){}}
-function normalize(){var s=S();if(typeof s.autoStickerEnabled!=='boolean')s.autoStickerEnabled=false;if(!Number.isFinite(Number(s.autoStickerChance)))s.autoStickerChance=25;s.autoStickerChance=Math.max(0,Math.min(100,Number(s.autoStickerChance)));if(typeof s.randomCardComboEnabled!=='boolean')s.randomCardComboEnabled=true;s.randomCardComboMax=Math.max(2,Math.min(3,Number(s.randomCardComboMax)||3));s.fixedCardReplyCount=Math.max(1,Math.min(8,Number(s.fixedCardReplyCount)||1));return s}
-function resolveCardReplyCount(source,randomFn){var s=source&&typeof source==='object'?source:{};var fixed=Math.max(1,Math.min(8,Number(s.fixedCardReplyCount)||1));if(!s.randomCardComboEnabled)return fixed;var max=Math.max(2,Math.min(3,Number(s.randomCardComboMax)||3));var rnd=typeof randomFn==='function'?randomFn:Math.random;var count=rnd()<0.75?1:(rnd()<0.95?2:3);return Math.min(max,count)}
+if(window.__xiaoshuBehaviorSettingsV2)return;window.__xiaoshuBehaviorSettingsV2=true;
+var core=window.XiaoshuBehaviorCore;
+function current(){try{return settings}catch(e){return window.settings||{}}}
+function normalize(){var target=current(),normalized=core.normalizeBehaviorSettings(target);Object.keys(normalized).forEach(function(key){target[key]=normalized[key]});return target}
+function persistNow(){try{if(typeof window.saveData==='function')return Promise.resolve(window.saveData({skipChatMessages:true}))}catch(e){console.warn('[聊天行为设置] 保存失败',e)}return Promise.resolve(false)}
 window.xiaoshuNormalizeBehaviorSettings=normalize;
-window.xiaoshuResolveCardReplyCount=resolveCardReplyCount;
-window.xiaoshuSendPartnerStickerNow=function(){var s=normalize(),pool=[];try{if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.getPool==='function')pool=window.xiaoshuStickerStore.getPool()||[];if((!Array.isArray(pool)||!pool.length)&&typeof window.xiaoshuGetSharedStickerPool==='function')pool=window.xiaoshuGetSharedStickerPool()||[];if((!Array.isArray(pool)||!pool.length)&&Array.isArray(window._stickerLibrary))pool=window._stickerLibrary}catch(e){pool=[]}pool=pool.filter(Boolean);if(!pool.length)return false;var raw=pool[Math.floor(Math.random()*pool.length)],stickerId='';try{if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.register==='function')stickerId=window.xiaoshuStickerStore.register(raw)||''}catch(e){}if(!stickerId)return false;try{if(typeof addMessage!=='function')return false;addMessage({id:'auto_sticker_'+Date.now()+'_'+Math.random().toString(36).slice(2),sender:s.partnerName||'对方',text:'',timestamp:new Date(),stickerId:stickerId,messageKind:'sticker',status:'received',favorited:false,note:null,type:'normal',conversationId:'card'});try{if(typeof playSound==='function')playSound('message')}catch(e){}try{if(typeof window._sendPartnerNotification==='function')window._sendPartnerNotification(s.partnerName||'对方','[表情包]')}catch(e){}return true}catch(e){console.warn('[auto-sticker] 发送失败',e);return false}}
-function mount(){var s=normalize(),auto=document.getElementById('auto-send-control'),autoCard=auto&&auto.closest('.cs-card');if(autoCard&&!document.getElementById('xs-auto-sticker-toggle')){var wrap=document.createElement('div');wrap.className='xs-behavior-inline';wrap.innerHTML='<div class="setting-pill-row" id="xs-auto-sticker-toggle"><span class="setting-pill-icon"><i class="fas fa-icons"></i></span><span class="setting-pill-label">主动发表情包</span><div class="setting-pill-switch"><div class="setting-pill-knob"></div></div></div><div id="xs-auto-sticker-control" class="cs-slider-row" style="display:none"><span class="cs-slider-label">出现概率</span><input class="font-size-slider" id="xs-auto-sticker-chance" max="100" min="0" step="5" type="range"><span class="cs-slider-val" id="xs-auto-sticker-chance-value"></span></div>';autoCard.appendChild(wrap);var toggle=wrap.querySelector('#xs-auto-sticker-toggle'),control=wrap.querySelector('#xs-auto-sticker-control'),slider=wrap.querySelector('#xs-auto-sticker-chance'),value=wrap.querySelector('#xs-auto-sticker-chance-value');function sync(){s=normalize();toggle.classList.toggle('active',!!s.autoStickerEnabled);control.style.display=s.autoStickerEnabled?'flex':'none';var sharedInterval=document.getElementById('auto-send-control');if(sharedInterval)sharedInterval.style.display=(s.autoSendEnabled||s.autoStickerEnabled)?'flex':'none';slider.value=s.autoStickerChance;value.textContent=s.autoStickerChance+'%'}toggle.addEventListener('click',function(){s.autoStickerEnabled=!s.autoStickerEnabled;sync();persist();try{if(typeof manageAutoSendTimer==='function')manageAutoSendTimer()}catch(e){}});slider.addEventListener('input',function(){s.autoStickerChance=Number(this.value);value.textContent=this.value+'%'});slider.addEventListener('change',persist);sync()}
-if(autoCard&&!document.getElementById('xs-random-card-combo')){var label=document.createElement('p');label.className='cs-group-label';label.style.marginTop='4px';label.textContent='字卡回复';var card=document.createElement('div');card.className='cs-card';card.id='xs-random-card-combo';card.innerHTML='<div class="cs-slider-row" id="xs-fixed-card-reply-control"><span class="cs-slider-label">固定回复条数</span><select class="xs-behavior-select" id="xs-fixed-card-reply-count"><option value="1">1 条</option><option value="2">2 条</option><option value="3">3 条</option><option value="4">4 条</option><option value="5">5 条</option><option value="6">6 条</option><option value="7">7 条</option><option value="8">8 条</option></select></div><div class="setting-pill-row" id="xs-random-card-combo-toggle"><span class="setting-pill-icon"><i class="fas fa-layer-group"></i></span><span class="setting-pill-label">随机组合字卡 <span style="font-size:11px;color:var(--text-secondary);font-weight:400;">开启时忽略固定条数</span></span><div class="setting-pill-switch"><div class="setting-pill-knob"></div></div></div><div class="cs-slider-row" id="xs-random-card-combo-control"><span class="cs-slider-label">最多组合</span><select class="xs-behavior-select" id="xs-random-card-combo-max"><option value="2">2 张</option><option value="3">3 张</option></select></div>';var parent=autoCard.parentNode,ref=autoCard.nextSibling;parent.insertBefore(label,ref);parent.insertBefore(card,label.nextSibling);var ct=card.querySelector('#xs-random-card-combo-toggle'),cc=card.querySelector('#xs-random-card-combo-control'),cm=card.querySelector('#xs-random-card-combo-max'),fc=card.querySelector('#xs-fixed-card-reply-count');function syncCombo(){s=normalize();ct.classList.toggle('active',!!s.randomCardComboEnabled);cc.style.display=s.randomCardComboEnabled?'flex':'none';cm.value=String(s.randomCardComboMax);fc.value=String(s.fixedCardReplyCount)}ct.addEventListener('click',function(){s.randomCardComboEnabled=!s.randomCardComboEnabled;syncCombo();persist()});cm.addEventListener('change',function(){s.randomCardComboMax=Number(this.value);persist()});fc.addEventListener('change',function(){s.fixedCardReplyCount=Math.max(1,Math.min(8,Number(this.value)||1));persist()});syncCombo()}}
-function resetAndMount(){var sticker=document.getElementById('xs-auto-sticker-toggle');if(sticker){var wrap=sticker.closest('.xs-behavior-inline');if(wrap)wrap.remove()}var combo=document.getElementById('xs-random-card-combo');if(combo){var label=combo.previousElementSibling;combo.remove();if(label&&label.classList.contains('cs-group-label')&&label.textContent==='字卡回复')label.remove()}mount()}
-function boot(){mount()}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();window.addEventListener('xiaoshu-session-data-ready',function(){setTimeout(resetAndMount,0)})
+window.xiaoshuResolveCardReplyCount=core.resolveCardReplyCount;
+window.xiaoshuSendPartnerStickerNow=function(){
+var s=normalize();
+return core.trySendPartnerSticker(s,{
+getPool:function(){
+var pool=[];
+try{if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.getPool==='function')pool=window.xiaoshuStickerStore.getPool()||[];
+else if(typeof window.xiaoshuGetSharedStickerPool==='function')pool=window.xiaoshuGetSharedStickerPool()||[];
+else if(Array.isArray(window._stickerLibrary))pool=window._stickerLibrary.slice()}catch(e){pool=[]}
+var disabled=new Set();try{disabled=new Set(JSON.parse(localStorage.getItem('disabledStickerItems')||'[]'))}catch(e){}
+return (Array.isArray(pool)?pool:[]).filter(function(item){return item&&!disabled.has(item)})
+},
+register:function(raw){return window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.register==='function'?window.xiaoshuStickerStore.register(raw):''},
+send:function(stickerId){
+if(typeof addMessage!=='function')throw new Error('addMessage unavailable');
+addMessage({id:'auto_sticker_'+Date.now()+'_'+Math.random().toString(36).slice(2),sender:s.partnerName||'对方',text:'',timestamp:new Date(),stickerId:stickerId,messageKind:'sticker',status:'received',favorited:false,note:null,type:'normal',conversationId:'card',replySource:'auto-sticker'});
+if(typeof playSound==='function')playSound('message');
+if(typeof window._sendPartnerNotification==='function')window._sendPartnerNotification(s.partnerName||'对方','[表情包]')
+}
+},Math.random)
+};
+function byId(id){return document.getElementById(id)}
+function sync(){
+var s=normalize(),stickerToggle=byId('xs-auto-sticker-toggle'),stickerControl=byId('xs-auto-sticker-control'),interval=byId('xs-auto-sticker-interval'),chance=byId('xs-auto-sticker-chance'),comboToggle=byId('xs-random-card-combo-toggle'),fixedControl=byId('xs-fixed-card-reply-control'),comboControl=byId('xs-random-card-combo-control');
+if(stickerToggle)stickerToggle.classList.toggle('active',s.autoStickerEnabled);
+if(stickerControl)stickerControl.style.display=s.autoStickerEnabled?'block':'none';
+if(interval){interval.value=String(s.autoStickerInterval);byId('xs-auto-sticker-interval-value').textContent=s.autoStickerInterval+'分钟'}
+if(chance){chance.value=String(s.autoStickerChance);byId('xs-auto-sticker-chance-value').textContent=s.autoStickerChance+'%'}
+if(comboToggle)comboToggle.classList.toggle('active',s.randomCardComboEnabled);
+if(fixedControl)fixedControl.style.display=s.randomCardComboEnabled?'none':'flex';
+if(comboControl)comboControl.style.display=s.randomCardComboEnabled?'block':'none';
+if(byId('xs-fixed-card-reply-count'))byId('xs-fixed-card-reply-count').value=String(s.fixedCardReplyCount);
+if(byId('xs-random-card-combo-min'))byId('xs-random-card-combo-min').value=String(s.randomCardComboMin);
+if(byId('xs-random-card-combo-max'))byId('xs-random-card-combo-max').value=String(s.randomCardComboMax)
+}
+function bind(){
+[['xs-auto-sticker-toggle',function(s){s.autoStickerEnabled=!s.autoStickerEnabled;manageAutoStickerTimer()}],['xs-random-card-combo-toggle',function(s){s.randomCardComboEnabled=!s.randomCardComboEnabled}]].forEach(function(pair){var el=byId(pair[0]);if(el&&!el.__xsBound){el.__xsBound=true;el.addEventListener('click',function(){pair[1](normalize());sync();persistNow()})}});
+var interval=byId('xs-auto-sticker-interval');if(interval&&!interval.__xsBound){interval.__xsBound=true;interval.addEventListener('input',function(){normalize().autoStickerInterval=Number(this.value);byId('xs-auto-sticker-interval-value').textContent=this.value+'分钟';manageAutoStickerTimer();persistNow()})}
+var chance=byId('xs-auto-sticker-chance');if(chance&&!chance.__xsBound){chance.__xsBound=true;chance.addEventListener('input',function(){normalize().autoStickerChance=Number(this.value);byId('xs-auto-sticker-chance-value').textContent=this.value+'%';persistNow()})}
+var fixed=byId('xs-fixed-card-reply-count');if(fixed&&!fixed.__xsBound){fixed.__xsBound=true;fixed.addEventListener('change',function(){normalize().fixedCardReplyCount=Number(this.value);persistNow()})}
+var min=byId('xs-random-card-combo-min'),max=byId('xs-random-card-combo-max');
+if(min&&!min.__xsBound){min.__xsBound=true;min.addEventListener('change',function(){var s=normalize();s.randomCardComboMin=Number(this.value);if(s.randomCardComboMin>s.randomCardComboMax)s.randomCardComboMax=s.randomCardComboMin;sync();persistNow()})}
+if(max&&!max.__xsBound){max.__xsBound=true;max.addEventListener('change',function(){var s=normalize();s.randomCardComboMax=Number(this.value);if(s.randomCardComboMax<s.randomCardComboMin)s.randomCardComboMin=s.randomCardComboMax;sync();persistNow()})}
+sync()
+}
+window.xiaoshuSyncBehaviorControls=sync;
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind,{once:true});else bind();
+window.addEventListener('xiaoshu-session-data-ready',function(){setTimeout(function(){normalize();manageAutoSendTimer();manageAutoStickerTimer();sync()},0)})
 })();</script>
 
 </body>
@@ -21164,7 +21294,6 @@ html[data-theme="dark"] #xiaoshuMailboxHost{background:var(--primary-bg,#0f1115)
     <main class="xs-mail-main" id="xsMailMain">
       <div class="xs-mail-list" id="xsMailList"></div>
       <section class="xs-mail-compose" id="xsMailCompose">
-        <div class="xs-mail-view-original" id="xsMailComposeOriginal"></div>
         <div class="xs-mail-paper"><div class="xs-mail-paper-inner">
           <div class="xs-mail-paper-date" id="xsMailComposeDate"></div>
           <div class="xs-mail-paper-to" id="xsMailComposeTo"></div>
@@ -21271,7 +21400,7 @@ function submitCardCountSettings(){try{saveMailboxSettings(readMailboxSettings()
 function restoreCardCountDefaults(){el('xsMailIncomingEnabled').checked=true;el('xsMailIncomingMin').value=12;el('xsMailIncomingMax').value=36;el('xsMailAutoReplyEnabled').checked=true;el('xsMailReplyMin').value=2;el('xsMailReplyMax').value=15;el('xsMailCardMin').value=DEFAULT_CARD_MIN;el('xsMailCardMax').value=DEFAULT_CARD_MAX;el('xsMailSettingsError').textContent='';saveMailboxSettings({min:DEFAULT_CARD_MIN,max:DEFAULT_CARD_MAX,allowIncomingLetters:true,incomingDelayMinMinutes:720,incomingDelayMaxMinutes:2160,autoReplyEnabled:true,replyDelayMinMinutes:2,replyDelayMaxMinutes:15},'信箱设置已恢复默认')}
 function emptyHtml(){var isIn=tab==='in';return'<div class="xs-mail-empty"><div class="xs-mail-empty-icon">✉</div><div class="xs-mail-empty-title">'+(isIn?'还没有收到信':'还没有寄出信件')+'</div><div class="xs-mail-empty-sub">'+(isIn?'以后收到的来信会安静地放在这里。':'提笔写下想说的话，寄给当前聊天对象。')+'</div></div>'}
 function renderList(){var list=el('xsMailList'),n=names();document.querySelectorAll('[data-mail-tab]').forEach(function(b){b.classList.toggle('active',b.dataset.mailTab===tab)});var arr=state.items.filter(function(x){return tab==='in'?x.type==='received':x.type==='sent'}).sort(function(a,b){return b.createdAt-a.createdAt});if(!arr.length){list.innerHTML=emptyHtml();updateBadges();return}list.innerHTML=arr.map(function(x){var who=x.type==='received'?n.partner:n.partner,dir=x.type==='received'?'收到 · '+who:'寄给 · '+who,preview=(x.content||'').replace(/\s+/g,' ').slice(0,70);return'<article class="xs-mail-item" data-mail-id="'+esc(x.id)+'"><button type="button" data-mail-open="'+esc(x.id)+'" style="all:unset;display:block;width:100%;cursor:pointer"><div class="xs-mail-item-top"><span class="xs-mail-item-direction">'+esc(dir)+(x.type==='received'&&!x.read?'<span class="xs-mail-unread-dot"></span>':'')+'</span><span class="xs-mail-item-date">'+esc(fmt(x.createdAt,false))+'</span><span class="xs-mail-stamp">✉</span></div><div class="xs-mail-item-body"><div class="xs-mail-item-title">'+esc(x.title||'一封没有标题的信')+'</div><div class="xs-mail-item-preview">'+esc(preview||'（空白）')+'</div></div></button><button class="xs-mail-delete" type="button" data-mail-delete="'+esc(x.id)+'" aria-label="删除">×</button></article>'}).join('');updateBadges()}
-function openCompose(sourceId){var n=names(),source=sourceId&&state.items.find(function(x){return x.id===sourceId&&x.type==='received'});replyToId=source?source.id:null;el('xsMailComposeDate').textContent=fmt(Date.now(),true);el('xsMailComposeTo').textContent='致 '+n.partner+'：';el('xsMailSubject').value=source?'回复 · '+(source.title||'你的来信'):'';el('xsMailContent').value='';el('xsMailCounter').textContent='0 / 8000';el('xsMailComposeOriginal').style.display=source?'block':'none';el('xsMailComposeOriginal').textContent=source?'回复 '+n.partner+'：'+source.content:'';setMode('compose');setTimeout(function(){try{el('xsMailContent').focus()}catch(e){}},80)}
+function openCompose(sourceId){var n=names(),source=sourceId&&state.items.find(function(x){return x.id===sourceId&&x.type==='received'}),compose=window.XiaoshuBehaviorCore.buildReplyComposeState(source);replyToId=compose.replyToId||null;el('xsMailComposeDate').textContent=fmt(Date.now(),true);el('xsMailComposeTo').textContent='致 '+n.partner+'：';el('xsMailSubject').value=compose.subject;el('xsMailContent').value='';el('xsMailCounter').textContent='0 / 8000';setMode('compose');setTimeout(function(){try{el('xsMailContent').focus()}catch(e){}},80)}
 async function send(){var content=el('xsMailContent').value.trim(),title=el('xsMailSubject').value.trim(),sourceId=replyToId;if(!content){toast('信件内容不能为空');return}try{var sent=await queueState(async function(sid){var source=sourceId&&state.items.find(function(x){return x.id===sourceId}),now=Date.now(),letter={id:makeId('mail'),type:'sent',title:title||'写给'+names().partner+'的一封信',content:content,createdAt:now,read:true,originalContent:source?source.content:'',replyToId:source?source.id:'',cardFragments:[]};state.items.push(letter);if(state.autoReplyEnabled)state.pending.push({id:makeId('mail_job'),kind:'reply',sourceId:letter.id,dueAt:now+randomBetween(state.replyDelayMinMinutes*60000,state.replyDelayMaxMinutes*60000)});ensureIncomingPlan();await save(sid);return true});if(!sent)return;if(replyToId===sourceId)replyToId=null;tab='out';setMode('list');toast(state.autoReplyEnabled?'信已寄出，对方会在稍后回信':'信已寄出')}catch(e){toast('保存失败：'+(e.message||'未知错误'))}}
 async function openLetter(id){var x;try{x=await queueState(async function(sid){var found=state.items.find(function(v){return v.id===id});if(!found)return null;if(found.type==='received'&&!found.read){found.read=true;await save(sid)}return found})}catch(e){console.warn('[mailbox] 标记已读失败',e);x=null}if(!x)return;viewId=id;var n=names(),received=x.type==='received',author=received?n.partner:n.me,to=received?n.me:n.partner;el('xsMailOriginal').style.display=x.originalContent?'block':'none';el('xsMailOriginal').textContent=x.originalContent?(received?'你的原信：':'对方的来信：')+x.originalContent:'';el('xsMailViewDate').textContent=fmt(x.createdAt,true);el('xsMailViewTo').textContent='致 '+to+'：';el('xsMailViewGreeting').textContent='见字如面';el('xsMailViewContent').textContent=x.content;el('xsMailSignName').textContent=author;el('xsMailSignDate').textContent=fmt(x.createdAt,true);el('xsMailReply').style.display=received?'block':'none';setMode('view')}
 async function remove(id){if(!state.items.some(function(v){return v.id===id}))return;if(!confirm('确定删除这封信吗？删除后无法恢复。'))return;try{var removed=await queueState(async function(sid){if(!state.items.some(function(v){return v.id===id}))return false;state.items=state.items.filter(function(v){return v.id!==id});state.pending=state.pending.filter(function(v){return v.sourceId!==id});await save(sid);return true});if(!removed)return;viewId=null;setMode('list');toast('信件已删除')}catch(e){toast('删除失败')}}
@@ -21281,7 +21410,7 @@ function activateSession(sid){sid=readySessionId(sid);if(!sid)return Promise.res
 function onSessionReady(e){var sid=String(e&&e.detail&&e.detail.sessionId||'').trim();if(!sid||readySessionId(sid)!==sid)return;activateSession(sid)}
 function bind(){if(bound)return;bound=true;el('xsMailBack').addEventListener('click',close);el('xsMailHome').addEventListener('click',function(){if(this.dataset.mailAction==='settings')openSettings();else{replyToId=null;setMode('list')}});el('xsMailSettingsSave').addEventListener('click',submitCardCountSettings);el('xsMailSettingsDefault').addEventListener('click',restoreCardCountDefaults);el('xsMailSettingsCancel').addEventListener('click',closeSettings);el('xsMailSettings').addEventListener('click',function(e){if(e.target===this)closeSettings()});el('xsMailWrite').addEventListener('click',function(){openCompose()});el('xsMailCancelCompose').addEventListener('click',function(){replyToId=null;setMode('list')});el('xsMailSend').addEventListener('click',send);el('xsMailViewClose').addEventListener('click',function(){setMode('list')});el('xsMailReply').addEventListener('click',function(){if(viewId)openCompose(viewId)});el('xsMailViewDelete').addEventListener('click',function(){if(viewId)remove(viewId)});el('xsMailContent').addEventListener('input',function(){el('xsMailCounter').textContent=this.value.length+' / 8000'});document.querySelectorAll('[data-mail-tab]').forEach(function(b){b.addEventListener('click',function(){tab=this.dataset.mailTab;setMode('list')})});el('xsMailList').addEventListener('click',function(e){var del=e.target.closest('[data-mail-delete]');if(del){e.preventDefault();e.stopPropagation();remove(del.dataset.mailDelete);return}var op=e.target.closest('[data-mail-open]');if(op)openLetter(op.dataset.mailOpen)});document.addEventListener('keydown',function(e){if(e.key==='Escape'&&el('xiaoshuMailboxHost').classList.contains('show')){if(el('xsMailSettings').classList.contains('show'))closeSettings();else if(el('xsMailCompose').classList.contains('show')||el('xsMailView').classList.contains('show'))setMode('list');else close()}});document.addEventListener('visibilitychange',function(){if(!document.hidden)checkDueFresh()});window.addEventListener('focus',checkDueFresh);window.addEventListener('xiaoshu-session-data-ready',onSessionReady)}
 function boot(){bind();var sid=readySessionId();if(sid)activateSession(sid)}
-window.xiaoshuMailbox={open:open,close:close,openLetterById:function(id){return open(String(id||''))},checkNow:checkDueFresh,reload:function(){return checkDueFresh().then(function(){if(mailboxInitializedSessionId===readySessionId()){renderList();updateBadges()}return true})},getState:function(){return JSON.parse(JSON.stringify(state))},getInitializedSessionId:function(){return mailboxInitializedSessionId}};
+window.xiaoshuMailbox={open:open,close:close,openLetterById:function(id){return open(String(id||''))},checkNow:checkDueFresh,reload:function(){return checkDueFresh().then(function(){if(mailboxInitializedSessionId===readySessionId()){renderList();updateBadges()}return true})},getState:function(){return JSON.parse(JSON.stringify(state))},getInitializedSessionId:function(){return mailboxInitializedSessionId},getReplyToId:function(){return replyToId}};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();</script>
 <style id="kkk35g-v118-chat-calls-css">
@@ -21383,7 +21512,27 @@ function acceptIncoming(){if(!incoming||active)return false;var call=incoming;cl
 function rejectIncoming(){if(!incoming)return false;var call=incoming;writeEventOnce(call,'fa-phone-slash','我已拒绝','');recordStatus(Object.assign(call,{type:call.kind==='video'?'视频通话':'语音通话',direction:'incoming',endedBy:'me',endReason:'rejected'}),'我已拒绝',0);clearIncoming();scheduleIncoming(true);return false}
 function frequencyDelay(f){var range=f==='high'?[10,30]:f==='medium'?[30,90]:[60,180];return (range[0]+Math.random()*(range[1]-range[0]))*60000}
 function pickIncomingKind(c){if(!c||!c.allowIncoming)return null;if(c.allowVoiceIncoming&&c.allowVideoIncoming)return Math.random()<.25?'video':'voice';if(c.allowVideoIncoming)return 'video';if(c.allowVoiceIncoming)return 'voice';return null}
-function scheduleIncoming(force){if(incomingTimer){clearTimeout(incomingTimer);incomingTimer=null}var sessionId=sid();if(!sessionId)return;var cfg=settingsFor(sessionId);if(!cfg.enabled||!cfg.allowIncoming||(!cfg.allowVoiceIncoming&&!cfg.allowVideoIncoming))return;if(force||cfg.plannedSessionId!==sessionId||!cfg.nextIncomingAt){cfg.plannedSessionId=sessionId;cfg.nextIncomingAt=Date.now()+frequencyDelay(cfg.frequency);saveSettingsQuiet(sessionId,cfg)}var wait=Math.max(0,cfg.nextIncomingAt-Date.now());incomingTimer=setTimeout(function(){incomingTimer=null;if(document.hidden)return;if(sid()!==cfg.plannedSessionId){scheduleIncoming(true);return}if(active||incoming){scheduleIncoming(true);return}cfg.nextIncomingAt=0;saveSettingsQuiet(sessionId,cfg);var kind=pickIncomingKind(cfg);if(kind)showIncoming(kind,sessionId)},Math.min(wait,2147483000))}
+function scheduleIncoming(force){
+if(incomingTimer){clearTimeout(incomingTimer);incomingTimer=null}
+var sessionId=sid();if(!sessionId)return;
+var cfg=settingsFor(sessionId),now=Date.now(),beforeAt=cfg.nextIncomingAt,beforeOwner=cfg.plannedSessionId;
+if(force){cfg.nextIncomingAt=0;cfg.plannedSessionId=''}
+var reconciled=window.XiaoshuBehaviorCore.reconcileIncomingCallPlan(cfg,sessionId,now,function(frequency){return frequencyDelay(frequency)});
+cfg.nextIncomingAt=reconciled.nextIncomingAt;cfg.plannedSessionId=reconciled.plannedSessionId;
+if(beforeAt!==cfg.nextIncomingAt||beforeOwner!==cfg.plannedSessionId||!reconciled.shouldSchedule)saveSettingsQuiet(sessionId,cfg);
+if(!reconciled.shouldSchedule)return;
+var wait=Math.max(1,cfg.nextIncomingAt-now);
+incomingTimer=setTimeout(function(){
+incomingTimer=null;
+if(document.hidden){scheduleIncoming(false);return}
+if(sid()!==sessionId){scheduleIncoming(false);return}
+if(active||incoming){scheduleIncoming(true);return}
+var latest=settingsFor(sessionId);
+if(!latest.enabled||!latest.allowIncoming||(!latest.allowVoiceIncoming&&!latest.allowVideoIncoming)){scheduleIncoming(false);return}
+latest.nextIncomingAt=0;latest.plannedSessionId='';saveSettingsQuiet(sessionId,latest);
+var kind=pickIncomingKind(latest);if(kind)showIncoming(kind,sessionId)
+},Math.min(wait,2147483000))
+}
 function saveSettingsQuiet(sessionId,v){settingsCache[sessionId]=validSettings(v);writeLS(keyFor(sessionId,SETTINGS_SUFFIX),settingsCache[sessionId]);try{if(window.localforage)localforage.setItem(keyFor(sessionId,SETTINGS_SUFFIX),settingsCache[sessionId]).catch(function(){})}catch(e){}}
 function ensureCallButton(){var right=$('xs-stable-right');if(!right)return null;var b=$('xs-chat-more-button');if(!b){b=document.createElement('button');b.id='xs-chat-more-button';b.type='button';b.setAttribute('aria-label','更多');b.setAttribute('title','更多');b.textContent='⋯';right.appendChild(b)}b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');b.setAttribute('aria-controls','xs-chat-more-menu');return b}
 function updateCallButton(){var b=ensureCallButton();if(b)b.hidden=false}
@@ -21391,7 +21540,7 @@ function ensureSettingsEntry(){var body=document.querySelector('#xiaoshu-setting
 function settingsPanel(){var h=$('xs-call-setting-overlay');if(!h){h=document.createElement('div');h.id='xs-call-setting-overlay';h.className='xs-call-setting-overlay';document.body.appendChild(h)}return h}
 function openSettings(){var c=settingsFor(sid()),h=settingsPanel();h.innerHTML='<div class="xs-call-setting-card" role="dialog" aria-label="模拟通话设置"><div class="xs-call-setting-title">模拟通话</div><div class="xs-call-setting-row"><div><label for="xs-call-enabled">启用模拟通话</label><small>控制语音和视频通话功能</small></div><input id="xs-call-enabled" type="checkbox" '+(c.enabled?'checked':'')+'></div><div class="xs-call-setting-row"><div><label for="xs-call-incoming-enabled">允许对方主动来电</label><small>关闭后不会出现主动来电</small></div><input id="xs-call-incoming-enabled" type="checkbox" '+(c.allowIncoming?'checked':'')+'></div><div class="xs-call-setting-row"><div><label for="xs-call-voice-incoming">允许主动语音来电</label></div><input id="xs-call-voice-incoming" type="checkbox" '+(c.allowVoiceIncoming?'checked':'')+'></div><div class="xs-call-setting-row"><div><label for="xs-call-video-incoming">允许主动视频来电</label></div><input id="xs-call-video-incoming" type="checkbox" '+(c.allowVideoIncoming?'checked':'')+'></div><div class="xs-call-setting-row"><div><label for="xs-call-frequency">来电频率</label><small>低 60～180 分钟 · 中 30～90 分钟 · 高 10～30 分钟</small></div><select id="xs-call-frequency"><option value="low" '+(c.frequency==='low'?'selected':'')+'>低</option><option value="medium" '+(c.frequency==='medium'?'selected':'')+'>中</option><option value="high" '+(c.frequency==='high'?'selected':'')+'>高</option></select></div><div class="xs-call-setting-actions"><button type="button" data-v118-settings-cancel>取消</button><button type="button" class="primary" data-v118-settings-save>保存</button></div></div>';h.classList.add('show');return false}
 function closeSettings(){settingsPanel().classList.remove('show');settingsPanel().innerHTML='';return false}
-function saveSettingsFromPanel(){var sessionId=sid(),old=settingsFor(sessionId),enabled=$('xs-call-enabled').checked,allow=$('xs-call-incoming-enabled').checked,voice=$('xs-call-voice-incoming').checked,video=$('xs-call-video-incoming').checked,f=$('xs-call-frequency').value;var scheduleSame=old.frequency===f&&old.allowIncoming===allow&&old.allowVoiceIncoming===voice&&old.allowVideoIncoming===video;saveSettings(sessionId,{version:3,enabled:enabled,allowIncoming:allow,allowVoiceIncoming:voice,allowVideoIncoming:video,frequency:f,nextIncomingAt:(scheduleSame?old.nextIncomingAt:0),plannedSessionId:(scheduleSame?old.plannedSessionId:'')});closeSettings();if(!enabled){if(incoming)rejectIncoming();if(active)completeCall('disabled');if(incomingTimer){clearTimeout(incomingTimer);incomingTimer=null}}toast('模拟通话设置已保存');return false}
+function saveSettingsFromPanel(){var sessionId=sid(),old=settingsFor(sessionId),enabled=$('xs-call-enabled').checked,allow=$('xs-call-incoming-enabled').checked,voice=$('xs-call-voice-incoming').checked,video=$('xs-call-video-incoming').checked,f=$('xs-call-frequency').value;var scheduleSame=old.frequency===f&&old.allowIncoming===allow&&old.allowVoiceIncoming===voice&&old.allowVideoIncoming===video;saveSettings(sessionId,{version:3,enabled:enabled,allowIncoming:allow,allowVoiceIncoming:voice,allowVideoIncoming:video,frequency:f,nextIncomingAt:(scheduleSame?old.nextIncomingAt:0),plannedSessionId:(scheduleSame?old.plannedSessionId:'')});closeSettings();if(!enabled){if(incoming)clearIncoming();if(active)completeCall('disabled')}else if(!allow||(!voice&&!video)){if(incoming)clearIncoming()}scheduleIncoming(false);toast('模拟通话设置已保存');return false}
 function renderTaPhoneCalls(){var home=$('xs-clean-phone-home'),app=$('xs-clean-phone-app');if(!home||!app)return false;home.hidden=true;app.hidden=false;app.className='xs-clean-app xs-phone-call-records-app';var arr=recordsFor(sid());app.innerHTML=arr.length?'<div class="xs-call-record-clean-list">'+arr.map(function(r){var video=r.kind==='video'||String(r.type||'').indexOf('视频')>=0;return '<div class="xs-call-record-clean-item"><div class="xs-call-record-clean-left"><div class="xs-call-record-clean-icon"><i class="fas '+(video?'fa-video':'fa-phone')+'"></i></div><div class="xs-call-record-clean-main"><div class="xs-call-record-clean-kind">'+esc(r.type||'通话')+'</div><div class="xs-call-record-clean-time">'+esc(timeText(r.startedAt))+'</div></div></div><div class="xs-call-record-clean-status">'+esc(r.status||'')+'</div></div>'}).join('')+'</div>':'<div class="xs-call-record-clean-empty">暂无通话记录</div>';return false}
 function setupMiniDrag(){var m=mini(),drag=null;m.addEventListener('pointerdown',function(e){if(!active)return;var r=m.getBoundingClientRect();drag={id:e.pointerId,x:e.clientX-r.left,y:e.clientY-r.top,moved:false};miniDragging=false;try{m.setPointerCapture(e.pointerId)}catch(_e){}});m.addEventListener('pointermove',function(e){if(!drag||drag.id!==e.pointerId)return;var left=Math.max(6,Math.min(innerWidth-m.offsetWidth-6,e.clientX-drag.x)),top=Math.max(6,Math.min(innerHeight-m.offsetHeight-6,e.clientY-drag.y));if(Math.abs(left-m.getBoundingClientRect().left)>3||Math.abs(top-m.getBoundingClientRect().top)>3)drag.moved=true;m.style.left=left+'px';m.style.top=top+'px';m.style.right='auto';m.style.bottom='auto'});function done(e){if(!drag||e.pointerId!==drag.id)return;miniDragging=drag.moved;drag=null;setTimeout(function(){miniDragging=false},100)}m.addEventListener('pointerup',done);m.addEventListener('pointercancel',done)}
 function moreMenu(){var h=$('xs-chat-more-menu');if(!h){h=document.createElement('div');h.id='xs-chat-more-menu';h.className='xs-chat-more-menu';h.setAttribute('role','menu');h.setAttribute('aria-label','通话菜单');document.body.appendChild(h)}return h}
@@ -21403,11 +21552,11 @@ function moreMenuItems(){var h=$('xs-chat-more-menu');return h?Array.prototype.s
 function focusMoreMenuItem(index){var items=moreMenuItems();if(!items.length)return;index=(index+items.length)%items.length;if(items[index]&&typeof items[index].focus==='function')items[index].focus()}
 function bindMoreMenuKeyboard(){document.addEventListener('keydown',function(e){var b=$('xs-chat-more-button'),h=$('xs-chat-more-menu'),open=!!(h&&h.classList.contains('show'));if(!b)return;if(e.target===b&&e.key==='ArrowDown'){e.preventDefault();if(!open)toggleMoreMenu();focusMoreMenuItem(0);return}if(!open)return;if(e.key==='Escape'){e.preventDefault();closeMoreMenu(true);return}if(!h.contains(e.target))return;var items=moreMenuItems(),i=items.indexOf(e.target);if(!items.length)return;if(e.key==='ArrowDown'){e.preventDefault();focusMoreMenuItem(i<0?0:i+1)}else if(e.key==='ArrowUp'){e.preventDefault();focusMoreMenuItem(i<0?items.length-1:i-1)}else if(e.key==='Home'){e.preventDefault();focusMoreMenuItem(0)}else if(e.key==='End'){e.preventDefault();focusMoreMenuItem(items.length-1)}},true)}
 function bind(){document.addEventListener('click',function(e){var t=e.target&&e.target.closest;if(!t)return;var b=t.call(e.target,'#xs-chat-more-button');if(b){e.preventDefault();e.stopPropagation();return toggleMoreMenu()}var mc=t.call(e.target,'[data-v118-more-call]');if(mc){e.preventDefault();closeMoreMenu();return runMoreMenuAction(mc.getAttribute('data-v118-more-call'))}if(t.call(e.target,'[data-v118-more-settings]')){e.preventDefault();closeMoreMenu();return runMoreMenuAction('settings')}if(!t.call(e.target,'#xs-chat-more-menu'))closeMoreMenu();if(t.call(e.target,'[data-v118-call-close]'))return closeChoice();var s=t.call(e.target,'[data-v118-call-start]');if(s){e.preventDefault();return startOutgoing(s.getAttribute('data-v118-call-start'))}if(t.call(e.target,'[data-v118-call-end]'))return completeCall('normal');if(t.call(e.target,'[data-v118-call-mini]'))return renderMini();var tog=t.call(e.target,'[data-v118-call-toggle]');if(tog){tog.classList.toggle('active');tog.style.background=tog.classList.contains('active')?'rgba(255,255,255,.34)':'rgba(255,255,255,.14)';return false}if(t.call(e.target,'[data-v118-incoming-accept]'))return acceptIncoming();if(t.call(e.target,'[data-v118-incoming-reject]'))return rejectIncoming();if(t.call(e.target,'[data-call-settings-open]')){e.preventDefault();e.stopPropagation();try{window.xiaoshuCloseSettingsHub&&window.xiaoshuCloseSettingsHub()}catch(_e){}return openSettings()}if(t.call(e.target,'[data-v118-settings-cancel]'))return closeSettings();if(t.call(e.target,'[data-v118-settings-save]'))return saveSettingsFromPanel()},true);
-mini().addEventListener('click',function(){if(!miniDragging&&active)renderActive()});document.addEventListener('visibilitychange',function(){if(!document.hidden){var c=settingsFor(sid());if(c.nextIncomingAt&&c.nextIncomingAt<=Date.now()&&!active&&!incoming){var kind=pickIncomingKind(c);if(kind)showIncoming(kind,sid())}else scheduleIncoming(false)}});window.addEventListener('xiaoshu-session-data-ready',function(){hydrateRecords(sid());hydrateSettings(sid());ensureCallButton();ensureSettingsEntry()});window.addEventListener('xiaoshu-call-records-updated',function(){var app=$('xs-clean-phone-app');if(app&&!app.hidden&&app.classList.contains('xs-phone-call-records-app'))renderTaPhoneCalls()})}
+mini().addEventListener('click',function(){if(!miniDragging&&active)renderActive()});document.addEventListener('visibilitychange',function(){if(!document.hidden)scheduleIncoming(false)});window.addEventListener('focus',function(){scheduleIncoming(false)});window.addEventListener('xiaoshu-session-data-ready',function(){hydrateRecords(sid());hydrateSettings(sid());ensureCallButton();ensureSettingsEntry()});window.addEventListener('xiaoshu-call-records-updated',function(){var app=$('xs-clean-phone-app');if(app&&!app.hidden&&app.classList.contains('xs-phone-call-records-app'))renderTaPhoneCalls()})}
 function expose(){window.xiaoshuOpenMainPhone=restoreOrOpen;window.xiaoshuCloseMainPhone=closeChoice;window.xiaoshuMinimizeMainCall=renderMini;window.xiaoshuRestoreMainCall=renderActive;window.xiaoshuEndMainCall=function(){return completeCall('normal')};window.xiaoshuGetCallRecords=function(){return clone(recordsFor(sid()))};window.xiaoshuSaveCallRecords=function(list){return clone(saveRecords(sid(),list))};window.xiaoshuSimulateIncomingCall=function(kind){return showIncoming(kind||'voice',sid())};window.xiaoshuCallTest={incoming:window.xiaoshuSimulateIncomingCall,start:startOutgoing,fail:failOutgoing,end:completeCall,getActive:function(){return clone(active)},getSettings:function(){return clone(settingsFor(sid()))}};if(window.TaPhoneApp)window.TaPhoneApp.renderCallRecords=renderTaPhoneCalls}
 function boot(){ensureCallButton();ensureSettingsEntry();bind();bindMoreMenuKeyboard();setupMiniDrag();expose();hydrateRecords(sid());hydrateSettings(sid());updateCallButton()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();</script>
-<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v121-retired-modules-physical-cleanup';</script>
+<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v122-mail-call-sticker-card-behavior';</script>
 
 </body></html>

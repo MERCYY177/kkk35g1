@@ -136,6 +136,47 @@
     };
   }
 
+  function buildConversationReplySchedule(replyCount, minDelay, maxDelay, randomFn) {
+    var count = Math.max(0, Math.floor(Number(replyCount) || 0));
+    var min = Math.max(0, Number(minDelay) || 0);
+    var max = Math.max(min, Number(maxDelay) || min);
+    var random = typeof randomFn === 'function' ? randomFn : Math.random;
+    var elapsed = 0;
+    var replyDelays = [];
+    for (var index = 0; index < count; index += 1) {
+      var value = Math.max(0, Math.min(1, Number(random()) || 0));
+      elapsed += min + value * (max - min);
+      replyDelays.push(elapsed);
+    }
+    var stickerRandom = Math.max(0, Math.min(1, Number(random()) || 0));
+    return { replyDelays: replyDelays, stickerDelay: 200 + stickerRandom * 400 };
+  }
+
+  function captureChatScrollAnchor(metrics, userBrowsingHistory) {
+    var source = metrics && typeof metrics === 'object' ? metrics : {};
+    var scrollHeight = Math.max(0, Number(source.scrollHeight) || 0);
+    var clientHeight = Math.max(0, Number(source.clientHeight) || 0);
+    var scrollTop = Math.max(0, Number(source.scrollTop) || 0);
+    var distance = Math.max(0, scrollHeight - clientHeight - scrollTop);
+    var browsing = userBrowsingHistory === true;
+    return {
+      nearBottom: !browsing && distance <= 80,
+      distanceFromBottom: distance,
+      clientHeight: clientHeight,
+      userBrowsingHistory: browsing,
+      suppressHistoryLoad: true
+    };
+  }
+
+  function restoreChatScrollTop(anchor, metrics) {
+    var source = metrics && typeof metrics === 'object' ? metrics : {};
+    var scrollHeight = Math.max(0, Number(source.scrollHeight) || 0);
+    var clientHeight = Math.max(0, Number(source.clientHeight) || 0);
+    var maxTop = Math.max(0, scrollHeight - clientHeight);
+    if (!anchor || anchor.nearBottom) return maxTop;
+    return Math.max(0, Math.min(maxTop, maxTop - Math.max(0, Number(anchor.distanceFromBottom) || 0)));
+  }
+
   global.XiaoshuBehaviorCore = {
     normalizeBehaviorSettings: normalizeBehaviorSettings,
     resolveCardReplyCount: resolveCardReplyCount,
@@ -145,6 +186,9 @@
     trySendPartnerSticker: trySendPartnerSticker,
     getProactiveScheduleFlags: getProactiveScheduleFlags,
     reconcileIncomingCallPlan: reconcileIncomingCallPlan,
-    buildReplyComposeState: buildReplyComposeState
+    buildReplyComposeState: buildReplyComposeState,
+    buildConversationReplySchedule: buildConversationReplySchedule,
+    captureChatScrollAnchor: captureChatScrollAnchor,
+    restoreChatScrollTop: restoreChatScrollTop
   };
 })(typeof window !== 'undefined' ? window : globalThis);

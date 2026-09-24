@@ -78,6 +78,12 @@ function Invoke-CdpIntegrationTest {
   settings.autoSendEnabled=false;settings.autoStickerEnabled=true;settings.autoStickerInterval=1;manageAutoSendTimer();manageAutoStickerTimer();equal(autoSendTimer===null,true);equal(autoStickerTimer!==null,true);
   settings.autoSendEnabled=true;settings.autoStickerEnabled=false;manageAutoSendTimer();manageAutoStickerTimer();equal(autoSendTimer!==null,true);equal(autoStickerTimer===null,true);
   settings.autoSendEnabled=false;settings.autoStickerEnabled=false;manageAutoSendTimer();manageAutoStickerTimer();passed.push('independent timers');
+  await xiaoshuStickerStore.hydrate();var realStageSchedule=window.xsScheduleConversationTask,realRandom=Math.random,realCustomReplies=customReplies.slice(),replySettingSnapshot={randomCardComboEnabled:settings.randomCardComboEnabled,fixedCardReplyCount:settings.fixedCardReplyCount,randomCardComboMin:settings.randomCardComboMin,randomCardComboMax:settings.randomCardComboMax,replyDelayMin:settings.replyDelayMin,replyDelayMax:settings.replyDelayMax};
+  Math.random=function(){return .5};customReplies=['schedule-a','schedule-b','schedule-c','schedule-d'];settings.randomCardComboEnabled=false;settings.replyDelayMin=3000;settings.replyDelayMax=3000;
+  [1,2,3].forEach(function(count){var tasks=[];window.xsScheduleConversationTask=function(mode,task,delay){tasks.push({mode:mode,task:task,delay:delay});return tasks.length};settings.fixedCardReplyCount=count;simulateReply('card');equal(tasks.length,count,'fixed replies schedule once each');tasks.forEach(function(item,index){equal(item.delay,(index+1)*3000,'fixed replies must not include an outer full delay')})});
+  var runtimeStartLength=messages.length,stickerSource=xiaoshuStickerStore.getPool()[0],stickerId=xiaoshuStickerStore.idFor(stickerSource);messages.push({id:'runtime-user-sticker',sender:'user',text:'',stickerId:stickerId,messageKind:'sticker',type:'normal',timestamp:new Date(),status:'sent'});var comboTasks=[];window.xsScheduleConversationTask=function(mode,task,delay){comboTasks.push({mode:mode,task:task,delay:delay});return comboTasks.length};settings.randomCardComboEnabled=true;settings.randomCardComboMin=2;settings.randomCardComboMax=3;simulateReply('card');equal(comboTasks.length,1,'random combination must schedule one text bubble');equal(comboTasks[0].delay,3000,'combined bubble must wait once');comboTasks[0].task();equal(comboTasks.length,2,'partner sticker must be appended once after combined text');equal(comboTasks[1].delay,400,'partner sticker must follow in 200 to 600ms');messages.length=runtimeStartLength;
+  var immediateReplyCalls=0,realSimulateReply=window.simulateReply;window.simulateReply=function(){immediateReplyCalls+=1};equal(xiaoshuStickerStore.send(stickerSource),true);equal(immediateReplyCalls,1,'shared sticker send must invoke the single internal reply scheduler immediately');window.simulateReply=realSimulateReply;
+  window.xsScheduleConversationTask=realStageSchedule;Math.random=realRandom;customReplies=realCustomReplies;Object.assign(settings,replySettingSnapshot);passed.push('single reply delay through actual Chat1 call chain');
   var activeKey=getStorageKey('chatSettings'),otherKey=APP_PREFIX+'integration-other_chatSettings';
   await localforage.setItem(otherKey,{autoStickerEnabled:false,fixedCardReplyCount:7});
   settings.autoStickerEnabled=true;settings.autoStickerInterval=9;settings.autoStickerChance=100;settings.randomCardComboEnabled=true;settings.randomCardComboMin=2;settings.randomCardComboMax=3;settings.fixedCardReplyCount=4;
@@ -103,6 +109,23 @@ function Invoke-CdpIntegrationTest {
   var imageOnlyLetter=xiaoshuMailbox.getState().items.find(function(item){return item.images.indexOf(imageOnlyRef)!==-1});await xiaoshuMailbox.openLetterById(imageOnlyLetter.id);var realConfirm=window.confirm;window.confirm=function(){return true};document.getElementById('xsMailViewDelete').click();await waitFor(function(){return !xiaoshuMailbox.getState().items.some(function(item){return item.id===imageOnlyLetter.id})},4000,'image letter delete');await new Promise(function(resolve){setTimeout(resolve,150)});equal(await localforage.__xsStrict.getItem('kkk35g_mail_media_v1_'+imageOnlyRef),null,'unreferenced mail media must be deleted');window.confirm=realConfirm;passed.push('mail media reference cleanup');
   window.kkk35gOpenInteractionTools();var frame=document.getElementById('kkk35gInteractionFrame');await waitFor(function(){return frame&&frame.contentWindow&&frame.contentWindow.xiaoshuInteractionMediaApi},8000,'leaf media API');var leafWindow=frame.contentWindow,leafData='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',leafHub={version:3,modules:{leaf:true,can:false,today:false,tree:false},settings:{canYesRate:72,leafMistapRate:10,todayConfirmRate:70},ui:{fontScale:100},pools:{leaf:[{id:'leaf-migration',question:'image question',options:['A'],images:[leafData]}],askTA:[],taAsksMe:[],today:[],tree:[]},records:[],todayPending:[],drafts:{leaf:null,can:{askTA:null,taAsksMe:null},today:null,todayAnswer:'',todayMode:null,treeDraw:'',treeWrite:''},leafDrawnIds:[],meta:{}};leafWindow.localStorage.setItem('kkk35g_interaction_hub_v1',JSON.stringify(leafHub));await leafWindow.xiaoshuInteractionMediaApi.reload();var migratedLeaf=leafWindow.xiaoshuInteractionMediaApi.getState(),leafRef=migratedLeaf.pools.leaf[0].images[0];equal(/^leafimg_/.test(leafRef),true,'inline leaf image must migrate to a reference');equal(JSON.stringify(migratedLeaf).indexOf('data:image/'),-1,'leaf state must contain references, not image bodies');equal(await localforage.__xsStrict.getItem('kkk35g_interaction_leaf_media_v1_'+leafRef),leafData);await leafWindow.xiaoshuInteractionMediaApi.gc();equal(await localforage.__xsStrict.getItem('kkk35g_interaction_leaf_media_v1_'+leafRef),leafData,'leaf gc must preserve referenced image');passed.push('leaf migration persistence and gc');var leafInput=leafWindow.document.getElementById('leafImagesInput'),leafTransfer=new leafWindow.DataTransfer();leafTransfer.items.add(await imageFile('#333','leaf-fail.png'));var leafRealSet=localforage.__xsStrict.setItem;localforage.__xsStrict.setItem=async function(){var denied=new Error('denied');denied.name='SecurityError';throw denied};Object.defineProperty(leafInput,'files',{value:leafTransfer.files,configurable:true});leafInput.dispatchEvent(new leafWindow.Event('change',{bubbles:true}));await new Promise(function(resolve){setTimeout(resolve,400)});localforage.__xsStrict.setItem=leafRealSet;equal(leafWindow.xiaoshuInteractionMediaApi.getEditingImages().length,0,'failed leaf write must not create a reference or fake preview');equal(leafInput.value,'','leaf input must reset after failure');passed.push('leaf write failure has no fake preview');
   var backup=await ChatBackup.buildBackupPayload();equal(Object.prototype.hasOwnProperty.call(backup.localforage,'kkk35g_mail_media_v1_'+textImageRef),true,'backup must include mail media');equal(Object.prototype.hasOwnProperty.call(backup.localforage,'kkk35g_interaction_leaf_media_v1_'+leafRef),true,'backup must include leaf media');equal(backup.manifest.appMedia.mail>=1,true,'manifest must count mail media');equal(backup.manifest.appMedia.leaf>=1,true,'manifest must count leaf media');var preflight=ChatBackup.preflightBackup(backup);equal(preflight.ok,true,'media backup preflight must pass');await localforage.__xsStrict.removeItem('kkk35g_mail_media_v1_'+textImageRef);await localforage.__xsStrict.removeItem('kkk35g_interaction_leaf_media_v1_'+leafRef);await ChatBackup.applyBackupToStorage(backup,{preflight:preflight,selectedCategoryIds:['chat','interactionHub']});equal(await localforage.__xsStrict.getItem('kkk35g_mail_media_v1_'+textImageRef)!==null,true,'restore must rewrite mail media');equal(await localforage.__xsStrict.getItem('kkk35g_interaction_leaf_media_v1_'+leafRef)!==null,true,'restore must rewrite leaf media');passed.push('media backup restore transaction');
+  var unresolvedSrc=leafData,unresolvedId=xiaoshuStickerStore.idFor(unresolvedSrc),runtimeMessageId='runtime-sticker-'+Date.now();
+  addMessage({id:runtimeMessageId,sender:settings.partnerName||'对方',text:'',timestamp:new Date(),stickerId:unresolvedId,messageKind:'sticker',status:'received',type:'normal',conversationId:'card'});
+  var runtimeWrapper=document.querySelector('[data-msg-id="'+runtimeMessageId+'"]')||document.querySelector('[data-id="'+runtimeMessageId+'"]');
+  var pendingFrame=runtimeWrapper&&runtimeWrapper.querySelector('[data-sticker-id="'+unresolvedId+'"]');
+  equal(!!pendingFrame,true,'cold sticker must render a placeholder frame');
+  var pendingStyle=getComputedStyle(pendingFrame);equal(pendingStyle.width,'100px','cold sticker placeholder width');equal(pendingStyle.height,'100px','cold sticker placeholder height');
+  xiaoshuStickerStore.register(unresolvedSrc);window.dispatchEvent(new CustomEvent('xiaoshu-sticker-resources-ready',{detail:{sessionId:String(SESSION_ID)}}));
+  await waitFor(function(){var f=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+unresolvedId+'"]');return f&&f.classList.contains('is-loaded')},4000,'late sticker resource refresh');
+  var badSrc='assets/stickers/__missing_chat1_runtime__.png',badId=xiaoshuStickerStore.register(badSrc),badMessageId='runtime-bad-sticker-'+Date.now();
+  addMessage({id:badMessageId,sender:settings.partnerName||'对方',text:'',timestamp:new Date(),stickerId:badId,messageKind:'sticker',status:'received',type:'normal',conversationId:'card'});
+  try{await waitFor(function(){var f=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+badId+'"]');return !!(f&&f.classList.contains('load-failed'))},10000,'failed sticker retry state')}catch(runtimeStickerError){var badFrameNow=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+badId+'"]');throw new Error(runtimeStickerError.message+' DOM='+(badFrameNow?badFrameNow.outerHTML:'missing'))}
+  var failedFrame=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+badId+'"]'),retryLabel=String.fromCharCode(28857,20987,37325,35797);equal(failedFrame.textContent.indexOf(retryLabel)>=0,true,'failed sticker must show a clear retry action text='+JSON.stringify(failedFrame.textContent));equal(Number(failedFrame.dataset.retryCount),2,'sticker must retry at most twice');failedFrame.click();equal(failedFrame.classList.contains('is-loading'),true,'failed sticker click must retry');
+  var realCapture=window.xiaoshuCaptureChatRelayout,realRestore=window.xiaoshuRestoreChatRelayout,captureCalls=0,restoreCalls=0;
+  window.xiaoshuCaptureChatRelayout=function(){captureCalls+=1;return realCapture.apply(this,arguments)};window.xiaoshuRestoreChatRelayout=function(){restoreCalls+=1;return realRestore.apply(this,arguments)};
+  var chatInput=document.getElementById('message-input');chatInput.dispatchEvent(new Event('focusin',{bubbles:true}));chatInput.value='连续输入';chatInput.dispatchEvent(new Event('input',{bubbles:true}));chatInput.dispatchEvent(new Event('compositionstart',{bubbles:true}));chatInput.value='连续输入'+String.fromCharCode(10)+'拼音';var composingInput=new Event('input',{bubbles:true});Object.defineProperty(composingInput,'isComposing',{value:true});chatInput.dispatchEvent(composingInput);chatInput.dispatchEvent(new Event('compositionend',{bubbles:true}));
+  if(window.visualViewport)window.visualViewport.dispatchEvent(new Event('resize'));window.dispatchEvent(new Event('resize'));await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve)})});
+  equal(captureCalls>=2,true,'focus input and viewport changes must capture scroll anchors');equal(restoreCalls>=1,true,'input and viewport changes must restore scroll anchors');equal(Number(window.__xiaoshuSuppressHistoryLoadUntil||0)>Date.now(),true,'programmatic anchor restore must suppress history loading');window.xiaoshuCaptureChatRelayout=realCapture;window.xiaoshuRestoreChatRelayout=realRestore;passed.push('Chat1 sticker loading and keyboard relayout');
   return {ok:true,passed:passed};
 })()
 '@
@@ -118,7 +141,7 @@ function Invoke-CdpIntegrationTest {
         $response = $builder.ToString() | ConvertFrom-Json
         if ($response.result.exceptionDetails) { throw $response.result.exceptionDetails.exception.description }
         $value = $response.result.result.value
-        if (-not $value.ok -or $value.passed.Count -ne 10) { throw ('Integration result invalid: ' + ($value | ConvertTo-Json -Compress)) }
+        if (-not $value.ok -or $value.passed.Count -ne 12) { throw ('Integration result invalid: ' + ($value | ConvertTo-Json -Compress)) }
         return $value
     }
     finally {
@@ -136,7 +159,7 @@ try {
     if ($indexSource -match '<script[^>]+src=["'']behavior-core\.js["'']') { throw 'Production page still depends on external behavior-core.js.' }
     if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'media-core.js'))) { throw 'media-core.js is missing.' }
     if ($indexSource -notmatch '<script src="media-core\.js"></script>') { throw 'Production page does not load media-core.js.' }
-    if ($indexSource -notmatch "v124-indexeddb-media-mail-attachments") { throw 'Release marker was not updated to v124.' }
+    if ($indexSource -notmatch "v125-chat1-sticker-scroll-stability") { throw 'Release marker was not updated to v125.' }
     if ($indexSource -notmatch 'function isStrictMediaKey' -or $indexSource -notmatch 'fallbackSet\(k,v\)\{if\(isStrictMediaKey\(k\)\)') { throw 'Media localStorage fallback guard is missing.' }
 
     $behavior = Invoke-HeadlessDump (Join-Path $PSScriptRoot 'behavior-regression.html') 'behavior'
@@ -147,6 +170,11 @@ try {
     $media = Invoke-HeadlessDump (Join-Path $PSScriptRoot 'media-storage-regression.html') 'media-storage'
     if ($media.Html -notmatch 'data-status="passed"' -or $media.Html -notmatch 'PASS 16') {
         throw "Media storage regression suite failed.`n$($media.Html)"
+    }
+
+    $chat1Runtime = Invoke-HeadlessDump (Join-Path $PSScriptRoot 'chat1-runtime-regression.html') 'chat1-runtime'
+    if ($chat1Runtime.Html -notmatch 'data-status="passed"' -or $chat1Runtime.Html -notmatch 'PASS 8') {
+        throw "Chat1 runtime regression suite failed.`n$($chat1Runtime.Html)"
     }
 
     $integration = Invoke-CdpIntegrationTest
@@ -172,7 +200,8 @@ try {
 
     Write-Output 'PASS 13 behavior tests'
     Write-Output 'PASS 16 media storage and migration tests'
-    Write-Output 'PASS 10 full-page integration tests'
+    Write-Output 'PASS 8 Chat1 runtime scheduling and scroll-anchor tests'
+    Write-Output 'PASS 12 full-page integration tests'
     Write-Output 'PASS full-page startup and rendered-control checks'
     Write-Output 'PASS inline-core parity and explicit missing-core failure checks'
 }

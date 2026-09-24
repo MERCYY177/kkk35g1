@@ -2586,6 +2586,47 @@ global.ChatBackup={
     };
   }
 
+  function buildConversationReplySchedule(replyCount, minDelay, maxDelay, randomFn) {
+    var count = Math.max(0, Math.floor(Number(replyCount) || 0));
+    var min = Math.max(0, Number(minDelay) || 0);
+    var max = Math.max(min, Number(maxDelay) || min);
+    var random = typeof randomFn === 'function' ? randomFn : Math.random;
+    var elapsed = 0;
+    var replyDelays = [];
+    for (var index = 0; index < count; index += 1) {
+      var value = Math.max(0, Math.min(1, Number(random()) || 0));
+      elapsed += min + value * (max - min);
+      replyDelays.push(elapsed);
+    }
+    var stickerRandom = Math.max(0, Math.min(1, Number(random()) || 0));
+    return { replyDelays: replyDelays, stickerDelay: 200 + stickerRandom * 400 };
+  }
+
+  function captureChatScrollAnchor(metrics, userBrowsingHistory) {
+    var source = metrics && typeof metrics === 'object' ? metrics : {};
+    var scrollHeight = Math.max(0, Number(source.scrollHeight) || 0);
+    var clientHeight = Math.max(0, Number(source.clientHeight) || 0);
+    var scrollTop = Math.max(0, Number(source.scrollTop) || 0);
+    var distance = Math.max(0, scrollHeight - clientHeight - scrollTop);
+    var browsing = userBrowsingHistory === true;
+    return {
+      nearBottom: !browsing && distance <= 80,
+      distanceFromBottom: distance,
+      clientHeight: clientHeight,
+      userBrowsingHistory: browsing,
+      suppressHistoryLoad: true
+    };
+  }
+
+  function restoreChatScrollTop(anchor, metrics) {
+    var source = metrics && typeof metrics === 'object' ? metrics : {};
+    var scrollHeight = Math.max(0, Number(source.scrollHeight) || 0);
+    var clientHeight = Math.max(0, Number(source.clientHeight) || 0);
+    var maxTop = Math.max(0, scrollHeight - clientHeight);
+    if (!anchor || anchor.nearBottom) return maxTop;
+    return Math.max(0, Math.min(maxTop, maxTop - Math.max(0, Number(anchor.distanceFromBottom) || 0)));
+  }
+
   global.XiaoshuBehaviorCore = {
     normalizeBehaviorSettings: normalizeBehaviorSettings,
     resolveCardReplyCount: resolveCardReplyCount,
@@ -2595,7 +2636,10 @@ global.ChatBackup={
     trySendPartnerSticker: trySendPartnerSticker,
     getProactiveScheduleFlags: getProactiveScheduleFlags,
     reconcileIncomingCallPlan: reconcileIncomingCallPlan,
-    buildReplyComposeState: buildReplyComposeState
+    buildReplyComposeState: buildReplyComposeState,
+    buildConversationReplySchedule: buildConversationReplySchedule,
+    captureChatScrollAnchor: captureChatScrollAnchor,
+    restoreChatScrollTop: restoreChatScrollTop
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -3481,6 +3525,11 @@ const key = (typeof xsConversationMessageStorageKey === 'function') ? xsConversa
 const seq = ++window.__xsChatMessagesSaveSeq;
 window.__xsChatMessagesSaveChain = window.__xsChatMessagesSaveChain.catch(function(){ return null; }).then(async function(){
 try {
+const hasStickerReference = snapshot.some(function(item){ return !!(item && item.stickerId); });
+if (hasStickerReference && window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.flushMessageResources === 'function') {
+const resourceSaved = await window.xiaoshuStickerStore.flushMessageResources();
+if (!resourceSaved) throw new Error('表情资源映射尚未可靠保存');
+}
 await localforage.setItem(key, snapshot);
 try { xsWriteTailFullBackup('chat-save-snapshot', snapshot); } catch(_e) {}
 window.__xsChatMessagesSaveLastOk = Date.now();
@@ -4069,9 +4118,11 @@ content = `<div class="voice-message-bubble" data-voice-url="${xsQuoteEscape(voi
 + `</div>`;
 } else if (isStickerMessage || msg.image) {
 const __xsImageSrc = xsSafeResourceUrl(isStickerMessage ? __xsStickerSrc : msg.image, 'image');
-content += __xsImageSrc
-? `<img src="${xsQuoteEscape(__xsImageSrc)}" data-view-src="${xsQuoteEscape(__xsImageSrc)}"${isStickerMessage ? ` data-sticker-id="${xsQuoteEscape(msg.stickerId)}"` : ''} class="message-image${isImageOnly ? ' message-image-only' : ''}" alt="${isStickerMessage ? '表情包' : '图片'}" style="max-width:${isImageOnly ? '100px' : '100px'}; border-radius: 12px;${!isImageOnly ? ' margin-top: 6px;' : ''} cursor: pointer;">`
-: `<div class="xs-sticker-resource-pending"${isStickerMessage ? ` data-sticker-id="${xsQuoteEscape(msg.stickerId)}"` : ''}>[表情包加载中]</div>`;
+if (isStickerMessage) {
+content += `<div class="xs-chat-sticker-frame ${__xsImageSrc ? 'is-loading' : 'is-pending'}" data-sticker-id="${xsQuoteEscape(msg.stickerId)}" data-sticker-src="${xsQuoteEscape(__xsImageSrc)}" data-partner-priority="${msg.sender === 'user' ? '0' : '1'}" role="button" tabindex="0" aria-label="表情包加载中"><span class="xs-chat-sticker-status">表情加载中</span><img class="message-image message-image-only xs-chat-sticker-image" alt="表情包" width="100" height="100" decoding="async"${msg.sender === 'user' ? '' : ' fetchpriority="high"'}></div>`;
+} else if (__xsImageSrc) {
+content += `<img src="${xsQuoteEscape(__xsImageSrc)}" data-view-src="${xsQuoteEscape(__xsImageSrc)}" class="message-image${isImageOnly ? ' message-image-only' : ''}" alt="图片" decoding="async" style="max-width:100px; border-radius: 12px;${!isImageOnly ? ' margin-top: 6px;' : ''} cursor: pointer;">`;
+}
 } else if (msg.video || msg.videoBlobKey) {
 const __xsVideoRaw = (msg.videoBlobKey && String(msg.video || '').startsWith('blob:')) ? '' : (msg.video || '');
 const __xsVideoSrc = xsSafeResourceUrl(__xsVideoRaw, 'video');
@@ -4095,6 +4146,15 @@ const __xsVName = msg.videoName ? String(msg.videoName).replace(/[&<>"]/g,functi
     if (isImageOnly || isVideoOnly) messageDiv.classList.add('xiaoshu-media-message-outer');
     if (isVoice) messageDiv.classList.add('xiaoshu-voice-message-outer');
     messageDiv.innerHTML = messageHTML;
+
+    const __xsStickerFrame = messageDiv.querySelector('.xs-chat-sticker-frame[data-sticker-id]');
+    if (__xsStickerFrame && typeof window.xiaoshuBindChatStickerFrame === 'function') {
+        window.xiaoshuBindChatStickerFrame(__xsStickerFrame);
+    }
+    const __xsRegularImage = messageDiv.querySelector('img.message-image:not(.xs-chat-sticker-image)');
+    if (__xsRegularImage && typeof window.xiaoshuBindChatMediaImage === 'function') {
+        window.xiaoshuBindChatMediaImage(__xsRegularImage);
+    }
 
     const __xsMessageImage = messageDiv.querySelector('img.message-image[data-view-src]');
     if (__xsMessageImage) {
@@ -4716,9 +4776,6 @@ const addMessage = (message, options = null) => {
                 }
 
 if (!isBatchMode && type === 'normal') {
-    const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-    const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
-
     const readDelay = 1500 + Math.random() * 2500;
     setTimeout(() => {
         const targetList = xsGetConversationMessagesSync(__xsSendConversation);
@@ -4732,9 +4789,7 @@ if (!isBatchMode && type === 'normal') {
         }
     }, readDelay);
 
-    window.__xiaoshuPendingReplyTimer = setTimeout(() => {
-        simulateReply('card');
-    }, randomDelay);
+    simulateReply('card');
 }
 };
 
@@ -4914,9 +4969,7 @@ function updateBatchPreview() {
 
             try { if (typeof xsQueueChatMessagesSave === 'function') xsQueueChatMessagesSave('batch-send-sync'); } catch(e) {}
 
-            const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-            const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
-            setTimeout(function(){ simulateReply(__xsBatchConversation); }, sendingList.length * 300 + randomDelay);
+            simulateReply(__xsBatchConversation);
             isBatchMode = false; batchMessages = [];
             DOMElements.batchBtn.classList.remove('active'); DOMElements.batchPreview.style.display = 'none';
             const placeholder = "";
@@ -5024,10 +5077,14 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
             if (!replyPayloads.length || !replyPayloads[0].text) return;
 
             // 确认有可用回复后再展示“正在输入中”，避免空转
-            let delay = 0;
+            const replySchedule = window.XiaoshuBehaviorCore.buildConversationReplySchedule(
+                replyPayloads.length,
+                settings.replyDelayMin,
+                settings.replyDelayMax,
+                Math.random
+            );
             for (let i = 0; i < replyPayloads.length; i++) {
-                const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-                delay += settings.replyDelayMin + Math.random() * delayRange;
+                const delay = replySchedule.replyDelays[i];
                 xsScheduleConversationTask(__xsReplyConversation, () => {
                     try {
                     const payload = replyPayloads[i];
@@ -5134,7 +5191,7 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                             if (typeof window._sendPartnerNotification === 'function') {
                                 window._sendPartnerNotification(settings.partnerName || '对方', '[表情包]');
                             }
-                        }, 400 + Math.random() * 600);
+                        }, replySchedule.stickerDelay);
                     }
 
                     if (separateEmoji) {
@@ -10230,9 +10287,7 @@ if (typeof showNotification === 'function') showNotification('保存失败', 'er
 }
 hideModal(DOMElements.pokeModal.modal);
 DOMElements.pokeModal.input.value = '';
-const delayRange = settings.replyDelayMax - settings.replyDelayMin;
-const randomDelay = settings.replyDelayMin + Math.random() * delayRange;
-setTimeout(simulateReply, randomDelay);
+simulateReply('card');
 });
 }
 function initHeaderAndSettingsListeners() {
@@ -10669,6 +10724,7 @@ sendMessage();
 let inputHeightRAF = null;
 DOMElements.messageInput.addEventListener('input', () => {
 if (inputHeightRAF) cancelAnimationFrame(inputHeightRAF);
+const chatRelayoutAnchor = typeof window.xiaoshuCaptureChatRelayout === 'function' ? window.xiaoshuCaptureChatRelayout() : null;
 inputHeightRAF = requestAnimationFrame(() => {
 const input = DOMElements.messageInput;
 // 保存当前滚动位置
@@ -10686,6 +10742,9 @@ input.style.overflowY = 'auto';
 } else {
 input.style.overflow = 'hidden';
 }
+requestAnimationFrame(() => requestAnimationFrame(() => {
+if (chatRelayoutAnchor && typeof window.xiaoshuRestoreChatRelayout === 'function') window.xiaoshuRestoreChatRelayout(chatRelayoutAnchor);
+}));
 });
 });
 DOMElements.imageInput.addEventListener('change', () => {
@@ -17365,6 +17424,20 @@ else if(mq.addListener) mq.addListener(onChange);
 window.XiaoshuSystemTheme = {sync:function(){ return sync(true); }, current:function(){ return wantsDark() ? 'dark' : 'light'; }};
 })();
 </script>
+<style id="xiaoshu-chat1-sticker-loader-v1-css">.xs-chat-sticker-frame{position:relative!important;width:100px!important;height:100px!important;min-width:100px!important;min-height:100px!important;max-width:100px!important;max-height:100px!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important;border-radius:12px!important;background:rgba(var(--accent-color-rgb,127,166,205),.08)!important;color:var(--text-secondary,#888)!important;cursor:pointer!important;box-sizing:border-box!important;}.xs-chat-sticker-frame::before{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 20%,rgba(255,255,255,.3) 45%,transparent 70%);transform:translateX(-100%);animation:xsStickerLoading 1.4s ease-in-out infinite;opacity:.55;pointer-events:none;}.xs-chat-sticker-frame.is-loaded{background:transparent!important;}.xs-chat-sticker-frame.is-loaded::before,.xs-chat-sticker-frame.load-failed::before{display:none!important;}.xs-chat-sticker-image{position:absolute!important;inset:0!important;width:100px!important;height:100px!important;max-width:100px!important;max-height:100px!important;object-fit:contain!important;display:block!important;opacity:0!important;color:transparent!important;transition:opacity .16s ease!important;}.xs-chat-sticker-frame.is-loaded .xs-chat-sticker-image{opacity:1!important;}.xs-chat-sticker-status{position:relative;z-index:2;max-width:88px;padding:5px 7px;border-radius:9px;font-size:11px;line-height:1.35;text-align:center;background:rgba(255,255,255,.72);pointer-events:none;}.xs-chat-sticker-frame.is-loaded .xs-chat-sticker-status{display:none!important;}.xs-chat-sticker-frame.load-failed .xs-chat-sticker-status{pointer-events:auto;font-weight:700;color:var(--text-secondary,#777);}@keyframes xsStickerLoading{to{transform:translateX(100%);}}</style>
+<script id="xiaoshu-chat1-sticker-loader-v1-js">(function(){
+'use strict';
+if(window.__xiaoshuChat1StickerLoaderV1)return;window.__xiaoshuChat1StickerLoaderV1=true;
+function capture(){try{return typeof window.xiaoshuCaptureChatRelayout==='function'?window.xiaoshuCaptureChatRelayout():null}catch(e){return null}}
+function restore(anchor){if(!anchor)return;requestAnimationFrame(function(){requestAnimationFrame(function(){try{if(typeof window.xiaoshuRestoreChatRelayout==='function')window.xiaoshuRestoreChatRelayout(anchor)}catch(e){}})})}
+function resolve(id){try{return window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.resolve==='function'?window.xiaoshuStickerStore.resolve(id):''}catch(e){return''}}
+function retryUrl(src,attempt){if(/^(?:data:|blob:|file:|content:)/i.test(src))return src;return src+(src.indexOf('?')>=0?'&':'?')+'__xs_sticker_retry='+attempt}
+function setState(frame,state,text){frame.classList.remove('is-pending','is-loading','is-loaded','load-failed');frame.classList.add(state);var status=frame.querySelector('.xs-chat-sticker-status');if(status)status.textContent=text||'';frame.setAttribute('aria-label',text||'表情包')}
+function start(frame,reset){if(!frame||!frame.isConnected)return;var id=frame.getAttribute('data-sticker-id')||'',src=frame.getAttribute('data-sticker-src')||resolve(id);if(!src){setState(frame,'is-pending','表情加载中');return}frame.setAttribute('data-sticker-src',src);var img=frame.querySelector('img');if(!img)return;if(reset)frame.dataset.retryCount='0';var anchor=capture();setState(frame,'is-loading','表情加载中');var settled=false,watchdog=null;function cleanup(){clearTimeout(watchdog);img.onload=null;img.onerror=null}img.onload=function(){if(settled)return;settled=true;cleanup();img.setAttribute('data-view-src',src);setState(frame,'is-loaded','表情包');restore(anchor)};img.onerror=function(){if(settled)return;settled=true;cleanup();var retries=Math.max(0,Number(frame.dataset.retryCount)||0);if(retries<2){retries+=1;frame.dataset.retryCount=String(retries);setTimeout(function(){if(frame.isConnected)start(frame,false)},100*retries);return}setState(frame,'load-failed','表情加载失败，点击重试');restore(anchor)};watchdog=setTimeout(function(){if(!settled&&typeof img.onerror==='function')img.onerror()},1200);img.removeAttribute('src');requestAnimationFrame(function(){if(frame.isConnected)img.src=retryUrl(src,Math.max(0,Number(frame.dataset.retryCount)||0))})}
+function bind(frame){if(!frame||frame.__xsStickerBound)return;frame.__xsStickerBound=true;frame.dataset.retryCount=frame.dataset.retryCount||'0';frame.addEventListener('click',function(){if(frame.classList.contains('load-failed')){start(frame,true);return}if(frame.classList.contains('is-loaded')){var img=frame.querySelector('img'),src=img&&(img.getAttribute('data-view-src')||frame.getAttribute('data-sticker-src'));if(src&&typeof window.viewImage==='function')window.viewImage(src)}});frame.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' ')&&frame.classList.contains('load-failed')){e.preventDefault();start(frame,true)}});if(frame.isConnected)start(frame,false);else requestAnimationFrame(function(){start(frame,false)})}
+function refresh(){document.querySelectorAll('.xs-chat-sticker-frame[data-sticker-id]').forEach(function(frame){var src=resolve(frame.getAttribute('data-sticker-id'));if(src&&(!frame.getAttribute('data-sticker-src')||frame.classList.contains('is-pending'))){frame.setAttribute('data-sticker-src',src);start(frame,false)}})}
+window.xiaoshuBindChatStickerFrame=bind;window.xiaoshuBindChatMediaImage=function(img){if(!img||img.__xsMediaAnchorBound)return;img.__xsMediaAnchorBound=true;var anchor=capture(),done=function(){restore(anchor)};if(img.complete)done();else{img.addEventListener('load',done,{once:true});img.addEventListener('error',done,{once:true})}};window.addEventListener('xiaoshu-sticker-resources-ready',refresh);
+})();</script>
 <style id="xiaoshu-home-chat-layout-unified-v1-css">html,body{width:100vw!important;max-width:100vw!important;height:100dvh!important;min-height:100dvh!important;margin:0!important;padding:0!important;overflow:hidden!important;overflow-x:hidden!important;overscroll-behavior:none!important;}body{position:fixed!important;inset:0!important;display:block!important;}#home-page-bg{position:fixed!important;inset:0!important;z-index:1!important;display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;transition:background .5s ease,opacity .18s ease!important;}#home-container.home-container{display:none!important;position:relative!important;z-index:3!important;flex-direction:column!important;flex-shrink:0!important;min-width:0!important;box-sizing:border-box!important;}.header{flex:0 0 auto!important;z-index:80!important;}.main-chat-area{position:fixed!important;left:0!important;right:0!important;top:var(--xiaoshu-chat-top,0px)!important;bottom:var(--xiaoshu-input-h,74px)!important;width:100%!important;max-width:100vw!important;height:auto!important;min-width:0!important;min-height:0!important;z-index:3!important;display:block!important;overflow:hidden!important;padding:0!important;margin:0!important;box-sizing:border-box!important;background:transparent!important;}#chat-container{position:absolute!important;inset:0!important;width:100%!important;max-width:100vw!important;height:100%!important;min-width:0!important;min-height:0!important;max-height:none!important;display:block!important;overflow:hidden!important;padding:0!important;margin:0!important;box-sizing:border-box!important;scroll-behavior:auto!important;-webkit-overflow-scrolling:auto!important;}#chat-container>.xiaoshu-message-stack{position:absolute!important;inset:0!important;width:100%!important;height:auto!important;min-width:0!important;min-height:0!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important;padding:25px 24px 34px!important;margin:0!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;justify-content:flex-start!important;align-items:stretch!important;gap:2px!important;scrollbar-width:none!important;-ms-overflow-style:none!important;-webkit-overflow-scrolling:touch!important;overscroll-behavior:contain!important;}#chat-container>.xiaoshu-message-stack::-webkit-scrollbar{display:none!important;width:0!important;}.input-area-wrapper{position:fixed!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;max-width:100vw!important;min-width:0!important;z-index:50!important;display:block!important;flex-shrink:0!important;box-sizing:border-box!important;background-color:var(--input-area-bg)!important;padding-bottom:env(safe-area-inset-bottom,0px)!important;padding-left:env(safe-area-inset-left,0px)!important;padding-right:env(safe-area-inset-right,0px)!important;transition:background-color .5s ease!important;}#chat-container>[data-xiaoshu-bottom-spacer="1"],#chat-container>.chat-bottom-spacer,#chat-container>.xiaoshu-message-stack>[data-xiaoshu-bottom-spacer="1"],#chat-container>.xiaoshu-message-stack>.chat-bottom-spacer{display:none!important;width:0!important;height:0!important;min-height:0!important;max-height:0!important;flex:0 0 0!important;padding:0!important;margin:0!important;border:0!important;overflow:hidden!important;pointer-events:none!important;}#chat-container>.xiaoshu-message-stack>.message-wrapper,#chat-container>.xiaoshu-message-stack>.date-divider,#chat-container>.xiaoshu-message-stack>.date-separator,#chat-container>.xiaoshu-message-stack>.system-message,#chat-container>.xiaoshu-message-stack>.call-event,#chat-container>.xiaoshu-message-stack>.call-event-message{flex:0 0 auto!important;position:relative!important;visibility:visible!important;opacity:1!important;margin-top:0!important;}#chat-container>.xiaoshu-message-stack>.message-wrapper{display:flex!important;overflow:visible!important;}#chat-container .message-content-wrapper{visibility:visible!important;opacity:1!important;overflow:visible!important;}#chat-container .message:not(.message-image-bubble-none){visibility:visible!important;opacity:1!important;min-width:24px!important;min-height:20px!important;}#empty-state{position:fixed!important;left:50%!important;top:calc((var(--xiaoshu-chat-top,0px) + (100dvh - var(--xiaoshu-chat-top,0px) - var(--xiaoshu-input-h,74px)) / 2))!important;transform:translate(-50%,-50%)!important;}body.xiaoshu-first-paint-ready.home-active #home-page-bg,body.xiaoshu-first-paint-ready.home-active #home-container.home-container,body.xiaoshu-first-paint-ready #home-container.home-container.active{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}body.xiaoshu-first-paint-ready.home-active #home-page-bg{display:block!important;}body.xiaoshu-first-paint-ready.home-active #home-container.home-container,body.xiaoshu-first-paint-ready #home-container.home-container.active{display:flex!important;}body.home-active .header,body.home-active .main-chat-area,body.home-active #chat-container,body.home-active #empty-state,body.home-active .input-area-wrapper,body:not(.xiaoshu-chat-active) .header,body:not(.xiaoshu-chat-active) .main-chat-area,body:not(.xiaoshu-chat-active) #chat-container,body:not(.xiaoshu-chat-active) #empty-state,body:not(.xiaoshu-chat-active) .input-area-wrapper{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}body.xiaoshu-first-paint-ready.xiaoshu-chat-active .header,body.xiaoshu-first-paint-ready.xiaoshu-chat-active .main-chat-area,body.xiaoshu-first-paint-ready.xiaoshu-chat-active #chat-container,body.xiaoshu-first-paint-ready.xiaoshu-chat-active .input-area-wrapper{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}body.xiaoshu-chat-active #home-container,body.xiaoshu-chat-active #home-page-bg{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}body.xiaoshu-page-switching,body.xiaoshu-page-switching *{transition:none!important;animation-duration:.001ms!important;animation-delay:0s!important;}#chat-container>.xiaoshu-message-stack>.message-wrapper{min-width:0!important;max-width:100%!important;}#chat-container .message-content-wrapper{min-width:0!important;max-width:calc(100% - 44px)!important;box-sizing:border-box!important;}#chat-container .message:not(.message-image-bubble-none):not(:has(img)):not(:has(video)):not(:has(canvas)):not(:has(svg)){max-width:min(72vw,100%)!important;box-sizing:border-box!important;overflow-wrap:anywhere!important;word-break:break-word!important;white-space:normal!important;}</style>
 <script id="xiaoshu-home-chat-layout-unified-v1-js">(function(){
 'use strict';
@@ -17372,7 +17445,7 @@ if (window.__xiaoshuHomeChatLayoutUnifiedV3) return;
 window.__xiaoshuHomeChatLayoutUnifiedV3 = true;
 window.__xiaoshuHomeChatLayoutUnifiedV2 = true;
 window.__xiaoshuHomeChatLayoutUnifiedV1 = true;
-var scheduled=false, observerInstalled=false, relayoutSnapshot=null;
+var scheduled=false, anchoredScheduled=false, observerInstalled=false, relayoutSnapshot=null, stableSnapshot=null, userBrowsingHistory=false, userScrollIntentUntil=0, programmaticScrollUntil=0;
 var lastTop=0, lastInputHeight=74;
 function container(){return document.getElementById('chat-container')||document.querySelector('.chat-container');}
 function inputArea(){return document.querySelector('.input-area-wrapper');}
@@ -17388,6 +17461,7 @@ if(chatVisible){
 }
 document.documentElement.style.setProperty('--xiaoshu-chat-top',lastTop+'px');
 document.documentElement.style.setProperty('--xiaoshu-input-h',lastInputHeight+'px');
+if(window.visualViewport){document.documentElement.style.setProperty('--xiaoshu-visual-height',Math.max(0,visualViewport.height||0)+'px');document.documentElement.style.setProperty('--xiaoshu-visual-offset-top',Math.max(0,visualViewport.offsetTop||0)+'px');}
 }
 function isSpacer(el){return !!(el&&el.nodeType===1&&el.matches('[data-xiaoshu-bottom-spacer="1"],.chat-bottom-spacer'));}
 function isRealChatItem(el){
@@ -17420,15 +17494,16 @@ var preserveIncoming=Date.now()<Number(window.__xiaoshuIncomingPreserveUntil||0)
 if(!preserveIncoming&&forceBottom)s.scrollTop=s.scrollHeight;
 }
 function schedule(forceBottom){if(scheduled)return;scheduled=true;requestAnimationFrame(function(){scheduled=false;apply(!!forceBottom);});}
+function queueAnchoredLayout(){if(!relayoutSnapshot)relayoutSnapshot=stableSnapshot||window.xiaoshuCaptureChatRelayout();if(anchoredScheduled)return;anchoredScheduled=true;requestAnimationFrame(function(){apply(false);requestAnimationFrame(function(){anchoredScheduled=false;window.xiaoshuRestoreChatRelayout()})})}
 window.xiaoshuCaptureChatRelayout=function(){
-var s=moveMessagesIntoStack();relayoutSnapshot={near:nearBottom(s,180),distance:bottomDistance(s),top:s?s.scrollTop:0};return relayoutSnapshot;
+var s=moveMessagesIntoStack(),core=window.XiaoshuBehaviorCore;if(core&&typeof core.captureChatScrollAnchor==='function')relayoutSnapshot=core.captureChatScrollAnchor(s,userBrowsingHistory);else relayoutSnapshot={nearBottom:!userBrowsingHistory&&nearBottom(s,80),distanceFromBottom:bottomDistance(s),clientHeight:s?s.clientHeight:0,userBrowsingHistory:userBrowsingHistory,suppressHistoryLoad:true};relayoutSnapshot.near=relayoutSnapshot.nearBottom;relayoutSnapshot.distance=relayoutSnapshot.distanceFromBottom;relayoutSnapshot.top=s?s.scrollTop:0;stableSnapshot=Object.assign({},relayoutSnapshot);return relayoutSnapshot;
 };
 window.xiaoshuRestoreChatRelayout=function(snapshot){
 snapshot=snapshot||relayoutSnapshot;relayoutSnapshot=null;var s=moveMessagesIntoStack();if(!s)return;
-if(snapshot&&snapshot.near)s.scrollTop=s.scrollHeight;else if(snapshot)s.scrollTop=Math.max(0,s.scrollHeight-s.clientHeight-snapshot.distance);
+if(snapshot){var core=window.XiaoshuBehaviorCore,next;if(core&&typeof core.restoreChatScrollTop==='function')next=core.restoreChatScrollTop(snapshot,s);else next=(snapshot.near||snapshot.nearBottom)?s.scrollHeight:Math.max(0,s.scrollHeight-s.clientHeight-Number(snapshot.distanceFromBottom||snapshot.distance||0));programmaticScrollUntil=Date.now()+180;window.__xiaoshuSuppressHistoryLoadUntil=Date.now()+500;s.scrollTop=next;userBrowsingHistory=!!snapshot.userBrowsingHistory&&!snapshot.nearBottom;stableSnapshot={nearBottom:!userBrowsingHistory&&nearBottom(s,80),distanceFromBottom:bottomDistance(s),clientHeight:s.clientHeight,userBrowsingHistory:userBrowsingHistory,suppressHistoryLoad:true};stableSnapshot.near=stableSnapshot.nearBottom;stableSnapshot.distance=stableSnapshot.distanceFromBottom;}
 };
 window.xiaoshuGetChatScrollElement=function(){return moveMessagesIntoStack();};
-window.xiaoshuLockChatToBottom=function(){apply(true);};
+window.xiaoshuLockChatToBottom=function(){userBrowsingHistory=false;programmaticScrollUntil=Date.now()+180;window.__xiaoshuSuppressHistoryLoadUntil=Date.now()+500;apply(true);};
 window.xiaoshuPrepareChatForReveal=function(){
 applyViewportVars();var s=moveMessagesIntoStack();if(!s)return null;
 // 最近一批不足一屏时，在首次绘制前同步补足历史；避免显示后触发“隐藏再重绘”。
@@ -17445,12 +17520,16 @@ s.scrollTop=s.scrollHeight;return s;
 window.xiaoshuScheduleChatLayout=function(force){schedule(!!force);};
 function installObservers(){
 var c=container();if(!c){setTimeout(installObservers,80);return;}if(observerInstalled)return;observerInstalled=true;var s=moveMessagesIntoStack();
+function markUserIntent(){userScrollIntentUntil=Date.now()+1200}
+s.addEventListener('touchstart',markUserIntent,{passive:true});s.addEventListener('pointerdown',markUserIntent,{passive:true});s.addEventListener('wheel',markUserIntent,{passive:true});s.addEventListener('scroll',function(){if(Date.now()<programmaticScrollUntil||Date.now()>userScrollIntentUntil)return;userBrowsingHistory=!nearBottom(s,80);var core=window.XiaoshuBehaviorCore;stableSnapshot=core&&typeof core.captureChatScrollAnchor==='function'?core.captureChatScrollAnchor(s,userBrowsingHistory):{nearBottom:!userBrowsingHistory&&nearBottom(s,80),distanceFromBottom:bottomDistance(s),clientHeight:s.clientHeight,userBrowsingHistory:userBrowsingHistory,suppressHistoryLoad:true}},{passive:true});
 var mo=new MutationObserver(function(records){var needsMove=records.some(function(r){return Array.prototype.some.call(r.addedNodes,function(n){return n.nodeType===1&&n!==s&&isRealChatItem(n);});});if(needsMove)moveMessagesIntoStack();});
 mo.observe(c,{childList:true,subtree:false});
-if(window.ResizeObserver){var ro=new ResizeObserver(function(){if(document.body&&document.body.classList.contains('xiaoshu-page-switching'))return;schedule(false);});var h=header(),i=inputArea();if(h)try{ro.observe(h);}catch(e){}if(i)try{ro.observe(i);}catch(e){}}
-window.addEventListener('resize',function(){schedule(false);},{passive:true});
-if(window.visualViewport)visualViewport.addEventListener('resize',function(){schedule(false);},{passive:true});
+if(window.ResizeObserver){var ro=new ResizeObserver(function(){if(document.body&&document.body.classList.contains('xiaoshu-page-switching'))return;queueAnchoredLayout();});var h=header(),i=inputArea();if(h)try{ro.observe(h);}catch(e){}if(i)try{ro.observe(i);}catch(e){}}
+var messageInput=document.getElementById('message-input');if(messageInput)messageInput.addEventListener('focusin',function(){window.xiaoshuCaptureChatRelayout()},{passive:true});
+window.addEventListener('resize',queueAnchoredLayout,{passive:true});
+if(window.visualViewport)visualViewport.addEventListener('resize',queueAnchoredLayout,{passive:true});
 apply(false);
+stableSnapshot=window.xiaoshuCaptureChatRelayout();relayoutSnapshot=null;
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installObservers,{once:true});else installObservers();
 })();</script>
@@ -17948,9 +18027,9 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   function cleanResourceObject(raw){var out=Object.create(null);if(!raw||typeof raw!=='object'||Array.isArray(raw))return out;Object.keys(raw).slice(0,5000).forEach(function(id){var src=norm(raw[id]);if(/^stk_[a-z0-9_]+$/i.test(id)&&isImage(src))out[id]=src;});return out;}
   function resourceStorageKey(sid){return storageKeyForSession(CANONICAL_MESSAGE_RESOURCE_NAME,sid||currentSessionId());}
   function persistMessageResourcesNow(){
-    var sid=currentSessionId();if(!sid||!sessionDataReady(sid)||!migrationState.hydrated||hydratedSessionId!==sid||!window.localforage)return false;
-    var key=resourceStorageKey(sid);if(!key)return false;
-    window.localforage.setItem(key,Object.assign({},messageResources)).catch(function(err){console.warn('[表情资源表] 保存失败',err);});return true;
+    var sid=currentSessionId();if(!sid||!sessionDataReady(sid)||!migrationState.hydrated||hydratedSessionId!==sid||!window.localforage)return Promise.resolve(false);
+    var key=resourceStorageKey(sid);if(!key)return Promise.resolve(false);
+    return window.localforage.setItem(key,Object.assign({},messageResources)).then(function(){return true;}).catch(function(err){console.warn('[表情资源表] 保存失败',err);return false;});
   }
   function scheduleResourcePersist(){clearTimeout(resourcePersistTimer);resourcePersistTimer=setTimeout(function(){resourcePersistTimer=null;persistMessageResourcesNow();},120);}
   function registerMessageResource(src){src=norm(src);if(!isImage(src))return'';var id=stickerHash(src);catalogResources[id]=src;if(messageResources[id]!==src){messageResources[id]=src;scheduleResourcePersist();}return id;}
@@ -18150,10 +18229,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
         try{if(typeof xsSaveChatMessagesOnlyNow==='function')xsSaveChatMessagesOnlyNow('sticker-send-immediate',xsGetConversationMessagesSync(targetConversation));}catch(_e){}
         try{if(typeof playSound==='function')playSound('send');}catch(_e){}
         try{
-          var min=(typeof settings!=='undefined'&&settings&&Number(settings.replyDelayMin))||900;
-          var max=(typeof settings!=='undefined'&&settings&&Number(settings.replyDelayMax))||2200;
-          var d=Math.max(0,max-min);
-          window.__xiaoshuPendingReplyTimer=setTimeout(function(){window.__xiaoshuPendingReplyTimer=null;if(typeof simulateReply==='function')simulateReply('card');},min+Math.random()*d);
+          if(typeof simulateReply==='function')simulateReply('card');
         }catch(_e){}
       }else{return false;}
     }catch(e){console.warn('[共享表情包发送]',e);return false;}
@@ -18372,6 +18448,7 @@ persistHidden();
 persistMessageResourcesNow();
 syncRuntime(false);
 setTimeout(function(){migrateCurrentChatStickerMessages();},0);
+try{window.dispatchEvent(new CustomEvent('xiaoshu-sticker-resources-ready',{detail:{sessionId:targetSid,count:Object.keys(messageResources).length}}));}catch(_readyEventError){}
 return true;
 })();
 try{return await hydratePromise;}
@@ -21804,6 +21881,6 @@ window.xiaoshuSyncBehaviorControls=sync;
 window.addEventListener('xiaoshu-session-data-ready',function(){setTimeout(function(){normalize();if(typeof manageAutoSendTimer==='function')manageAutoSendTimer();restartStickerTimer();sync()},0)});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',sync,{once:true});else sync()
 })();</script>
-<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v124-indexeddb-media-mail-attachments';</script>
+<script id="kkk35g-final-release-marker">window.__kkk35gRelease='v125-chat1-sticker-scroll-stability';</script>
 
 </body></html>

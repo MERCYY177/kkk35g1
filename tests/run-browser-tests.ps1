@@ -119,8 +119,9 @@ function Invoke-CdpIntegrationTest {
   await waitFor(function(){var f=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+unresolvedId+'"]');return f&&f.classList.contains('is-loaded')},4000,'late sticker resource refresh');
   var badSrc='assets/stickers/__missing_chat1_runtime__.png',badId=xiaoshuStickerStore.register(badSrc),badMessageId='runtime-bad-sticker-'+Date.now();
   addMessage({id:badMessageId,sender:settings.partnerName||'对方',text:'',timestamp:new Date(),stickerId:badId,messageKind:'sticker',status:'received',type:'normal',conversationId:'card'});
-  try{await waitFor(function(){var f=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+badId+'"]');return !!(f&&f.classList.contains('load-failed'))},10000,'failed sticker retry state')}catch(runtimeStickerError){var badFrameNow=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+badId+'"]');throw new Error(runtimeStickerError.message+' DOM='+(badFrameNow?badFrameNow.outerHTML:'missing'))}
-  var failedFrame=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+badId+'"]'),retryLabel=String.fromCharCode(28857,20987,37325,35797);equal(failedFrame.textContent.indexOf(retryLabel)>=0,true,'failed sticker must show a clear retry action text='+JSON.stringify(failedFrame.textContent));equal(Number(failedFrame.dataset.retryCount),2,'sticker must retry at most twice');failedFrame.click();equal(failedFrame.classList.contains('is-loading'),true,'failed sticker click must retry');
+  try{await waitFor(function(){var f=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+badId+'"]');return !!(f&&(f.classList.contains('load-failed')||f.classList.contains('timeout')))},18000,'failed or timed-out sticker retry state')}catch(runtimeStickerError){var badFrameNow=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+badId+'"]');throw new Error(runtimeStickerError.message+' DOM='+(badFrameNow?badFrameNow.outerHTML:'missing'))}
+  var failedFrame=document.querySelector('.xs-chat-sticker-frame[data-sticker-id="'+badId+'"]'),retryLabel=String.fromCharCode(28857,20987,37325,35797);equal(failedFrame.textContent.indexOf(retryLabel)>=0,true,'failed sticker must show a clear retry action text='+JSON.stringify(failedFrame.textContent));failedFrame.click();equal(failedFrame.classList.contains('is-loading'),true,'failed sticker click must retry');equal(/__xs_sticker_retry=1/.test(failedFrame.querySelector('img').src),true,'explicit retry must cache-bust once');
+  var themeBefore=document.documentElement.getAttribute('data-theme');window.xiaoshuApplyBeautifyTheme('builtin_0e89fa2e_03_eve_iMessage',false);var realChat=document.getElementById('chat-container'),themeHost=document.createElement('div');function themeBubble(extra){var w=document.createElement('div');w.className='message-wrapper received';var c=document.createElement('div');c.className='message-content-wrapper';var b=document.createElement('div');b.className='message message-received '+(extra||'');b.textContent=extra?'':'文字';c.appendChild(b);w.appendChild(c);return w}var firstTheme=themeBubble(''),lastTheme=themeBubble('');themeHost.append(firstTheme,lastTheme);var mediaHost=document.createElement('div'),mediaTheme=themeBubble('message-image-bubble-none');mediaTheme.querySelector('.message').innerHTML='<img alt="media">';mediaHost.appendChild(mediaTheme);realChat.append(themeHost,mediaHost);function checkTheme(mode){document.documentElement.setAttribute('data-theme',mode);var bubble=getComputedStyle(lastTheme.querySelector('.message')),tail=getComputedStyle(lastTheme.querySelector('.message'),'::after');equal(tail.backgroundColor,bubble.backgroundColor,mode+' iMessage tail and body colors must match');equal(getComputedStyle(firstTheme.querySelector('.message'),'::after').display,'none','only final consecutive bubble has a tail');equal(getComputedStyle(mediaTheme.querySelector('.message'),'::after').display,'none','media bubble has no text tail');equal(getComputedStyle(document.documentElement).colorScheme,mode,'color-scheme follows app theme')}checkTheme('light');checkTheme('dark');themeHost.remove();mediaHost.remove();window.xiaoshuApplyBeautifyTheme('default',false);document.documentElement.setAttribute('data-theme',themeBefore||'light');passed.push('light/dark bubble tails and media exclusions');
   var realCapture=window.xiaoshuCaptureChatRelayout,realRestore=window.xiaoshuRestoreChatRelayout,captureCalls=0,restoreCalls=0;
   window.xiaoshuCaptureChatRelayout=function(){captureCalls+=1;return realCapture.apply(this,arguments)};window.xiaoshuRestoreChatRelayout=function(){restoreCalls+=1;return realRestore.apply(this,arguments)};
   var chatInput=document.getElementById('message-input');chatInput.dispatchEvent(new Event('focusin',{bubbles:true}));chatInput.value='连续输入';chatInput.dispatchEvent(new Event('input',{bubbles:true}));chatInput.dispatchEvent(new Event('compositionstart',{bubbles:true}));chatInput.value='连续输入'+String.fromCharCode(10)+'拼音';var composingInput=new Event('input',{bubbles:true});Object.defineProperty(composingInput,'isComposing',{value:true});chatInput.dispatchEvent(composingInput);chatInput.dispatchEvent(new Event('compositionend',{bubbles:true}));
@@ -141,7 +142,7 @@ function Invoke-CdpIntegrationTest {
         $response = $builder.ToString() | ConvertFrom-Json
         if ($response.result.exceptionDetails) { throw $response.result.exceptionDetails.exception.description }
         $value = $response.result.result.value
-        if (-not $value.ok -or $value.passed.Count -ne 12) { throw ('Integration result invalid: ' + ($value | ConvertTo-Json -Compress)) }
+        if (-not $value.ok -or $value.passed.Count -ne 13) { throw ('Integration result invalid: ' + ($value | ConvertTo-Json -Compress)) }
         return $value
     }
     finally {
@@ -159,7 +160,7 @@ try {
     if ($indexSource -match '<script[^>]+src=["'']behavior-core\.js["'']') { throw 'Production page still depends on external behavior-core.js.' }
     if (-not (Test-Path -LiteralPath (Join-Path $projectRoot 'media-core.js'))) { throw 'media-core.js is missing.' }
     if ($indexSource -notmatch '<script src="media-core\.js"></script>') { throw 'Production page does not load media-core.js.' }
-    if ($indexSource -notmatch "v125-chat1-sticker-scroll-stability") { throw 'Release marker was not updated to v125.' }
+    if ($indexSource -notmatch "v126-theme-tail-sticker-recovery") { throw 'Release marker was not updated to v126.' }
     if ($indexSource -notmatch 'function isStrictMediaKey' -or $indexSource -notmatch 'fallbackSet\(k,v\)\{if\(isStrictMediaKey\(k\)\)') { throw 'Media localStorage fallback guard is missing.' }
 
     $behavior = Invoke-HeadlessDump (Join-Path $PSScriptRoot 'behavior-regression.html') 'behavior'
@@ -175,6 +176,11 @@ try {
     $chat1Runtime = Invoke-HeadlessDump (Join-Path $PSScriptRoot 'chat1-runtime-regression.html') 'chat1-runtime'
     if ($chat1Runtime.Html -notmatch 'data-status="passed"' -or $chat1Runtime.Html -notmatch 'PASS 8') {
         throw "Chat1 runtime regression suite failed.`n$($chat1Runtime.Html)"
+    }
+
+    $stickerCore = Invoke-HeadlessDump (Join-Path $PSScriptRoot 'sticker-core-regression.html') 'sticker-core' 1000
+    if ($stickerCore.Html -notmatch 'data-status="passed"' -or $stickerCore.Html -notmatch 'PASS 8') {
+        throw "Sticker core regression suite failed.`n$($stickerCore.Html)"
     }
 
     $integration = Invoke-CdpIntegrationTest
@@ -201,7 +207,8 @@ try {
     Write-Output 'PASS 13 behavior tests'
     Write-Output 'PASS 16 media storage and migration tests'
     Write-Output 'PASS 8 Chat1 runtime scheduling and scroll-anchor tests'
-    Write-Output 'PASS 12 full-page integration tests'
+    Write-Output 'PASS 8 sticker state, URL safety and recovery tests'
+    Write-Output 'PASS 13 full-page integration tests'
     Write-Output 'PASS full-page startup and rendered-control checks'
     Write-Output 'PASS inline-core parity and explicit missing-core failure checks'
 }

@@ -2557,6 +2557,16 @@ global.ChatBackup={
     return { text: settings.autoSendEnabled === true, sticker: settings.autoStickerEnabled === true };
   }
 
+  function shouldRunAutoStickerForPresence(source) {
+    var state = source && typeof source === 'object' ? source : {};
+    return state.enabled === true &&
+      state.pageVisible === true &&
+      state.hasFocus === true &&
+      state.chatActive === true &&
+      state.recentActivity === true &&
+      state.batchFavoriteMode !== true;
+  }
+
   function reconcileIncomingCallPlan(source, sessionId, now, delayFn) {
     var settings = Object.assign({}, source && typeof source === 'object' ? source : {});
     var enabled = settings.enabled !== false && settings.allowIncoming !== false &&
@@ -2636,6 +2646,7 @@ global.ChatBackup={
     buildCardReplyPayloads: buildCardReplyPayloads,
     trySendPartnerSticker: trySendPartnerSticker,
     getProactiveScheduleFlags: getProactiveScheduleFlags,
+    shouldRunAutoStickerForPresence: shouldRunAutoStickerForPresence,
     reconcileIncomingCallPlan: reconcileIncomingCallPlan,
     buildReplyComposeState: buildReplyComposeState,
     buildConversationReplySchedule: buildConversationReplySchedule,
@@ -3623,22 +3634,107 @@ if (!document.body.classList.contains('batch-favorite-mode')) simulateReply('car
 }, intervalMs);
 }
 }
-function manageAutoStickerTimer() {
+const XS_AUTO_STICKER_RECENT_ACTIVITY_MS = 5 * 60 * 1000;
+let xsAutoStickerLastActiveAt = Date.now();
+let xsAutoStickerIdleTimer = null;
+function xsClearAutoStickerTimer() {
 if (autoStickerTimer) {
+clearTimeout(autoStickerTimer);
 clearInterval(autoStickerTimer);
 autoStickerTimer = null;
 }
-if (settings.autoStickerEnabled) {
+}
+function xsAutoStickerPresenceSnapshot() {
+const now = Date.now();
+let hasFocus = true;
+try { hasFocus = typeof document.hasFocus !== 'function' || document.hasFocus(); } catch (e) {}
+return {
+enabled: !!settings.autoStickerEnabled,
+pageVisible: document.visibilityState !== 'hidden',
+hasFocus: !!hasFocus,
+chatActive: !!(document.body && document.body.classList.contains('xiaoshu-chat-active')),
+recentActivity: now - xsAutoStickerLastActiveAt <= XS_AUTO_STICKER_RECENT_ACTIVITY_MS,
+batchFavoriteMode: !!(document.body && document.body.classList.contains('batch-favorite-mode'))
+};
+}
+function xsCanRunAutoStickerNow() {
+const snapshot = xsAutoStickerPresenceSnapshot();
+const core = window.XiaoshuBehaviorCore;
+if (core && typeof core.shouldRunAutoStickerForPresence === 'function') {
+return core.shouldRunAutoStickerForPresence(snapshot);
+}
+return snapshot.enabled && snapshot.pageVisible && snapshot.hasFocus && snapshot.chatActive && snapshot.recentActivity && !snapshot.batchFavoriteMode;
+}
+function xsScheduleAutoStickerIdleCheck() {
+if (xsAutoStickerIdleTimer) clearTimeout(xsAutoStickerIdleTimer);
+const remaining = Math.max(0, XS_AUTO_STICKER_RECENT_ACTIVITY_MS - (Date.now() - xsAutoStickerLastActiveAt));
+xsAutoStickerIdleTimer = setTimeout(() => {
+xsAutoStickerIdleTimer = null;
+if (!xsCanRunAutoStickerNow()) xsClearAutoStickerTimer();
+}, remaining + 50);
+}
+function xsMarkAutoStickerUserActivity() {
+xsAutoStickerLastActiveAt = Date.now();
+xsScheduleAutoStickerIdleCheck();
+if (settings.autoStickerEnabled && !autoStickerTimer && xsCanRunAutoStickerNow()) manageAutoStickerTimer();
+}
+function manageAutoStickerTimer() {
+xsClearAutoStickerTimer();
+if (!settings.autoStickerEnabled || !xsCanRunAutoStickerNow()) return;
 const intervalMs = Math.max(1, Number(settings.autoStickerInterval) || 5) * 60 * 1000;
 const timerSessionId = SESSION_ID;
-autoStickerTimer = setInterval(() => {
+const tick = () => {
+autoStickerTimer = null;
 if (timerSessionId !== SESSION_ID || !settings.autoStickerEnabled) return manageAutoStickerTimer();
-if (!document.body.classList.contains('batch-favorite-mode') && window.xiaoshuSendPartnerStickerNow) {
-window.xiaoshuSendPartnerStickerNow();
+if (!xsCanRunAutoStickerNow()) return;
+if (window.xiaoshuSendPartnerStickerNow) window.xiaoshuSendPartnerStickerNow();
+if (timerSessionId === SESSION_ID && settings.autoStickerEnabled && xsCanRunAutoStickerNow()) {
+autoStickerTimer = setTimeout(tick, Math.max(1, Number(settings.autoStickerInterval) || 5) * 60 * 1000);
 }
-}, intervalMs);
+};
+autoStickerTimer = setTimeout(tick, intervalMs);
 }
+(function installAutoStickerPresenceController(){
+if (window.xiaoshuAutoStickerPresence) return;
+let lastChatActive = null;
+let lastBatchMode = null;
+function syncPresence(markActive) {
+if (markActive) xsAutoStickerLastActiveAt = Date.now();
+xsScheduleAutoStickerIdleCheck();
+if (settings.autoStickerEnabled) manageAutoStickerTimer();
+else xsClearAutoStickerTimer();
 }
+function activity() { xsMarkAutoStickerUserActivity(); }
+['pointerdown','touchstart','keydown','wheel','scroll'].forEach(type => document.addEventListener(type, activity, {passive:true}));
+document.addEventListener('visibilitychange', () => syncPresence(document.visibilityState === 'visible'));
+window.addEventListener('focus', () => syncPresence(true));
+window.addEventListener('blur', () => syncPresence(false));
+window.addEventListener('pageshow', () => syncPresence(true));
+window.addEventListener('pagehide', () => xsClearAutoStickerTimer());
+function observeBody() {
+if (!document.body) return setTimeout(observeBody, 0);
+lastChatActive = document.body.classList.contains('xiaoshu-chat-active');
+lastBatchMode = document.body.classList.contains('batch-favorite-mode');
+new MutationObserver(() => {
+const chatActive = document.body.classList.contains('xiaoshu-chat-active');
+const batchMode = document.body.classList.contains('batch-favorite-mode');
+if (chatActive !== lastChatActive || batchMode !== lastBatchMode) {
+const becameChatActive = chatActive && !lastChatActive;
+lastChatActive = chatActive;
+lastBatchMode = batchMode;
+syncPresence(becameChatActive);
+}
+}).observe(document.body, {attributes:true, attributeFilter:['class']});
+}
+observeBody();
+xsScheduleAutoStickerIdleCheck();
+window.xiaoshuAutoStickerPresence = {
+markActivity: xsMarkAutoStickerUserActivity,
+snapshot: xsAutoStickerPresenceSnapshot,
+canRun: xsCanRunAutoStickerNow,
+reschedule: manageAutoStickerTimer
+};
+})();
 const updateUI = () => {
 if (!settings.colorTheme || settings.colorTheme === 'gold') settings.colorTheme = 'blue';
 try {
@@ -4121,7 +4217,7 @@ content = `<div class="voice-message-bubble" data-voice-url="${xsQuoteEscape(voi
 } else if (isStickerMessage || msg.image) {
 const __xsImageSrc = xsSafeResourceUrl(isStickerMessage ? __xsStickerSrc : msg.image, 'image');
 if (isStickerMessage) {
-content += `<div class="xs-chat-sticker-frame ${__xsImageSrc ? 'is-loading' : 'is-pending'}" data-sticker-id="${xsQuoteEscape(msg.stickerId)}" data-sticker-src="${xsQuoteEscape(__xsImageSrc)}" data-partner-priority="${msg.sender === 'user' ? '0' : '1'}" role="button" tabindex="0" aria-label="表情包加载中"><span class="xs-chat-sticker-status">表情加载中</span><img class="message-image message-image-only xs-chat-sticker-image" alt="表情包" width="100" height="100" decoding="async"${msg.sender === 'user' ? '' : ' fetchpriority="high"'}></div>`;
+content += `<div class="xs-chat-sticker-frame ${__xsImageSrc ? 'is-loading' : 'is-pending'}" data-sticker-id="${xsQuoteEscape(msg.stickerId)}" data-sticker-src="${xsQuoteEscape(__xsImageSrc)}" data-partner-priority="${msg.sender === 'user' ? '0' : '1'}" role="button" tabindex="0" aria-label="表情包加载中"><span class="xs-chat-sticker-status">表情加载中</span><img class="message-image message-image-only xs-chat-sticker-image" alt="表情包" width="100" height="100" loading="lazy" decoding="async"></div>`;
 } else if (__xsImageSrc) {
 content += `<img src="${xsQuoteEscape(__xsImageSrc)}" data-view-src="${xsQuoteEscape(__xsImageSrc)}" class="message-image${isImageOnly ? ' message-image-only' : ''}" alt="图片" decoding="async" style="max-width:100px; border-radius: 12px;${!isImageOnly ? ' margin-top: 6px;' : ''} cursor: pointer;">`;
 }
@@ -17448,9 +17544,11 @@ if(window.__xiaoshuChat1StickerLoaderV1)return;window.__xiaoshuChat1StickerLoade
 function capture(){try{return typeof window.xiaoshuCaptureChatRelayout==='function'?window.xiaoshuCaptureChatRelayout():null}catch(e){return null}}
 function restore(anchor){if(!anchor)return;requestAnimationFrame(function(){requestAnimationFrame(function(){try{if(typeof window.xiaoshuRestoreChatRelayout==='function')window.xiaoshuRestoreChatRelayout(anchor)}catch(e){}})})}
 function resolve(id){try{return window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.resolve==='function'?window.xiaoshuStickerStore.resolve(id):''}catch(e){return''}}
-function setState(frame,state){var labels={'pending-resource':'表情资源查找中，点击重新查找','loading':'表情加载中，点击重新加载','loaded':'表情包','timeout':'表情加载超时，点击重试','load-failed':'表情加载失败，点击重试','resource-missing':'表情资源缺失，点击重新查找'};frame.classList.remove('is-pending','pending-resource','is-loading','loading','is-loaded','loaded','timeout','load-failed','resource-missing');frame.classList.add(state);if(state==='loading')frame.classList.add('is-loading');else if(state==='loaded')frame.classList.add('is-loaded');else if(state==='pending-resource')frame.classList.add('is-pending');frame.dataset.stickerState=state;var text=labels[state]||'表情包',status=frame.querySelector('.xs-chat-sticker-status');if(status)status.textContent=text;frame.setAttribute('aria-label',text)}
-function bind(frame){if(!frame||frame.__xsStickerBound||!window.XiaoshuStickerCore)return;frame.__xsStickerBound=true;var img=frame.querySelector('img'),anchor=null;var machine=window.XiaoshuStickerCore.createLoadMachine({resolve:function(id){return frame.getAttribute('data-sticker-src')||resolve(id)},request:function(url,h){anchor=capture();img.onload=h.load;img.onerror=h.error;img.src=url},onState:function(state){setState(frame,state);if(state==='loaded'){var src=machine.source();frame.setAttribute('data-sticker-src',src);img.setAttribute('data-view-src',src);img.onload=img.onerror=null;restore(anchor)}else if(state==='timeout'||state==='load-failed'||state==='resource-missing'){img.onload=img.onerror=null;restore(anchor)}},timeoutMs:15000,maxResolveAttempts:4,resolveDelayMs:500});frame.__xsStickerMachine=machine;function activate(e){var state=machine.state();if(state==='loaded'){var src=img.getAttribute('data-view-src')||frame.getAttribute('data-sticker-src');if(src&&typeof window.viewImage==='function')window.viewImage(src)}else{if(e)e.preventDefault();machine.retry()}}frame.addEventListener('click',activate);frame.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' ')activate(e)});machine.start(frame.getAttribute('data-sticker-id')||'')}
-function refresh(){document.querySelectorAll('.xs-chat-sticker-frame[data-sticker-id]').forEach(function(frame){if(!frame.__xsStickerBound)bind(frame);else if(frame.__xsStickerMachine)frame.__xsStickerMachine.refresh()})}
+function setState(frame,state){var labels={'waiting-viewport':'表情等待加载','pending-resource':'表情资源查找中，点击重新查找','loading':'表情加载中，点击重新加载','loaded':'表情包','timeout':'表情加载超时，点击重试','load-failed':'表情加载失败，点击重试','resource-missing':'表情资源缺失，点击重新查找'};frame.classList.remove('waiting-viewport','is-pending','pending-resource','is-loading','loading','is-loaded','loaded','timeout','load-failed','resource-missing');frame.classList.add(state);if(state==='loading')frame.classList.add('is-loading');else if(state==='loaded')frame.classList.add('is-loaded');else if(state==='pending-resource'||state==='waiting-viewport')frame.classList.add('is-pending');frame.dataset.stickerState=state;var text=labels[state]||'表情包',status=frame.querySelector('.xs-chat-sticker-status');if(status)status.textContent=text;frame.setAttribute('aria-label',text)}
+var lazyObserver=typeof IntersectionObserver==='function'?new IntersectionObserver(function(entries){entries.forEach(function(entry){if(entry.isIntersecting||entry.intersectionRatio>0){var frame=entry.target;if(lazyObserver)lazyObserver.unobserve(frame);if(frame&&typeof frame.__xsStickerStart==='function')frame.__xsStickerStart()}})},{root:null,rootMargin:'320px 0px',threshold:0.01}):null;
+function observeWhenConnected(frame){if(!lazyObserver){if(frame&&typeof frame.__xsStickerStart==='function')frame.__xsStickerStart();return}if(frame&&frame.isConnected){lazyObserver.observe(frame);return}requestAnimationFrame(function(){if(frame&&frame.isConnected)lazyObserver.observe(frame)})}
+function bind(frame){if(!frame||frame.__xsStickerBound||!window.XiaoshuStickerCore)return;frame.__xsStickerBound=true;frame.__xsStickerStarted=false;var img=frame.querySelector('img'),anchor=null;var machine=window.XiaoshuStickerCore.createLoadMachine({resolve:function(id){return frame.getAttribute('data-sticker-src')||resolve(id)},request:function(url,h){anchor=capture();img.onload=h.load;img.onerror=h.error;img.src=url},onState:function(state){setState(frame,state);if(state==='loaded'){var src=machine.source();frame.setAttribute('data-sticker-src',src);img.setAttribute('data-view-src',src);img.onload=img.onerror=null;restore(anchor)}else if(state==='timeout'||state==='load-failed'||state==='resource-missing'){img.onload=img.onerror=null;restore(anchor)}},timeoutMs:30000,maxResolveAttempts:4,resolveDelayMs:500});frame.__xsStickerMachine=machine;frame.__xsStickerStart=function(){if(frame.__xsStickerStarted)return;frame.__xsStickerStarted=true;if(lazyObserver)lazyObserver.unobserve(frame);machine.start(frame.getAttribute('data-sticker-id')||'')};function activate(e){var state=machine.state();if(state==='loaded'){var src=img.getAttribute('data-view-src')||frame.getAttribute('data-sticker-src');if(src&&typeof window.viewImage==='function')window.viewImage(src)}else{if(e)e.preventDefault();if(!frame.__xsStickerStarted)frame.__xsStickerStart();else machine.retry()}}frame.addEventListener('click',activate);frame.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' ')activate(e)});if(lazyObserver){setState(frame,'waiting-viewport');observeWhenConnected(frame)}else frame.__xsStickerStart()}
+function refresh(){document.querySelectorAll('.xs-chat-sticker-frame[data-sticker-id]').forEach(function(frame){if(!frame.__xsStickerBound)bind(frame);else if(frame.__xsStickerStarted&&frame.__xsStickerMachine)frame.__xsStickerMachine.refresh();else if(lazyObserver)observeWhenConnected(frame)})}
 window.xiaoshuBindChatStickerFrame=bind;window.xiaoshuBindChatMediaImage=function(img){if(!img||img.__xsMediaAnchorBound)return;img.__xsMediaAnchorBound=true;var anchor=capture(),done=function(){restore(anchor)};if(img.complete)done();else{img.addEventListener('load',done,{once:true});img.addEventListener('error',done,{once:true})}};window.addEventListener('xiaoshu-sticker-resources-ready',refresh);window.addEventListener('stickerLibraryUpdated',refresh);
 })();</script>
 <style id="xiaoshu-home-chat-layout-unified-v1-css">html,body{width:100vw!important;max-width:100vw!important;height:100dvh!important;min-height:100dvh!important;margin:0!important;padding:0!important;overflow:hidden!important;overflow-x:hidden!important;overscroll-behavior:none!important;}body{position:fixed!important;inset:0!important;display:block!important;}#home-page-bg{position:fixed!important;inset:0!important;z-index:1!important;display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;transition:background .5s ease,opacity .18s ease!important;}#home-container.home-container{display:none!important;position:relative!important;z-index:3!important;flex-direction:column!important;flex-shrink:0!important;min-width:0!important;box-sizing:border-box!important;}.header{flex:0 0 auto!important;z-index:80!important;}.main-chat-area{position:fixed!important;left:0!important;right:0!important;top:var(--xiaoshu-chat-top,0px)!important;bottom:var(--xiaoshu-input-h,74px)!important;width:100%!important;max-width:100vw!important;height:auto!important;min-width:0!important;min-height:0!important;z-index:3!important;display:block!important;overflow:hidden!important;padding:0!important;margin:0!important;box-sizing:border-box!important;background:transparent!important;}#chat-container{position:absolute!important;inset:0!important;width:100%!important;max-width:100vw!important;height:100%!important;min-width:0!important;min-height:0!important;max-height:none!important;display:block!important;overflow:hidden!important;padding:0!important;margin:0!important;box-sizing:border-box!important;scroll-behavior:auto!important;-webkit-overflow-scrolling:auto!important;}#chat-container>.xiaoshu-message-stack{position:absolute!important;inset:0!important;width:100%!important;height:auto!important;min-width:0!important;min-height:0!important;max-height:none!important;overflow-y:auto!important;overflow-x:hidden!important;padding:25px 24px 34px!important;margin:0!important;box-sizing:border-box!important;display:flex!important;flex-direction:column!important;justify-content:flex-start!important;align-items:stretch!important;gap:2px!important;scrollbar-width:none!important;-ms-overflow-style:none!important;-webkit-overflow-scrolling:touch!important;overscroll-behavior:contain!important;}#chat-container>.xiaoshu-message-stack::-webkit-scrollbar{display:none!important;width:0!important;}.input-area-wrapper{position:fixed!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;max-width:100vw!important;min-width:0!important;z-index:50!important;display:block!important;flex-shrink:0!important;box-sizing:border-box!important;background-color:var(--input-area-bg)!important;padding-bottom:env(safe-area-inset-bottom,0px)!important;padding-left:env(safe-area-inset-left,0px)!important;padding-right:env(safe-area-inset-right,0px)!important;transition:background-color .5s ease!important;}#chat-container>[data-xiaoshu-bottom-spacer="1"],#chat-container>.chat-bottom-spacer,#chat-container>.xiaoshu-message-stack>[data-xiaoshu-bottom-spacer="1"],#chat-container>.xiaoshu-message-stack>.chat-bottom-spacer{display:none!important;width:0!important;height:0!important;min-height:0!important;max-height:0!important;flex:0 0 0!important;padding:0!important;margin:0!important;border:0!important;overflow:hidden!important;pointer-events:none!important;}#chat-container>.xiaoshu-message-stack>.message-wrapper,#chat-container>.xiaoshu-message-stack>.date-divider,#chat-container>.xiaoshu-message-stack>.date-separator,#chat-container>.xiaoshu-message-stack>.system-message,#chat-container>.xiaoshu-message-stack>.call-event,#chat-container>.xiaoshu-message-stack>.call-event-message{flex:0 0 auto!important;position:relative!important;visibility:visible!important;opacity:1!important;margin-top:0!important;}#chat-container>.xiaoshu-message-stack>.message-wrapper{display:flex!important;overflow:visible!important;}#chat-container .message-content-wrapper{visibility:visible!important;opacity:1!important;overflow:visible!important;}#chat-container .message:not(.message-image-bubble-none){visibility:visible!important;opacity:1!important;min-width:24px!important;min-height:20px!important;}#empty-state{position:fixed!important;left:50%!important;top:calc((var(--xiaoshu-chat-top,0px) + (100dvh - var(--xiaoshu-chat-top,0px) - var(--xiaoshu-input-h,74px)) / 2))!important;transform:translate(-50%,-50%)!important;}body.xiaoshu-first-paint-ready.home-active #home-page-bg,body.xiaoshu-first-paint-ready.home-active #home-container.home-container,body.xiaoshu-first-paint-ready #home-container.home-container.active{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}body.xiaoshu-first-paint-ready.home-active #home-page-bg{display:block!important;}body.xiaoshu-first-paint-ready.home-active #home-container.home-container,body.xiaoshu-first-paint-ready #home-container.home-container.active{display:flex!important;}body.home-active .header,body.home-active .main-chat-area,body.home-active #chat-container,body.home-active #empty-state,body.home-active .input-area-wrapper,body:not(.xiaoshu-chat-active) .header,body:not(.xiaoshu-chat-active) .main-chat-area,body:not(.xiaoshu-chat-active) #chat-container,body:not(.xiaoshu-chat-active) #empty-state,body:not(.xiaoshu-chat-active) .input-area-wrapper{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}body.xiaoshu-first-paint-ready.xiaoshu-chat-active .header,body.xiaoshu-first-paint-ready.xiaoshu-chat-active .main-chat-area,body.xiaoshu-first-paint-ready.xiaoshu-chat-active #chat-container,body.xiaoshu-first-paint-ready.xiaoshu-chat-active .input-area-wrapper{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}body.xiaoshu-chat-active #home-container,body.xiaoshu-chat-active #home-page-bg{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}body.xiaoshu-page-switching,body.xiaoshu-page-switching *{transition:none!important;animation-duration:.001ms!important;animation-delay:0s!important;}#chat-container>.xiaoshu-message-stack>.message-wrapper{min-width:0!important;max-width:100%!important;}#chat-container .message-content-wrapper{min-width:0!important;max-width:calc(100% - 44px)!important;box-sizing:border-box!important;}#chat-container .message:not(.message-image-bubble-none):not(:has(img)):not(:has(video)):not(:has(canvas)):not(:has(svg)){max-width:min(72vw,100%)!important;box-sizing:border-box!important;overflow-wrap:anywhere!important;word-break:break-word!important;white-space:normal!important;}</style>

@@ -106,6 +106,16 @@
     return { text: settings.autoSendEnabled === true, sticker: settings.autoStickerEnabled === true };
   }
 
+  function shouldRunAutoStickerForPresence(source) {
+    var state = source && typeof source === 'object' ? source : {};
+    return state.enabled === true &&
+      state.pageVisible === true &&
+      state.hasFocus === true &&
+      state.chatActive === true &&
+      state.recentActivity === true &&
+      state.batchFavoriteMode !== true;
+  }
+
   function reconcileIncomingCallPlan(source, sessionId, now, delayFn) {
     var settings = Object.assign({}, source && typeof source === 'object' ? source : {});
     var enabled = settings.enabled !== false && settings.allowIncoming !== false &&
@@ -185,6 +195,7 @@
     buildCardReplyPayloads: buildCardReplyPayloads,
     trySendPartnerSticker: trySendPartnerSticker,
     getProactiveScheduleFlags: getProactiveScheduleFlags,
+    shouldRunAutoStickerForPresence: shouldRunAutoStickerForPresence,
     reconcileIncomingCallPlan: reconcileIncomingCallPlan,
     buildReplyComposeState: buildReplyComposeState,
     buildConversationReplySchedule: buildConversationReplySchedule,

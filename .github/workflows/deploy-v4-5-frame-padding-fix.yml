@@ -1,0 +1,127 @@
+name: Deploy v4.5 frame padding fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-v4-5-frame-padding-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: RED - verify current v4.4 base
+        shell: bash
+        run: |
+          actual="$(git hash-object index.html)"
+          expected="abcf914cbd49247d2a58dfcfc0b3822ccdb9bd99"
+          echo "current index blob: $actual"
+          test "$actual" = "$expected" || { echo "Refusing to patch: index.html is not the verified v4.4 base."; exit 1; }
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          assert "var THEME_LAYOUT_IDS={\n};" in s
+          assert "Object.keys(pads).forEach" in s
+          print('RED confirmed: frame themes still receive generic uniform padding')
+          PY
+
+      - name: Apply frame padding fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old="""var DYNAMIC_PADDING_KEYS=['paddingTop','paddingRight','paddingBottom','paddingLeft'];
+          var THEME_LAYOUT_IDS={
+          };
+          var THEME_LAYOUT_PROPS={width:1,minWidth:1,minHeight:1,maxWidth:1,fontSize:1,lineHeight:1};
+          function activeBeautifyThemeId(){try{return String(document.body&&document.body.getAttribute('data-xiaoshu-beautify-theme')||'');}catch(e){return '';}}
+          function themeOwnsLayout(){return !!THEME_LAYOUT_IDS[activeBeautifyThemeId()];}
+          """
+          new="""var DYNAMIC_PADDING_KEYS=['paddingTop','paddingRight','paddingBottom','paddingLeft'];
+          /* Decorative frame themes need their authored inner spacing/typography, but must still use the app's responsive width. */
+          var THEME_FRAME_LAYOUT_IDS={
+          'builtin_xiaoshu_frame_borderimage_v1':1,
+          'builtin_xiaoshu_soft_frame_pair_v1':1,
+          'builtin_xiaoshu_line_cat_milk_v1':1
+          };
+          var THEME_FRAME_OWNED_PROPS={minWidth:1,minHeight:1,fontSize:1,lineHeight:1};
+          function activeBeautifyThemeId(){try{return String(document.body&&document.body.getAttribute('data-xiaoshu-beautify-theme')||'');}catch(e){return '';}}
+          function themeKeepsFrameGeometry(){return !!THEME_FRAME_LAYOUT_IDS[activeBeautifyThemeId()];}
+          """
+          if s.count(old)!=1:
+              raise SystemExit(f'Expected one runtime header block, found {s.count(old)}')
+          s=s.replace(old,new,1)
+          old2="""var ownsLayout=themeOwnsLayout();
+          el.setAttribute('data-xiaoshu-uniform-text','1');
+          Object.keys(PROPS).forEach(function(k){
+            var css=k.replace(/[A-Z]/g,function(m){return '-'+m.toLowerCase()});
+            if(ownsLayout&&THEME_LAYOUT_PROPS[k]){el.style.removeProperty(css);return;}
+            el.style.setProperty(css,PROPS[k],'important');
+          });
+          if(ownsLayout){
+            DYNAMIC_PADDING_KEYS.forEach(function(k){var css=k.replace(/[A-Z]/g,function(m){return '-'+m.toLowerCase()});el.style.removeProperty(css);});
+          }else{
+            Object.keys(pads).forEach(function(k){var css=k.replace(/[A-Z]/g,function(m){return '-'+m.toLowerCase()});el.style.setProperty(css,pads[k],'important');});
+          }
+          """
+          new2="""var keepsFrame=themeKeepsFrameGeometry();
+          el.setAttribute('data-xiaoshu-uniform-text','1');
+          Object.keys(PROPS).forEach(function(k){
+            var css=k.replace(/[A-Z]/g,function(m){return '-'+m.toLowerCase()});
+            /* width/max-width stay responsive; only frame-specific inner geometry is left to the theme CSS. */
+            if(keepsFrame&&THEME_FRAME_OWNED_PROPS[k]){el.style.removeProperty(css);return;}
+            el.style.setProperty(css,PROPS[k],'important');
+          });
+          if(keepsFrame){
+            /* Do not crush decorative border-image content with the generic 7px/11px padding. */
+            DYNAMIC_PADDING_KEYS.forEach(function(k){var css=k.replace(/[A-Z]/g,function(m){return '-'+m.toLowerCase()});el.style.removeProperty(css);});
+          }else{
+            Object.keys(pads).forEach(function(k){var css=k.replace(/[A-Z]/g,function(m){return '-'+m.toLowerCase()});el.style.setProperty(css,pads[k],'important');});
+          }
+          """
+          if s.count(old2)!=1:
+              raise SystemExit(f'Expected one setScale block, found {s.count(old2)}')
+          s=s.replace(old2,new2,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+
+      - name: GREEN - verify exact v4.5 target
+        shell: bash
+        run: |
+          actual="$(git hash-object index.html)"
+          expected="ba27c736ab3111b2ee278a8fd8f9f5f97ba58386"
+          echo "patched index blob: $actual"
+          test "$actual" = "$expected" || { echo "Patched file does not match verified v4.5 target."; exit 1; }
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          s=Path('index.html').read_text(encoding='utf-8')
+          assert "maxWidth:'min(72vw, 100%)'" in s
+          assert "var THEME_FRAME_OWNED_PROPS={minWidth:1,minHeight:1,fontSize:1,lineHeight:1};" in s
+          for tid in ['builtin_xiaoshu_frame_borderimage_v1','builtin_xiaoshu_soft_frame_pair_v1','builtin_xiaoshu_line_cat_milk_v1']:
+              assert f"'{tid}':1" in s
+          assert "if(keepsFrame&&THEME_FRAME_OWNED_PROPS[k])" in s
+          assert "if(keepsFrame){" in s
+          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
+          a=json.loads(m.group(1)); ids=[x['id'] for x in a]
+          assert len(a)==22
+          assert 'builtin_xiaoshu_kitty_pink_white_v1' not in ids
+          print('GREEN confirmed: responsive width kept; frame padding/typography restored for 20/21/22')
+          PY
+
+      - name: Commit v4.5 to main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --quiet && { echo "No change to commit"; exit 1; }
+          git commit -m "更新v4.5：修复装饰气泡文字贴边"
+          git push origin HEAD:main

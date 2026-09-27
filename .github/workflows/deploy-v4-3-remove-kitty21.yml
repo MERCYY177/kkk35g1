@@ -1,0 +1,100 @@
+name: Deploy v4.3 remove Kitty21
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-v4-3-remove-kitty21.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: RED - verify current v4.2 base
+        shell: bash
+        run: |
+          actual="$(git hash-object index.html)"
+          expected="34d3afc88705637ee88ac44bab9b676d02604631"
+          echo "current index blob: $actual"
+          test "$actual" = "$expected" || { echo "Refusing to patch: index.html is not the verified v4.2 base."; exit 1; }
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          s=Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
+          if not m: raise SystemExit('beauty registry missing')
+          a=json.loads(m.group(1))
+          ids=[x.get('id') for x in a]
+          assert len(a)==23, len(a)
+          assert 'builtin_xiaoshu_kitty_pink_white_v1' in ids
+          print('RED confirmed: Kitty21 exists in 23-theme v4.2 registry')
+          PY
+
+      - name: Apply deletion and renumbering
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          pat=r'(<script id="xiaoshu-builtin-bubble-css-data" type="application/json">)(.*?)(</script>)'
+          m=re.search(pat,s,re.S)
+          if not m: raise SystemExit('beauty registry missing')
+          a=json.loads(m.group(2))
+          old=len(a)
+          a=[x for x in a if x.get('id')!='builtin_xiaoshu_kitty_pink_white_v1']
+          if len(a)!=old-1: raise SystemExit(f'Expected exactly one Kitty theme removal, {old}->{len(a)}')
+          for x in a:
+              if x.get('id')=='builtin_xiaoshu_soft_frame_pair_v1':
+                  x['name']='21_柔光双边框'; x['file']='21_柔光双边框.css'
+              elif x.get('id')=='builtin_xiaoshu_line_cat_milk_v1':
+                  x['name']='22_线条小猫Milk'; x['file']='22_线条小猫Milk.css'
+          newjson=json.dumps(a,ensure_ascii=False,separators=(',',':'))
+          s=s[:m.start(2)]+newjson+s[m.end(2):]
+          needle="'builtin_xiaoshu_compact_glass_v1':1\n};"
+          repl="'builtin_xiaoshu_compact_glass_v1':1,\n'builtin_xiaoshu_kitty_pink_white_v1':1\n};"
+          if needle not in s: raise SystemExit('removed-id guard anchor missing')
+          s=s.replace(needle,repl,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+
+      - name: GREEN - verify exact v4.3 target
+        shell: bash
+        run: |
+          actual="$(git hash-object index.html)"
+          expected="5458008717bd846f889e9b209497b8dee6416252"
+          echo "patched index blob: $actual"
+          test "$actual" = "$expected" || { echo "Patched file does not match verified v4.3 target."; exit 1; }
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          s=Path('index.html').read_text(encoding='utf-8')
+          m=re.search(r'<script id="xiaoshu-builtin-bubble-css-data" type="application/json">(.*?)</script>',s,re.S)
+          if not m: raise SystemExit('beauty registry missing')
+          a=json.loads(m.group(1)); ids=[x.get('id') for x in a]
+          assert len(a)==22, len(a)
+          assert 'builtin_xiaoshu_kitty_pink_white_v1' not in ids
+          soft=next(x for x in a if x.get('id')=='builtin_xiaoshu_soft_frame_pair_v1')
+          milk=next(x for x in a if x.get('id')=='builtin_xiaoshu_line_cat_milk_v1')
+          assert (soft.get('name'),soft.get('file'))==('21_柔光双边框','21_柔光双边框.css')
+          assert (milk.get('name'),milk.get('file'))==('22_线条小猫Milk','22_线条小猫Milk.css')
+          assert s.count('builtin_xiaoshu_kitty_pink_white_v1')==1
+          assert "if(isRemovedBuiltinBeautifyId(next))next='default'" in s
+          print('GREEN confirmed: Kitty theme deleted, 22 themes remain, numbering compacted')
+          PY
+
+      - name: Commit v4.3 to main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --quiet && { echo "No change to commit"; exit 1; }
+          git commit -m "更新v4.3：删除21号Kitty气泡"
+          git push origin HEAD:main

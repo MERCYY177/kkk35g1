@@ -21198,11 +21198,15 @@ boxSizing:'border-box',fontSize:'15px',lineHeight:'1.35',fontWeight:'500',
 letterSpacing:'normal',overflowWrap:'anywhere',wordBreak:'break-word',whiteSpace:'normal'
 };
 var DYNAMIC_PADDING_KEYS=['paddingTop','paddingRight','paddingBottom','paddingLeft'];
-var THEME_LAYOUT_IDS={
+/* Decorative frame themes need their authored inner spacing/typography, but must still use the app's responsive width. */
+var THEME_FRAME_LAYOUT_IDS={
+'builtin_xiaoshu_frame_borderimage_v1':1,
+'builtin_xiaoshu_soft_frame_pair_v1':1,
+'builtin_xiaoshu_line_cat_milk_v1':1
 };
-var THEME_LAYOUT_PROPS={width:1,minWidth:1,minHeight:1,maxWidth:1,fontSize:1,lineHeight:1};
+var THEME_FRAME_OWNED_PROPS={minWidth:1,minHeight:1,fontSize:1,lineHeight:1};
 function activeBeautifyThemeId(){try{return String(document.body&&document.body.getAttribute('data-xiaoshu-beautify-theme')||'');}catch(e){return '';}}
-function themeOwnsLayout(){return !!THEME_LAYOUT_IDS[activeBeautifyThemeId()];}
+function themeKeepsFrameGeometry(){return !!THEME_FRAME_LAYOUT_IDS[activeBeautifyThemeId()];}
 var EXCLUDE='.message-image-bubble-none,.message-image,.message-video,img,video,canvas,svg,.voice-message-bubble,.message-card,.message-card,.message-card,.message-card,.message-card,.message-card,.message-card,.message-card,.message-card,.chat-card,.bubble-card,[data-chat-card],[data-card],.xs-disabled-broad-card-selector,.xs-disabled-broad-Card-selector';
 function inlineCardLike(el){
 try{
@@ -21232,14 +21236,16 @@ paddingRight:Math.max(0,11-num(c.borderRightWidth))+'px',
 paddingBottom:Math.max(0,7-num(c.borderBottomWidth))+'px',
 paddingLeft:Math.max(0,11-num(c.borderLeftWidth))+'px'
 };
-var ownsLayout=themeOwnsLayout();
+var keepsFrame=themeKeepsFrameGeometry();
 el.setAttribute('data-xiaoshu-uniform-text','1');
 Object.keys(PROPS).forEach(function(k){
   var css=k.replace(/[A-Z]/g,function(m){return '-'+m.toLowerCase()});
-  if(ownsLayout&&THEME_LAYOUT_PROPS[k]){el.style.removeProperty(css);return;}
+  /* width/max-width stay responsive; only frame-specific inner geometry is left to the theme CSS. */
+  if(keepsFrame&&THEME_FRAME_OWNED_PROPS[k]){el.style.removeProperty(css);return;}
   el.style.setProperty(css,PROPS[k],'important');
 });
-if(ownsLayout){
+if(keepsFrame){
+  /* Do not crush decorative border-image content with the generic 7px/11px padding. */
   DYNAMIC_PADDING_KEYS.forEach(function(k){var css=k.replace(/[A-Z]/g,function(m){return '-'+m.toLowerCase()});el.style.removeProperty(css);});
 }else{
   Object.keys(pads).forEach(function(k){var css=k.replace(/[A-Z]/g,function(m){return '-'+m.toLowerCase()});el.style.setProperty(css,pads[k],'important');});

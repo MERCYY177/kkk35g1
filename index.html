@@ -3537,21 +3537,28 @@ const key = (typeof xsConversationMessageStorageKey === 'function') ? xsConversa
 const seq = ++window.__xsChatMessagesSaveSeq;
 window.__xsChatMessagesSaveChain = window.__xsChatMessagesSaveChain.catch(function(){ return null; }).then(async function(){
 try {
-const hasStickerReference = snapshot.some(function(item){ return !!(item && item.stickerId); });
-if (hasStickerReference && window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.flushMessageResources === 'function') {
-const resourceSaved = await window.xiaoshuStickerStore.flushMessageResources();
-if (!resourceSaved) throw new Error('表情资源映射尚未可靠保存');
-}
 await localforage.setItem(key, snapshot);
 try { xsWriteTailFullBackup('chat-save-snapshot', snapshot); } catch(_e) {}
 window.__xsChatMessagesSaveLastOk = Date.now();
 try { localStorage.setItem('xiaoshu_chat_save_queue_last_ok', String(window.__xsChatMessagesSaveLastOk)); } catch(_e) {}
-return true;
 } catch(e) {
 console.error('[应用保存队列] chatMessages 保存失败', {seq: seq, reason: reason || '', error: e});
 try { if (typeof showNotification === 'function') showNotification('聊天记录保存失败，请先别退出页面', 'error', 3000); } catch(_e) {}
 return false;
 }
+const hasStickerReference = snapshot.some(function(item){ return !!(item && item.stickerId); });
+if (hasStickerReference && window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.flushMessageResources === 'function') {
+try {
+Promise.resolve(window.xiaoshuStickerStore.flushMessageResources()).then(function(resourceSaved){
+if (!resourceSaved) console.warn('[应用保存队列] 聊天记录已保存；表情资源映射暂未落盘，不影响本次聊天记录保存', {seq: seq, reason: reason || ''});
+}).catch(function(resourceError){
+console.warn('[应用保存队列] 聊天记录已保存；表情资源映射保存失败', {seq: seq, reason: reason || '', error: resourceError});
+});
+} catch(resourceError) {
+console.warn('[应用保存队列] 聊天记录已保存；表情资源映射保存调用失败', {seq: seq, reason: reason || '', error: resourceError});
+}
+}
+return true;
 });
 return window.__xsChatMessagesSaveChain;
 }
@@ -18385,7 +18392,6 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       }else if(typeof addMessage==='function'){
         var targetConversation='card';
         addMessage({id:Date.now()+'_sticker_'+Math.random().toString(16).slice(2),sender:'user',text:'',timestamp:new Date(),stickerId:stickerId,messageKind:'sticker',status:'sent',type:'normal',favorited:false,note:null,conversationId:targetConversation});
-        try{if(typeof xsSaveChatMessagesOnlyNow==='function')xsSaveChatMessagesOnlyNow('sticker-send-immediate',xsGetConversationMessagesSync(targetConversation));}catch(_e){}
         try{if(typeof playSound==='function')playSound('send');}catch(_e){}
         try{
           if(typeof simulateReply==='function')simulateReply('card');

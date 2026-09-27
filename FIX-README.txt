@@ -1,9 +1,9 @@
-v3.8 暗夜模式尾巴颜色修复
+kkk35g1 v3.9 — 聊天记录保存误报修复
 
-基准：v3.7，其余功能保持不变。
+基准：v3.8 暗夜尾巴颜色修复版。
+本版只调整聊天记录保存链，不改 CSS / 气泡 / 尾巴 / 表情加载 / 滚动 / 主动表情逻辑。
 
-本次只处理 5 个“一起听 / iMessage”内置主题的暗夜模式尾巴：
-- 日间模式继续使用每套主题原来的 PNG/SVG 尾巴，不改形状、尺寸、位置和素材。
-- 暗夜模式使用同一张原尾巴素材作为 alpha mask，只把颜色改为当前气泡的 --xs-theme-sent-bg / --xs-theme-received-bg。
-- mask 使用 center/cover/no-repeat，与原主题 background-size: cover 保持一致；不再使用 v3.7 的统一 clip-path。
-- 未修改聊天保存、表情加载、滚动、主动发表情等其他逻辑。
+修复：
+1. chatMessages 先独立写入 IndexedDB；表情资源映射 flush 失败不再把聊天记录误判为保存失败。
+2. 只有真正的 chatMessages IndexedDB 写入失败时，才弹“聊天记录保存失败，请先别退出页面”。
+3. 去掉发表情时重复的 sticker-send-immediate 第二次聊天保存；addMessage 自己的即时保存队列仍保留。

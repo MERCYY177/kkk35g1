@@ -1,0 +1,63 @@
+name: Deploy v4.2 restore Kitty21
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-v4-2-restore-kitty21.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify exact v4.1 base
+        shell: bash
+        run: |
+          actual="$(git hash-object index.html)"
+          expected="ad26ba11b6e4fd1d0a6694d4efc090b3735f1e0d"
+          echo "current index blob: $actual"
+          test "$actual" = "$expected" || { echo "Refusing to patch: main index.html changed from the verified v4.1 base."; exit 1; }
+
+      - name: Apply v4.2 Kitty21 layout restoration
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          needle = "'builtin_xiaoshu_kitty_pink_white_v1':1,\n"
+          n = s.count(needle)
+          if n != 1:
+              raise SystemExit(f'Expected exactly one Kitty21 layout override, found {n}')
+          s = s.replace(needle, '', 1)
+          p.write_text(s, encoding='utf-8')
+          print('Removed only the Kitty21 theme-layout override.')
+          PY
+
+      - name: Verify exact v4.2 target
+        shell: bash
+        run: |
+          actual="$(git hash-object index.html)"
+          expected="34d3afc88705637ee88ac44bab9b676d02604631"
+          echo "patched index blob: $actual"
+          test "$actual" = "$expected" || { echo "Patched file does not match the verified v4.2 package."; exit 1; }
+          grep -Fq "'builtin_xiaoshu_frame_borderimage_v1':1," index.html
+          grep -Fq "'builtin_xiaoshu_line_cat_milk_v1':1" index.html
+          if grep -Fq "'builtin_xiaoshu_kitty_pink_white_v1':1," index.html; then
+            echo "Kitty21 override is still present"; exit 1
+          fi
+
+      - name: Commit v4.2 to main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --quiet && { echo "No change to commit"; exit 1; }
+          git commit -m "更新v4.2"
+          git push origin HEAD:main

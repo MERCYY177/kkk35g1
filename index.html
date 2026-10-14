@@ -744,7 +744,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <div class="setting-pill-switch"><div class="setting-pill-knob"></div></div>
 </div>
 <div class="cs-slider-row" id="xs-fixed-card-reply-control">
-<span class="cs-slider-label">固定回复条数</span>
+<span class="cs-slider-label">每轮回复消息数</span>
 <select class="xs-behavior-select" id="xs-fixed-card-reply-count">
 <option value="1">1 条</option><option value="2">2 条</option><option value="3">3 条</option><option value="4">4 条</option>
 <option value="5">5 条</option><option value="6">6 条</option><option value="7">7 条</option><option value="8">8 条</option>
@@ -2479,12 +2479,19 @@ global.ChatBackup={
     return output;
   }
 
-  function resolveCardReplyCount(source, randomFn) {
+  // 每轮发几条消息只由 fixedCardReplyCount 决定；组合开关不再改变消息条数。
+  function resolveCardReplyCount(source) {
+    return normalizeBehaviorSettings(source).fixedCardReplyCount;
+  }
+
+  // 随机组合模式下，每一条消息独立决定由几张字卡组成。
+  function resolveComboCardCount(source, randomFn) {
     var settings = normalizeBehaviorSettings(source);
-    if (!settings.randomCardComboEnabled) return settings.fixedCardReplyCount;
+    if (!settings.randomCardComboEnabled) return 1;
     var random = typeof randomFn === 'function' ? randomFn : Math.random;
     var span = settings.randomCardComboMax - settings.randomCardComboMin + 1;
-    return settings.randomCardComboMin + Math.min(span - 1, Math.floor(Math.max(0, Math.min(0.999999999, Number(random()) || 0)) * span));
+    var value = Math.max(0, Math.min(0.999999999, Number(random()) || 0));
+    return settings.randomCardComboMin + Math.min(span - 1, Math.floor(value * span));
   }
 
   function uniqueCards(cards) {
@@ -2524,13 +2531,28 @@ global.ChatBackup={
 
   function buildCardReplyPayloads(source, cards, randomFn) {
     var settings = normalizeBehaviorSettings(source);
-    var selected = selectUniqueCards(cards, resolveCardReplyCount(settings, randomFn), randomFn);
-    if (!selected.length) return [];
-    if (settings.randomCardComboEnabled) {
-      var combined = combineCardTexts(selected);
-      return combined ? [{ text: combined, cardFragments: selected.slice() }] : [];
+    var pool = uniqueCards(cards);
+    if (!pool.length) return [];
+    var available = pool.slice();
+    var replyCount = resolveCardReplyCount(settings);
+    var payloads = [];
+    for (var index = 0; index < replyCount; index += 1) {
+      var desired = resolveComboCardCount(settings, randomFn);
+      var picked = [];
+      while (picked.length < desired) {
+        if (!available.length) available = pool.filter(function (card) { return picked.indexOf(card) < 0; });
+        if (!available.length) break;
+        var next = selectUniqueCards(available, 1, randomFn)[0];
+        if (!next) break;
+        picked.push(next);
+        var usedIndex = available.indexOf(next);
+        if (usedIndex >= 0) available.splice(usedIndex, 1);
+      }
+      if (!picked.length) continue;
+      var text = settings.randomCardComboEnabled ? combineCardTexts(picked) : picked[0];
+      if (text) payloads.push({ text: text, cardFragments: picked.slice() });
     }
-    return selected.map(function (card) { return { text: card, cardFragments: [card] }; });
+    return payloads;
   }
 
   function trySendPartnerSticker(source, dependencies, randomFn) {
@@ -2646,6 +2668,7 @@ global.ChatBackup={
   global.XiaoshuBehaviorCore = {
     normalizeBehaviorSettings: normalizeBehaviorSettings,
     resolveCardReplyCount: resolveCardReplyCount,
+    resolveComboCardCount: resolveComboCardCount,
     selectUniqueCards: selectUniqueCards,
     combineCardTexts: combineCardTexts,
     buildCardReplyPayloads: buildCardReplyPayloads,
@@ -2706,6 +2729,15 @@ let isLoadingHistory = false;
 let isBatchFavoriteMode = false;
 let selectedMessages = [];
 let customReplies = [];
+// 字卡库以去除首尾空白后的文本作为唯一键，加载旧数据时统一清理完全重复项。
+function normalizeCustomReplyList(list) {
+    const seen = new Set();
+    return (Array.isArray(list) ? list : []).map(item => String(item == null ? '' : item).trim()).filter(text => {
+        if (!text || seen.has(text)) return false;
+        seen.add(text);
+        return true;
+    });
+}
 let recentDrawnReplies = []; // 最近真正抽中、等待删除/编辑/不处理的字卡
 let customPokes = [];
 let customStatuses = [];
@@ -3145,7 +3177,7 @@ savedBackgrounds = savedBgGallery;
 } else {
 savedBackgrounds = [{ id: 'preset-1', type: 'color', value: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' }];
 }
-if (savedCustomReplies) customReplies = savedCustomReplies;
+if (savedCustomReplies) customReplies = normalizeCustomReplyList(savedCustomReplies);
 if (savedReplyGroups) window.customReplyGroups = savedReplyGroups;
 if (savedPokeGroups) window.customPokeGroups = savedPokeGroups;
 if (savedStatusGroups) window.customStatusGroups = savedStatusGroups;
@@ -5131,14 +5163,8 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                     else throttledSaveData();
                 }
             }
-            if (!__xsUserJustSentSticker && __xsAllowSupplementalReply && Math.random() < 0.03) {
-                // ── 对方拍一拍：调用提取的通用函数（同时供 /测试拍一拍 指令使用）──
-                if (typeof window._triggerPartnerPoke === 'function') window._triggerPartnerPoke(__xsReplyConversation);
-                // 拍一拍是附加互动，继续生成正常回复，避免空拍一拍吞掉整轮消息。
-            }
-
-            // 固定模式发送多个独立气泡；随机组合模式把多张字卡合并为一个气泡。
-            const replyCount = window.XiaoshuBehaviorCore.resolveCardReplyCount(settings, Math.random);
+            // 每轮回复消息数独立受 fixedCardReplyCount 控制；随机组合只决定每条气泡内含几张字卡。
+            const replyCount = window.XiaoshuBehaviorCore.resolveCardReplyCount(settings);
             if (!customReplies || customReplies.length === 0) {
                 showNotification('回复库为空，请先到「自定义回复」中添加内容', 'info', 3500);
                 return;
@@ -5152,43 +5178,47 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                     if (group && group.disabled) (group.items || []).forEach(item => disabledRepliesOnce.add(String(item || '').trim()));
                 });
             } catch (_disabledReplyError) {}
-            const replyPoolOnce = customReplies
-                .map(r => String(r || '').trim())
-                .filter((text, index, list) => text && !disabledRepliesOnce.has(text) && list.indexOf(text) === index);
+            const replyPoolOnce = normalizeCustomReplyList(customReplies)
+                .filter(text => !disabledRepliesOnce.has(text));
             if (!replyPoolOnce.length) {
                 showNotification('回复库为空，请先到「自定义回复」中添加内容', 'info', 4000);
                 return;
             }
 
-            // 在本轮开始时一次性抽好字卡，并从临时池中移除已抽内容，
-            // 避免同一轮随机组合出现完全相同的回复。
-            const availableReplies = replyPoolOnce.slice();
-            const selectedReplies = [];
-            const drawCount = Math.min(replyCount, availableReplies.length);
-            for (let drawIndex = 0; drawIndex < drawCount; drawIndex++) {
-                let picked = (typeof window.xiaoshuPickCardReply === 'function')
-                    ? window.xiaoshuPickCardReply(availableReplies)
-                    : availableReplies[Math.floor(Math.random() * availableReplies.length)];
-                picked = String(picked || '').trim();
-                if (!picked) {
-                    const fallbackIndex = Math.floor(Math.random() * availableReplies.length);
-                    picked = String(availableReplies[fallbackIndex] || '').trim();
+            // 每条气泡独立抽卡；同一条组合气泡内部不会重复抽到同一张字卡。
+            const replyPayloads = [];
+            // 尽量整轮不重复；只有可用字卡不足以填满所有回复时才从池首重新抽取。
+            let availableReplies = replyPoolOnce.slice();
+            for (let replyIndex = 0; replyIndex < replyCount; replyIndex++) {
+                const desiredCardCount = settings.randomCardComboEnabled
+                    ? window.XiaoshuBehaviorCore.resolveComboCardCount(settings, Math.random)
+                    : 1;
+                const selectedReplies = [];
+                while (selectedReplies.length < desiredCardCount) {
+                    if (!availableReplies.length) {
+                        availableReplies = replyPoolOnce.filter(item => !selectedReplies.includes(item));
+                    }
+                    const candidates = availableReplies.filter(item => !selectedReplies.includes(item));
+                    if (!candidates.length) break;
+                    let picked = (typeof window.xiaoshuPickCardReply === 'function')
+                        ? window.xiaoshuPickCardReply(candidates)
+                        : candidates[Math.floor(Math.random() * candidates.length)];
+                    picked = String(picked || '').trim();
+                    let usedIndex = availableReplies.findIndex(item => String(item || '').trim() === picked);
+                    if (usedIndex < 0 || selectedReplies.includes(picked)) {
+                        picked = candidates[Math.floor(Math.random() * candidates.length)];
+                        usedIndex = availableReplies.findIndex(item => String(item || '').trim() === picked);
+                    }
+                    if (!picked || usedIndex < 0) break;
+                    selectedReplies.push(picked);
+                    availableReplies.splice(usedIndex, 1);
                 }
-                if (!picked) continue;
-                selectedReplies.push(picked);
-                const usedIndex = availableReplies.findIndex(item => String(item || '').trim() === picked);
-                if (usedIndex >= 0) availableReplies.splice(usedIndex, 1);
+                if (!selectedReplies.length) continue;
+                const text = settings.randomCardComboEnabled
+                    ? window.XiaoshuBehaviorCore.combineCardTexts(selectedReplies)
+                    : selectedReplies[0];
+                if (text) replyPayloads.push({ text, cardFragments: selectedReplies.slice() });
             }
-            if (!selectedReplies.length) {
-                showNotification('当前没有可用字卡，未发送空白消息', 'info', 3500);
-                return;
-            }
-            const replyPayloads = settings.randomCardComboEnabled
-                ? [{
-                    text: window.XiaoshuBehaviorCore.combineCardTexts(selectedReplies),
-                    cardFragments: selectedReplies.slice()
-                }]
-                : selectedReplies.map(text => ({ text, cardFragments: [text] }));
             if (!replyPayloads.length || !replyPayloads[0].text) return;
 
             // 确认有可用回复后再展示“正在输入中”，避免空转
@@ -5203,10 +5233,23 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 xsScheduleConversationTask(__xsReplyConversation, () => {
                     try {
                     const payload = replyPayloads[i];
-                    const replyText = payload.text;
-                    if (!replyText) {
-                        return;
-                    }
+                    // 发送前重新校验字卡。删除或屏蔽发生在输入延迟期间时，失效字卡不会再被发出。
+                    let disabledAtSend = new Set();
+                    try {
+                        disabledAtSend = typeof _getDisabledItemsSet === 'function'
+                            ? _getDisabledItemsSet()
+                            : new Set(JSON.parse(localStorage.getItem('disabledReplyItems') || '[]'));
+                        (window.customReplyGroups || []).forEach(group => {
+                            if (group && group.disabled) (group.items || []).forEach(item => disabledAtSend.add(String(item || '').trim()));
+                        });
+                    } catch (_disabledAtSendError) {}
+                    const liveReplySet = new Set(normalizeCustomReplyList(customReplies).filter(text => !disabledAtSend.has(text)));
+                    const liveFragments = (payload.cardFragments || []).map(fragment => String(fragment || '').trim()).filter(fragment => liveReplySet.has(fragment));
+                    if (!liveFragments.length) return;
+                    const replyText = settings.randomCardComboEnabled
+                        ? window.XiaoshuBehaviorCore.combineCardTexts(liveFragments)
+                        : liveFragments[0];
+                    if (!replyText) return;
 
                     let enabledStickerPool = [];
                     try {
@@ -5227,9 +5270,32 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                         enabledStickerPool = [];
                     }
                     enabledStickerPool = (enabledStickerPool || []).filter(Boolean);
-                    // 上一条是表情包时，对方从当前本地表情池中追加回复。
-                    // 随机组合时只在最后一张字卡后追加一次表情，避免一轮连续刷出多张表情包。
-                    const shouldSendSticker = enabledStickerPool.length > 0 && __xsAllowSupplementalReply && __xsUserJustSentSticker && i === replyPayloads.length - 1;
+                    // 用户刚发送表情包时，若需要用表情回应，则用表情替代最后一条字卡气泡，保持本轮条数不变。
+                    let shouldSendSticker = enabledStickerPool.length > 0 && __xsAllowSupplementalReply && __xsUserJustSentSticker && i === replyPayloads.length - 1;
+                    if (shouldSendSticker) {
+                        const replySticker = enabledStickerPool[Math.floor(Math.random() * enabledStickerPool.length)];
+                        const replyStickerId = window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.register === 'function'
+                            ? window.xiaoshuStickerStore.register(replySticker) : '';
+                        if (replyStickerId) {
+                            addMessage({
+                                id: Date.now() + i + 2000,
+                                sender: settings.partnerName || '对方',
+                                text: '',
+                                timestamp: new Date(),
+                                stickerId: replyStickerId,
+                                messageKind: 'sticker',
+                                status: 'received',
+                                favorited: false,
+                                note: null,
+                                type: 'normal',
+                                conversationId: __xsReplyConversation
+                            });
+                            playSound('message');
+                            if (typeof window._sendPartnerNotification === 'function') window._sendPartnerNotification(settings.partnerName || '对方', '[表情包]');
+                            return;
+                        }
+                        shouldSendSticker = false;
+                    }
 
                     let finalText = replyText;
                     let separateEmoji = null;
@@ -5243,7 +5309,8 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                                 ? emoji + ' ' + finalText
                                 : finalText + ' ' + emoji;
                         } else if (__xsAllowSupplementalReply) {
-                            separateEmoji = emoji;
+                            // 组合模式下不额外增加气泡，把 Emoji 合并进本条消息。
+                            finalText = Math.random() < 0.5 ? emoji + ' ' + finalText : finalText + ' ' + emoji;
                         }
                     }
                     
@@ -5255,14 +5322,15 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                                 ? kaomoji + ' ' + finalText
                                 : finalText + ' ' + kaomoji;
                         } else if (__xsAllowSupplementalReply) {
-                            separateKaomoji = kaomoji;
+                            // 组合模式下不额外增加气泡，把颜文字合并进本条消息。
+                            finalText = Math.random() < 0.5 ? kaomoji + ' ' + finalText : finalText + ' ' + kaomoji;
                         }
                     }
 
                     // 先登记本次确定要发出的字卡。原版放在 addMessage 之后，
                     // 某些浏览器中 addMessage 后续保存抛错时会导致登记语句被跳过。
                     if (typeof window.xiaoshuRecordRecentDrawnReply === 'function') {
-                        payload.cardFragments.forEach(fragment => {
+                        liveFragments.forEach(fragment => {
                             try { window.xiaoshuRecordRecentDrawnReply(fragment); } catch (_recentErr) { console.warn('[最近抽过] 登记失败', _recentErr); }
                         });
                     }
@@ -5278,7 +5346,7 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                         type: 'normal',
                         conversationId: __xsReplyConversation,
                         replySource: 'card',
-                        cardFragments: payload.cardFragments.slice()
+                        cardFragments: liveFragments.slice()
                     });
                     if (typeof window._sendPartnerNotification === 'function') {
                         window._sendPartnerNotification(settings.partnerName || '对方', finalText);
@@ -7301,17 +7369,15 @@ throttledSaveData();
 renderReplyLibrary();
 showNotification(`已删除 ${indices.length} 条拍一拍`, 'success');
 } else {
-const deletedTexts = indices.map(i => customReplies[i]);
-indices.forEach(i => customReplies.splice(i, 1));
-if (customReplyGroups) {
-customReplyGroups.forEach(g => {
-if (g.items) g.items = g.items.filter(t => !deletedTexts.includes(t));
-});
-}
+const deletedTexts = new Set(indices.map(i => String(customReplies[i] || '').trim()).filter(Boolean));
+customReplies = customReplies.filter(item => !deletedTexts.has(String(item || '').trim()));
+if (customReplyGroups) customReplyGroups.forEach(g => { if (g.items) g.items = g.items.filter(item => !deletedTexts.has(String(item || '').trim())); });
+try { const disabled = _getDisabledItemsSet(); deletedTexts.forEach(text => disabled.delete(text)); _saveDisabledItemsSet(disabled); } catch (_e) {}
+if (typeof _removeRecentDrawnReply === 'function') deletedTexts.forEach(text => _removeRecentDrawnReply(text));
 _batchSelectedIndices.clear();
 throttledSaveData();
 renderReplyLibrary();
-showNotification(`已删除 ${indices.length} 条`, 'success');
+showNotification(`已删除 ${deletedTexts.size} 条字卡（含重复副本）`, 'success');
 }
 });
 }
@@ -8102,11 +8168,26 @@ function deleteItem(index) {
 if (!confirm('确定删除吗？')) return;
 const ctx = _getGroupCtx();
 const item = _tabHasGroups() ? ctx.items[index] : null;
-if (currentMajorTab === 'reply' && currentSubTab === 'custom') customReplies.splice(index, 1);
+if (currentMajorTab === 'reply' && currentSubTab === 'custom') {
+    const target = String((_tabHasGroups() && item != null) ? item : (customReplies[index] == null ? '' : customReplies[index])).trim();
+    if (target) {
+        // 同一文本即同一张逻辑字卡；删除时清除重复副本，避免数量减少但仍被抽到。
+        customReplies = customReplies.filter(value => String(value || '').trim() !== target);
+        if (window.customReplyGroups) window.customReplyGroups.forEach(group => {
+            if (Array.isArray(group.items)) group.items = group.items.filter(value => String(value || '').trim() !== target);
+        });
+        try {
+            const disabled = _getDisabledItemsSet();
+            disabled.delete(target);
+            _saveDisabledItemsSet(disabled);
+        } catch (_e) {}
+        if (typeof _removeRecentDrawnReply === 'function') _removeRecentDrawnReply(target);
+    }
+}
 else if (currentSubTab === 'kaomojis') kaomojiLibrary.splice(index, 1);
 else if (currentSubTab === 'pokes') customPokes.splice(index, 1);
 else if (currentSubTab === 'intros') customIntros.splice(index, 1);
-if (item && ctx.groups) {
+if (item && ctx.groups && !(currentMajorTab === 'reply' && currentSubTab === 'custom')) {
 ctx.groups.forEach(g => { if (g.items) g.items = g.items.filter(t => t !== item); });
 }
 throttledSaveData();
@@ -8386,7 +8467,7 @@ function _showImportUI(data) {
             let totalAdded = 0;
             if (overwrite) {
                 selected.forEach(m => {
-                    if (m.key === 'customReplies')         { customReplies               = data.customReplies;       totalAdded += data.customReplies.length; }
+                    if (m.key === 'customReplies')         { customReplies               = normalizeCustomReplyList(data.customReplies); totalAdded += customReplies.length; }
                     else if (m.key === 'kaomojiLibrary')    { kaomojiLibrary              = data.kaomojiLibrary;      totalAdded += data.kaomojiLibrary.length; }
                     else if (m.key === 'customPokes')      { customPokes                 = data.customPokes;         totalAdded += data.customPokes.length; }
                     else if (m.key === 'customIntros')     { customIntros                = data.customIntros;        totalAdded += data.customIntros.length; }
@@ -22058,7 +22139,7 @@ if(stickerControl)stickerControl.style.display=s.autoStickerEnabled?'block':'non
 if(interval){interval.value=String(s.autoStickerInterval);var intervalValue=byId('xs-auto-sticker-interval-value');if(intervalValue)intervalValue.textContent=s.autoStickerInterval+'分钟'}
 if(chance){chance.value=String(s.autoStickerChance);var chanceValue=byId('xs-auto-sticker-chance-value');if(chanceValue)chanceValue.textContent=s.autoStickerChance+'%'}
 if(comboToggle){comboToggle.classList.toggle('active',s.randomCardComboEnabled);comboToggle.removeAttribute('aria-disabled')}
-if(fixedControl)fixedControl.style.display=s.randomCardComboEnabled?'none':'flex';
+if(fixedControl)fixedControl.style.display='flex';
 if(comboControl)comboControl.style.display=s.randomCardComboEnabled?'block':'none';
 if(byId('xs-fixed-card-reply-count'))byId('xs-fixed-card-reply-count').value=String(s.fixedCardReplyCount);
 if(byId('xs-random-card-combo-min'))byId('xs-random-card-combo-min').value=String(s.randomCardComboMin);

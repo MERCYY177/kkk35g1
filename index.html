@@ -2585,7 +2585,6 @@ global.ChatBackup={
       state.pageVisible === true &&
       state.hasFocus === true &&
       state.chatActive === true &&
-      state.recentActivity === true &&
       state.batchFavoriteMode !== true;
   }
 
@@ -5271,7 +5270,8 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                     }
                     enabledStickerPool = (enabledStickerPool || []).filter(Boolean);
                     // 用户刚发送表情包时，若需要用表情回应，则用表情替代最后一条字卡气泡，保持本轮条数不变。
-                    let shouldSendSticker = enabledStickerPool.length > 0 && __xsAllowSupplementalReply && __xsUserJustSentSticker && i === replyPayloads.length - 1;
+                    // 回复表情包与随机组合字卡无关；用户刚发送表情包时，用表情替代本轮最后一条字卡回复。
+                    let shouldSendSticker = enabledStickerPool.length > 0 && __xsUserJustSentSticker && i === replyPayloads.length - 1;
                     if (shouldSendSticker) {
                         const replySticker = enabledStickerPool[Math.floor(Math.random() * enabledStickerPool.length)];
                         const replyStickerId = window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.register === 'function'

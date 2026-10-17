@@ -5982,9 +5982,13 @@ if (typeof el.blur === 'function') el.blur();
 };
 // 第一次必须发生在聊天页被隐藏以前，Android 才会立即关闭输入法。
 blurInputs();
-// 少数 WebView 会在当前点击事件结束后重新聚焦，再补两次失焦。
-setTimeout(blurInputs, 0);
-setTimeout(blurInputs, 80);
+// 少数 WebView 会在当前点击事件结束后重新聚焦，再补两次失焦；若用户已返回聊天，不再执行旧回调。
+const blurIfStillAway = function() {
+if (document.body && document.body.classList.contains('xiaoshu-chat-active')) return;
+blurInputs();
+};
+setTimeout(blurIfStillAway, 0);
+setTimeout(blurIfStillAway, 80);
 }
 window.xiaoshuDismissChatKeyboards = dismissChatKeyboardsBeforeHome;
 window.showHomePage = function() {
@@ -17705,7 +17709,7 @@ if (window.__xiaoshuHomeChatLayoutUnifiedV3) return;
 window.__xiaoshuHomeChatLayoutUnifiedV3 = true;
 window.__xiaoshuHomeChatLayoutUnifiedV2 = true;
 window.__xiaoshuHomeChatLayoutUnifiedV1 = true;
-var scheduled=false, anchoredScheduled=false, observerInstalled=false, relayoutSnapshot=null, stableSnapshot=null, userBrowsingHistory=false, userScrollIntentUntil=0, programmaticScrollUntil=0;
+var scheduled=false, anchoredScheduled=false, observerInstalled=false, anchoredLayoutTimer=null, relayoutSnapshot=null, stableSnapshot=null, userBrowsingHistory=false, userScrollIntentUntil=0, programmaticScrollUntil=0;
 var lastTop=0, lastInputHeight=74;
 function container(){return document.getElementById('chat-container')||document.querySelector('.chat-container');}
 function inputArea(){return document.querySelector('.input-area-wrapper');}
@@ -17752,14 +17756,30 @@ function apply(forceBottom){
 applyViewportVars();var s=moveMessagesIntoStack();if(!s)return;
 var preserveIncoming=Date.now()<Number(window.__xiaoshuIncomingPreserveUntil||0);
 if(!preserveIncoming&&forceBottom)s.scrollTop=s.scrollHeight;
+return s;
 }
 function schedule(forceBottom){if(scheduled)return;scheduled=true;requestAnimationFrame(function(){scheduled=false;apply(!!forceBottom);});}
-function queueAnchoredLayout(){if(!relayoutSnapshot)relayoutSnapshot=stableSnapshot||window.xiaoshuCaptureChatRelayout();if(anchoredScheduled)return;anchoredScheduled=true;requestAnimationFrame(function(){apply(false);requestAnimationFrame(function(){anchoredScheduled=false;window.xiaoshuRestoreChatRelayout()})})}
+function queueAnchoredLayout(){
+if(anchoredLayoutTimer)clearTimeout(anchoredLayoutTimer);
+anchoredLayoutTimer=setTimeout(function(){
+anchoredLayoutTimer=null;
+if(anchoredScheduled){queueAnchoredLayout();return;}
+if(!relayoutSnapshot)relayoutSnapshot=stableSnapshot||window.xiaoshuCaptureChatRelayout();
+anchoredScheduled=true;
+requestAnimationFrame(function(){
+var laidOutStack=apply(false);
+requestAnimationFrame(function(){
+window.xiaoshuRestoreChatRelayout(undefined,laidOutStack);
+anchoredScheduled=false;
+});
+});
+},80);
+}
 window.xiaoshuCaptureChatRelayout=function(){
 var s=moveMessagesIntoStack(),core=window.XiaoshuBehaviorCore;if(core&&typeof core.captureChatScrollAnchor==='function')relayoutSnapshot=core.captureChatScrollAnchor(s,userBrowsingHistory);else relayoutSnapshot={nearBottom:!userBrowsingHistory&&nearBottom(s,80),distanceFromBottom:bottomDistance(s),clientHeight:s?s.clientHeight:0,userBrowsingHistory:userBrowsingHistory,suppressHistoryLoad:true};relayoutSnapshot.near=relayoutSnapshot.nearBottom;relayoutSnapshot.distance=relayoutSnapshot.distanceFromBottom;relayoutSnapshot.top=s?s.scrollTop:0;stableSnapshot=Object.assign({},relayoutSnapshot);return relayoutSnapshot;
 };
-window.xiaoshuRestoreChatRelayout=function(snapshot){
-snapshot=snapshot||relayoutSnapshot;relayoutSnapshot=null;var s=moveMessagesIntoStack();if(!s)return;
+window.xiaoshuRestoreChatRelayout=function(snapshot,knownStack){
+snapshot=snapshot||relayoutSnapshot;relayoutSnapshot=null;var s=knownStack||moveMessagesIntoStack();if(!s)return;
 if(snapshot){var core=window.XiaoshuBehaviorCore,next;if(core&&typeof core.restoreChatScrollTop==='function')next=core.restoreChatScrollTop(snapshot,s);else next=(snapshot.near||snapshot.nearBottom)?s.scrollHeight:Math.max(0,s.scrollHeight-s.clientHeight-Number(snapshot.distanceFromBottom||snapshot.distance||0));programmaticScrollUntil=Date.now()+180;window.__xiaoshuSuppressHistoryLoadUntil=Date.now()+500;s.scrollTop=next;userBrowsingHistory=!!snapshot.userBrowsingHistory&&!snapshot.nearBottom;stableSnapshot={nearBottom:!userBrowsingHistory&&nearBottom(s,80),distanceFromBottom:bottomDistance(s),clientHeight:s.clientHeight,userBrowsingHistory:userBrowsingHistory,suppressHistoryLoad:true};stableSnapshot.near=stableSnapshot.nearBottom;stableSnapshot.distance=stableSnapshot.distanceFromBottom;}
 };
 window.xiaoshuGetChatScrollElement=function(){return moveMessagesIntoStack();};

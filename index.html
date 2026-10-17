@@ -18837,7 +18837,7 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
     var arr=[]; try{if(window.xiaoshuStickerStore)arr=window.xiaoshuStickerStore.getPool();else if(typeof window.xiaoshuGetSharedStickerPool==='function')arr=window.xiaoshuGetSharedStickerPool();}catch(e){}
     return uniq(arr).filter(isImg);
   }
-  var STICKER_BATCH_SIZE=25,stickerPool=[],stickerRenderedCount=0,armedStickerButton=null,stickerLoadQueue=[],stickerActiveLoads=0,stickerFailedSources=new Map(),stickerLoadGeneration=0,stickerFillGeneration=0,stickerFillScheduled=null,stickerRenderedSignature='';
+  var STICKER_BATCH_SIZE=25,stickerPool=[],stickerRenderedCount=0,armedStickerButton=null,stickerLoadQueue=[],stickerActiveLoads=0,stickerLoadingImages=new Set(),stickerFailedSources=new Map(),stickerLoadGeneration=0,stickerFillGeneration=0,stickerFillScheduled=null,stickerRenderedSignature='';
   var STICKER_LOAD_LIMIT=5,STICKER_LOAD_TIMEOUT=9000;
   function clearStickerDeleteButton(){if(armedStickerButton&&armedStickerButton.classList)armedStickerButton.classList.remove('delete-armed');armedStickerButton=null;}
   function armStickerDeleteButton(btn){if(!btn)return;if(armedStickerButton&&armedStickerButton!==btn&&armedStickerButton.classList)armedStickerButton.classList.remove('delete-armed');armedStickerButton=btn;btn.classList.add('delete-armed');}
@@ -18859,25 +18859,28 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
     }
   }
   function finishStickerAttempt(img,ok){
-    if(!img)return;var btn=img.parentElement;img.__xsLoading=false;stickerActiveLoads=Math.max(0,stickerActiveLoads-1);
+    if(!img)return;var btn=img.parentElement;img.__xsLoading=false;img.__xsCancelLoad=null;stickerLoadingImages.delete(img);stickerActiveLoads=Math.max(0,stickerActiveLoads-1);
     if(ok){img.__xsLoaded=true;if(btn){btn.classList.remove('is-loading','load-failed','is-unavailable');requestAnimationFrame(function(){if(btn&&btn.isConnected)btn.classList.add('is-loaded');});}}
     pumpStickerLoads();
   }
   function startStickerLoad(img){
     if(!img||!img.isConnected||img.__xsLoaded||img.__xsLoading)return;var src=String(img.__stickerSrc||'');if(!src||(stickerFailedSources.has(src)&&Date.now()-stickerFailedSources.get(src)<300000)){removeUnavailableSticker(img);return;}
-    img.__xsLoading=true;stickerActiveLoads++;var generation=img.__xsGeneration,btn=img.parentElement,settled=false,attempt=Number(img.__xsAttempt||0);
+    img.__xsLoading=true;stickerActiveLoads++;stickerLoadingImages.add(img);var generation=img.__xsGeneration,btn=img.parentElement,settled=false,attempt=Number(img.__xsAttempt||0);
     if(btn){btn.classList.remove('load-failed','is-unavailable');btn.classList.add('is-loading');}
     var timer=setTimeout(function(){fail();},STICKER_LOAD_TIMEOUT);
     function clear(){clearTimeout(timer);img.onload=null;img.onerror=null;}
-    function success(){if(settled)return;settled=true;clear();if(generation!==stickerLoadGeneration){finishStickerAttempt(img,false);return;}finishStickerAttempt(img,true);}
+    function cancelLoad(){if(settled)return;settled=true;clear();try{img.removeAttribute('src');}catch(_e){}img.__xsLoading=false;img.__xsCancelLoad=null;stickerLoadingImages.delete(img);stickerActiveLoads=Math.max(0,stickerActiveLoads-1);if(btn&&btn.classList)btn.classList.remove('is-loading');pumpStickerLoads();}
+    img.__xsCancelLoad=cancelLoad;
+    function success(){if(settled)return;settled=true;clear();img.__xsCancelLoad=null;if(generation!==stickerLoadGeneration){finishStickerAttempt(img,false);return;}finishStickerAttempt(img,true);}
     function fail(){
-      if(settled)return;settled=true;clear();try{img.removeAttribute('src');}catch(_e){}
+      if(settled)return;settled=true;clear();img.__xsCancelLoad=null;stickerLoadingImages.delete(img);try{img.removeAttribute('src');}catch(_e){}
       img.__xsLoading=false;stickerActiveLoads=Math.max(0,stickerActiveLoads-1);attempt++;img.__xsAttempt=attempt;
       if(attempt<=2&&img.isConnected){setTimeout(function(){queueStickerThumb(img,src,true);},attempt===1?900:2200);}else removeUnavailableSticker(img);
       pumpStickerLoads();
     }
     img.onload=success;img.onerror=fail;img.alt='';img.decoding='async';img.src=stickerRetrySrc(src,attempt);
   }
+  function cancelStaleStickerLoads(){Array.from(stickerLoadingImages).forEach(function(img){if(img&&img.__xsGeneration!==stickerLoadGeneration&&typeof img.__xsCancelLoad==='function')img.__xsCancelLoad();});}
   function queueStickerThumb(img,src,front){
     if(!img||!img.isConnected||img.__xsLoaded||img.__xsLoading||img.__xsQueued)return;img.__stickerSrc=src;img.__xsGeneration=stickerLoadGeneration;img.alt='';img.decoding='async';img.__xsQueued=true;
     var release=function(){img.__xsQueued=false;var p=picker();if(!img.isConnected||img.__xsGeneration!==stickerLoadGeneration||!p||!p.classList.contains('active')||p.dataset.xsPanelKind!=='stickers')return;if(front)stickerLoadQueue.unshift(img);else stickerLoadQueue.push(img);pumpStickerLoads();};
@@ -18959,7 +18962,7 @@ function scheduleStickerGridFill(generation,fillGeneration){
       return;
     }
     stickerLoadGeneration++;stickerFillGeneration++;stickerFillScheduled=null;
-    stickerLoadQueue.forEach(function(img){if(img)img.__xsQueued=false;});stickerLoadQueue=[];
+    stickerLoadQueue.forEach(function(img){if(img)img.__xsQueued=false;});stickerLoadQueue=[];cancelStaleStickerLoads();
     stickerPool=nextPool;stickerRenderedSignature=nextSignature;stickerRenderedCount=0;
     a.innerHTML=uploadRow()+(stickerPool.length?'<div class="xs-final-sticker-bar"><span>共享表情包 · '+stickerPool.length+' 个</span></div><div class="xs-final-sticker-grid"></div>':'<div class="xs-final-empty">暂无</div>');a.scrollTop=0;
     var upload=a.querySelector('[data-xs-final-upload-sticker]');if(upload)upload.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();if(window.xiaoshuStickerStore)window.xiaoshuStickerStore.openUpload();else if(window.xiaoshuOpenSharedStickerUpload)window.xiaoshuOpenSharedStickerUpload();},true);

@@ -18946,9 +18946,10 @@ function scheduleStickerGridFill(generation,fillGeneration){
   function uploadRow(){return '<div class="xs-final-upload-row"><div class="xs-final-upload-actions"><button type="button" class="xs-final-upload-btn" data-xs-final-upload-sticker>＋ 上传</button><button type="button" class="xs-final-manage-btn" data-xs-final-manage-sticker>管理</button></div></div>';}
   function openStickers(force){
     closeMore();var p=picker(),a=area();if(!p||!a)return;if(!force&&p.classList.contains('active')&&p.dataset.xsPanelKind==='stickers'){closePicker();return;}
+    var wasStickerPanel=p.dataset.xsPanelKind==='stickers';
     var nextPool=getSharedStickers().filter(function(src){return !(stickerFailedSources.has(src)&&Date.now()-stickerFailedSources.get(src)<300000);});
     var nextSignature=JSON.stringify(nextPool),existingGrid=a.querySelector('.xs-final-sticker-grid'),hasExistingEmpty=!!a.querySelector('.xs-final-empty');
-    var canReuse=stickerRenderedSignature===nextSignature&&!!(existingGrid||hasExistingEmpty);
+    var canReuse=wasStickerPanel&&stickerRenderedSignature===nextSignature&&!!(existingGrid||hasExistingEmpty);
     p.classList.add('active');header('stickers');clearStickerDeleteButton();
     if(canReuse){
       stickerPool=nextPool;

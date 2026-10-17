@@ -18794,7 +18794,7 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
   function norm(s){ return String(s||'').trim(); }
   function uniq(arr){ var out=[], seen=new Set(); (arr||[]).forEach(function(x){ x=norm(x); if(x&&!seen.has(x)){ seen.add(x); out.push(x); } }); return out; }
   function isImg(s){ s=norm(s); return /^(data:image\/|blob:|https?:\/\/|file:|content:)/i.test(s)||/\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i.test(s); }
-  function closePicker(){stickerLoadGeneration++;clearStickerDeleteButton();stickerLoadQueue=[];disconnectStickerImageObserver();var p=picker();if(p)p.classList.remove('active');}
+  function closePicker(){stickerFillGeneration++;stickerFillScheduled=null;clearStickerDeleteButton();stickerLoadQueue.forEach(function(img){if(img)img.__xsQueued=false;});stickerLoadQueue=[];disconnectStickerImageObserver();var p=picker();if(p)p.classList.remove('active');}
   function closeMore(){ var m=$('xs-wx-more-panel'); if(m) m.classList.remove('active'); }
   function header(kind){
     var p=picker(); if(!p) return;
@@ -18837,7 +18837,7 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
     var arr=[]; try{if(window.xiaoshuStickerStore)arr=window.xiaoshuStickerStore.getPool();else if(typeof window.xiaoshuGetSharedStickerPool==='function')arr=window.xiaoshuGetSharedStickerPool();}catch(e){}
     return uniq(arr).filter(isImg);
   }
-  var STICKER_BATCH_SIZE=25,stickerPool=[],stickerRenderedCount=0,armedStickerButton=null,stickerLoadQueue=[],stickerActiveLoads=0,stickerFailedSources=new Map(),stickerLoadGeneration=0;
+  var STICKER_BATCH_SIZE=25,stickerPool=[],stickerRenderedCount=0,armedStickerButton=null,stickerLoadQueue=[],stickerActiveLoads=0,stickerFailedSources=new Map(),stickerLoadGeneration=0,stickerFillGeneration=0,stickerFillScheduled=null,stickerRenderedSignature='';
   var STICKER_LOAD_LIMIT=5,STICKER_LOAD_TIMEOUT=9000;
   function clearStickerDeleteButton(){if(armedStickerButton&&armedStickerButton.classList)armedStickerButton.classList.remove('delete-armed');armedStickerButton=null;}
   function armStickerDeleteButton(btn){if(!btn)return;if(armedStickerButton&&armedStickerButton!==btn&&armedStickerButton.classList)armedStickerButton.classList.remove('delete-armed');armedStickerButton=btn;btn.classList.add('delete-armed');}
@@ -18880,8 +18880,12 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
   }
   function queueStickerThumb(img,src,front){
     if(!img||!img.isConnected||img.__xsLoaded||img.__xsLoading||img.__xsQueued)return;img.__stickerSrc=src;img.__xsGeneration=stickerLoadGeneration;img.alt='';img.decoding='async';img.__xsQueued=true;
-    var release=function(){img.__xsQueued=false;if(front)stickerLoadQueue.unshift(img);else stickerLoadQueue.push(img);pumpStickerLoads();};
+    var release=function(){img.__xsQueued=false;var p=picker();if(!img.isConnected||img.__xsGeneration!==stickerLoadGeneration||!p||!p.classList.contains('active')||p.dataset.xsPanelKind!=='stickers')return;if(front)stickerLoadQueue.unshift(img);else stickerLoadQueue.push(img);pumpStickerLoads();};
     if(typeof requestAnimationFrame==='function')requestAnimationFrame(release);else setTimeout(release,0);
+  }
+  function resumeStickerGridLoads(grid){
+    if(!grid||!grid.isConnected)return;
+    grid.querySelectorAll('img').forEach(function(img){if(img.__xsLoaded||img.__xsLoading||img.__xsQueued)return;var src=String(img.__stickerSrc||(img.parentElement&&img.parentElement.__stickerSrc)||'');if(src)queueStickerThumb(img,src,false);});
   }
   function appendStickerBatch(){
     var grid=document.querySelector('#combo-content-area .xs-final-sticker-grid');if(!grid||stickerRenderedCount>=stickerPool.length)return;
@@ -18895,13 +18899,18 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
     }
     grid.appendChild(frag);pending.forEach(function(img){queueStickerThumb(img,img.__stickerSrc,false);});
   }
-function scheduleStickerGridFill(generation){
+function scheduleStickerGridFill(generation,fillGeneration){
   if(generation!==stickerLoadGeneration)return;
+  fillGeneration=typeof fillGeneration==='number'?fillGeneration:stickerFillGeneration;
+  if(fillGeneration!==stickerFillGeneration)return;
+  var p=picker();if(!p||!p.classList.contains('active')||p.dataset.xsPanelKind!=='stickers')return;
   var grid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
   if(!grid||!grid.isConnected||stickerRenderedCount>=stickerPool.length)return;
   appendStickerBatch();
-  if(generation!==stickerLoadGeneration||stickerRenderedCount>=stickerPool.length)return;
-  var next=function(){scheduleStickerGridFill(generation);};
+  if(generation!==stickerLoadGeneration||fillGeneration!==stickerFillGeneration||stickerRenderedCount>=stickerPool.length)return;
+  if(stickerFillScheduled===fillGeneration)return;
+  stickerFillScheduled=fillGeneration;
+  var next=function(){if(stickerFillScheduled===fillGeneration)stickerFillScheduled=null;scheduleStickerGridFill(generation,fillGeneration);};
   if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(next,{timeout:120});else setTimeout(next,16);
 }
   function hideStickerFromGrid(src){
@@ -18937,11 +18946,24 @@ function scheduleStickerGridFill(generation){
   function uploadRow(){return '<div class="xs-final-upload-row"><div class="xs-final-upload-actions"><button type="button" class="xs-final-upload-btn" data-xs-final-upload-sticker>＋ 上传</button><button type="button" class="xs-final-manage-btn" data-xs-final-manage-sticker>管理</button></div></div>';}
   function openStickers(force){
     closeMore();var p=picker(),a=area();if(!p||!a)return;if(!force&&p.classList.contains('active')&&p.dataset.xsPanelKind==='stickers'){closePicker();return;}
-    p.classList.add('active');header('stickers');stickerLoadGeneration++;clearStickerDeleteButton();stickerLoadQueue=[];stickerActiveLoads=0;stickerPool=getSharedStickers().filter(function(src){return !(stickerFailedSources.has(src)&&Date.now()-stickerFailedSources.get(src)<300000);});stickerRenderedCount=0;
+    var nextPool=getSharedStickers().filter(function(src){return !(stickerFailedSources.has(src)&&Date.now()-stickerFailedSources.get(src)<300000);});
+    var nextSignature=JSON.stringify(nextPool),existingGrid=a.querySelector('.xs-final-sticker-grid'),hasExistingEmpty=!!a.querySelector('.xs-final-empty');
+    var canReuse=stickerRenderedSignature===nextSignature&&!!(existingGrid||hasExistingEmpty);
+    p.classList.add('active');header('stickers');clearStickerDeleteButton();
+    if(canReuse){
+      stickerPool=nextPool;
+      stickerFillGeneration++;stickerFillScheduled=null;
+      resumeStickerGridLoads(existingGrid);
+      scheduleStickerGridFill(stickerLoadGeneration,stickerFillGeneration);
+      return;
+    }
+    stickerLoadGeneration++;stickerFillGeneration++;stickerFillScheduled=null;
+    stickerLoadQueue.forEach(function(img){if(img)img.__xsQueued=false;});stickerLoadQueue=[];
+    stickerPool=nextPool;stickerRenderedSignature=nextSignature;stickerRenderedCount=0;
     a.innerHTML=uploadRow()+(stickerPool.length?'<div class="xs-final-sticker-bar"><span>共享表情包 · '+stickerPool.length+' 个</span></div><div class="xs-final-sticker-grid"></div>':'<div class="xs-final-empty">暂无</div>');a.scrollTop=0;
     var upload=a.querySelector('[data-xs-final-upload-sticker]');if(upload)upload.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();if(window.xiaoshuStickerStore)window.xiaoshuStickerStore.openUpload();else if(window.xiaoshuOpenSharedStickerUpload)window.xiaoshuOpenSharedStickerUpload();},true);
     var manage=a.querySelector('[data-xs-final-manage-sticker]');if(manage)manage.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();if(window.xiaoshuStickerStore&&window.xiaoshuStickerStore.openAdmin)window.xiaoshuStickerStore.openAdmin();else if(window.xiaoshuOpenStickerAdmin)window.xiaoshuOpenStickerAdmin();},true);
-    var grid=a.querySelector('.xs-final-sticker-grid');if(grid){appendStickerBatch();bindStickerGrid(grid,a);scheduleStickerGridFill(stickerLoadGeneration);}
+    var grid=a.querySelector('.xs-final-sticker-grid');if(grid){appendStickerBatch();bindStickerGrid(grid,a);scheduleStickerGridFill(stickerLoadGeneration,stickerFillGeneration);}
   }
   function getPokes(){var out=[];try{if(typeof myPokes!=='undefined'&&Array.isArray(myPokes))out=out.concat(myPokes);}catch(e){}try{if(typeof customPokes!=='undefined'&&Array.isArray(customPokes))out=out.concat(customPokes);}catch(e){}return uniq(out);}
   function sendPoke(text){text=String(text||'').trim();if(!text)return;try{var targetConversation='card';var clean=(typeof window._sanitizePokeTextForDisplay==='function')?window._sanitizePokeTextForDisplay(text):text;if(typeof addMessage==='function')addMessage({id:Date.now(),text:(typeof _formatPokeText==='function'?_formatPokeText((settings.myName||'我')+' '+clean):(settings.myName||'我')+' '+clean),timestamp:new Date(),type:'system',conversationId:targetConversation});if(typeof playSound==='function')playSound('poke');setTimeout(function(){if(typeof simulateReply==='function')simulateReply(targetConversation);},1500);}catch(e){}closePicker();}
@@ -18950,7 +18972,7 @@ function scheduleStickerGridFill(generation){
   function openMore(){closePicker();var m=ensureMore();m.classList.toggle('active');}
   function boot(){var combo=$('combo-btn'),plus=$('collapse-expand-btn');if(combo&&!combo.dataset.xsFinalEmojiOnly){combo.dataset.xsFinalEmojiOnly='1';combo.setAttribute('title','表情');combo.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();openEmoji(false);},true);}if(plus&&!plus.dataset.xsFinalMoreOnly){plus.dataset.xsFinalMoreOnly='1';plus.removeAttribute('onclick');plus.onclick=null;plus.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();openMore();},true);}ensureMore();var p=picker();if(p){var h=p.querySelector('.combo-tabs-header');if(h&&!p.classList.contains('active'))h.innerHTML='<button type="button" class="xs-final-tab active" data-xs-tab="emoji">表情符号</button><button type="button" class="xs-final-tab" data-xs-tab="stickers">共享表情包</button>';}}
   document.addEventListener('click',function(e){var t=e.target&&(e.target.nodeType===1?e.target:e.target.parentElement);if(!t)return;var p=picker(),m=$('xs-wx-more-panel'),combo=$('combo-btn'),plus=$('collapse-expand-btn');if((p&&p.contains(t))||(m&&m.contains(t))||(combo&&combo.contains(t))||(plus&&plus.contains(t)))return;closePicker();closeMore();},true);
-  window.addEventListener('stickerLibraryUpdated',function(){var p=picker();if(p&&p.classList.contains('active')&&p.dataset.xsPanelKind==='stickers')openStickers(true);});
+  window.addEventListener('stickerLibraryUpdated',function(){var p=picker();if(!p||!p.classList.contains('active')||p.dataset.xsPanelKind!=='stickers')return;var nextPool=getSharedStickers().filter(function(src){return !(stickerFailedSources.has(src)&&Date.now()-stickerFailedSources.get(src)<300000);});if(JSON.stringify(nextPool)!==stickerRenderedSignature)openStickers(true);});
   window.renderComboMenu=function(){openEmoji(true);}; window.showEmojiTab=function(){openEmoji(true);}; window.renderStickers=function(){openStickers(true);}; window.showPokeTab=function(){openPokePanel();}; window.showVoiceTab=function(){openEmoji(true);};
   window.__xiaoshuRenderStickerPickerV6=function(){openStickers(true);}; window.xiaoshuOpenUnifiedStickerPanel=function(mode,force){if(mode==='stickers')openStickers(!!force);else openEmoji(!!force);}; window.xiaoshuRenderSharedStickers=function(){openStickers(true);}; window.xiaoshuRenderSharedEmoji=function(){openEmoji(true);}; window.xiaoshuRenderSharedPoke=function(){openPokePanel();};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();

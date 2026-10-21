@@ -43,7 +43,7 @@ jobs:
               raise SystemExit(f"index.html differs from the expected deployment base ({current_blob}); safe stop.")
 
           html = index_path.read_bytes().decode("utf-8")
-          pattern = re.compile(r'(<script\\s+id="xiaoshu-builtin-sticker-packs-data-v1"\\s+type="application/json">)(.*?)(</script>)', re.S)
+          pattern = re.compile(r'(<script\s+id="xiaoshu-builtin-sticker-packs-data-v1"\s+type="application/json">)(.*?)(</script>)', re.S)
           matches = list(pattern.finditer(html))
           if len(matches) != 1:
               raise SystemExit(f"Built-in sticker manifest count is {len(matches)}, expected one.")
@@ -74,7 +74,7 @@ jobs:
               raise SystemExit(f"Updated index checksum does not match the requested ZIP ({target_sha256}); safe stop.")
           index_path.write_bytes(updated.encode("utf-8"))
 
-          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\\0")
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
           tracked = {p for p in tracked if p}
           missing = sorted(keep - tracked)
           if missing:
@@ -90,7 +90,7 @@ jobs:
           if extras:
               subprocess.check_call(["git", "rm", "--", *extras])
           subprocess.check_call(["git", "add", "--", "index.html"])
-          staged = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\\0")
+          staged = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
           staged = {p for p in staged if p}
           if staged != keep:
               raise SystemExit(f"Staged tree mismatch: staged {len(staged)}, target {len(keep)}.")

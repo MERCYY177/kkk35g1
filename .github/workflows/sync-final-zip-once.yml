@@ -1,0 +1,130 @@
+name: One-time sync of requested final ZIP
+on:
+  push:
+    paths:
+      - ".github/workflows/sync-final-zip-once.yml"
+permissions:
+  contents: write
+  pages: write
+jobs:
+  sync:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Reconcile repository to the supplied final ZIP manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, re, subprocess
+          from pathlib import Path
+
+          repo = Path(".")
+          manifest_path = Path(".github/deploy-target-files.json")
+          if not manifest_path.is_file():
+              raise SystemExit("Deployment manifest missing; safe stop.")
+          keep_list = json.loads(manifest_path.read_text(encoding="utf-8"))
+          keep = set(keep_list)
+          if len(keep_list) != 406 or len(keep) != 406:
+              raise SystemExit(f"Unexpected target file count: {len(keep_list)} unique {len(keep)}")
+          if "index.html" not in keep:
+              raise SystemExit("Target manifest omits index.html.")
+
+          index_path = Path("index.html")
+          if not index_path.is_file():
+              raise SystemExit("index.html missing; safe stop.")
+          current_blob = subprocess.check_output(["git", "hash-object", "index.html"], text=True).strip()
+          expected_base_blob = "e26453da327187a10bd4c07bbd4d2ecb9c47406c"
+          if current_blob != expected_base_blob:
+              raise SystemExit(f"index.html differs from the expected deployment base ({current_blob}); safe stop.")
+
+          html = index_path.read_bytes().decode("utf-8")
+          pattern = re.compile(r'(<script\\s+id="xiaoshu-builtin-sticker-packs-data-v1"\\s+type="application/json">)(.*?)(</script>)', re.S)
+          matches = list(pattern.finditer(html))
+          if len(matches) != 1:
+              raise SystemExit(f"Built-in sticker manifest count is {len(matches)}, expected one.")
+          m = matches[0]
+          packs = json.loads(m.group(2))
+          before_count = sum(len(p.get("items", [])) for p in packs)
+          removed = []
+          for pack in packs:
+              kept = []
+              for item in pack.get("items", []):
+                  src = item.get("src", "") if isinstance(item, dict) else ""
+                  if isinstance(src, str) and src.startswith("assets/stickers/") and src not in keep:
+                      removed.append(src)
+                  else:
+                      kept.append(item)
+              pack["items"] = kept
+          after_count = sum(len(p.get("items", [])) for p in packs)
+          if len(removed) != 104 or len(set(removed)) != 104:
+              raise SystemExit(f"Expected exactly 104 hidden sticker entries removed; got {len(removed)} (unique {len(set(removed))}).")
+          if before_count - after_count != 104 or after_count != 259:
+              raise SystemExit(f"Unexpected built-in sticker count transition: {before_count} -> {after_count}.")
+
+          new_json = json.dumps(packs, ensure_ascii=False, separators=(",", ":"))
+          updated = html[:m.start(2)] + new_json + html[m.end(2):]
+          target_sha256 = hashlib.sha256(updated.encode("utf-8")).hexdigest()
+          expected_target_sha256 = "e1ce3f9e6257732ea4276a40e9772dda452636aa88b6223918dc325417e74951"
+          if target_sha256 != expected_target_sha256:
+              raise SystemExit(f"Updated index checksum does not match the requested ZIP ({target_sha256}); safe stop.")
+          index_path.write_bytes(updated.encode("utf-8"))
+
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\\0")
+          tracked = {p for p in tracked if p}
+          missing = sorted(keep - tracked)
+          if missing:
+              raise SystemExit(f"{len(missing)} files in the target ZIP are missing from the repository; safe stop: {missing[:10]}")
+          helper_files = {".github/deploy-target-files.json", ".github/workflows/sync-final-zip-once.yml"}
+          extras = sorted(tracked - keep)
+          unexpected = [p for p in extras if not p.startswith("assets/stickers/") and p not in helper_files]
+          if unexpected:
+              raise SystemExit(f"Unexpected non-sticker files would be removed; safe stop: {unexpected[:10]}")
+          sticker_extras = [p for p in extras if p.startswith("assets/stickers/")]
+          if len(sticker_extras) != 237 or set(extras) != set(sticker_extras) | helper_files:
+              raise SystemExit(f"Unexpected removal set: sticker extras {len(sticker_extras)}, total extras {len(extras)}.")
+          if extras:
+              subprocess.check_call(["git", "rm", "--", *extras])
+          subprocess.check_call(["git", "add", "--", "index.html"])
+          staged = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\\0")
+          staged = {p for p in staged if p}
+          if staged != keep:
+              raise SystemExit(f"Staged tree mismatch: staged {len(staged)}, target {len(keep)}.")
+          final_html_sha = hashlib.sha256(index_path.read_bytes()).hexdigest()
+          if final_html_sha != expected_target_sha256:
+              raise SystemExit("Final index checksum changed unexpectedly.")
+          print(json.dumps({
+              "base_blob": current_blob,
+              "hidden_manifest_entries_removed": len(removed),
+              "builtin_stickers_retained": after_count,
+              "obsolete_asset_files_removed": len(sticker_extras),
+              "target_files": len(staged),
+              "index_sha256": final_html_sha
+          }, ensure_ascii=False))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Deploy final source ZIP and remove hidden stickers"
+          git push origin HEAD:main
+      - name: Request GitHub Pages rebuild
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set +e
+          status=$(curl -sS -o /tmp/pages-build.json -w "%{http_code}" -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/pages/builds")
+          echo "Pages build API HTTP status: $status"
+          if [ "$status" = "201" ] || [ "$status" = "202" ] || [ "$status" = "200" ]; then
+            cat /tmp/pages-build.json
+          else
+            echo "Pages build request unavailable; checking automatic branch deployment separately."
+            cat /tmp/pages-build.json
+          fi

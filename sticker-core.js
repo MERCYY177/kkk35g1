@@ -154,6 +154,10 @@
 
     function purgeDeletedUploads() {
       loadDeleted();
+      // Do not erase legacy IndexedDB keys before the controller has finished its first migration read.
+      try {
+        if (api.getMigrationState && !api.getMigrationState().hydrated) return 0;
+      } catch (_) { return 0; }
       var stale = rawGetUploads().filter(function (src) { return isDeleted(src); });
       stale.forEach(function (src) { rawRemoveUpload(src, false); });
       return stale.length;

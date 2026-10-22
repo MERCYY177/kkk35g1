@@ -316,7 +316,7 @@ jobs:
                   missing.append(rel)
           if missing:
               raise SystemExit(f"Missing sticker asset(s): {missing[:20]}")
-          if "输入高度" not in s or "inputHeightMeasureCache" not in s:
+          if "聊天1输入框高度" not in s or "inputHeightMeasureCache" not in s:
               raise SystemExit("Chat 1 input repair markers are missing")
           if "isKnownBuiltinAssetSource" not in s or "activePool.indexOf(src)<0" not in s:
               raise SystemExit("Deleted-sticker recovery/send guards are missing")

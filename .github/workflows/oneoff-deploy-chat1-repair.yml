@@ -188,6 +188,30 @@ jobs:
             });
           });
           '''
+          expected_chunks = {
+              0: "517b751cda9538aaa2e8c1f6f50e1e0c0830085c92a18ea9eb528891effde449",
+              500: "1badf86b375c1d6aa9e15530a25271555bc35c6148bcd8883569d991d6e7f272",
+              1000: "4e2f7015bfbe4cfcbd9ac46836a1e55c40fbd11483174776fbd9dcb9780f22ac",
+              1500: "f0f589f28c40cdbd18233b668e63785ef22e608ff4b6a53c7ecb7ce48c58b808",
+              2000: "fbcfb916d8224774db41a6bdc2f5835008787f071fe4f5cf23627997820437b1",
+              2500: "8e07c10e1e867831bf16f18511cae9371b07d145f279a7e71e1fad0920c0ac84",
+              3000: "ba88a81dadfd2f2c1de207960f9d86b3bf30e8d694204f0aad65207edfc9fe01",
+              3500: "6f23aab4174d8765734ea2c79d3382bf3e2501af3e1584604854996122ebaeba",
+              4000: "12c60baa819bf5f3a0d5bea744893429336029a26bcb9a7fc7cb3fa3b42dbdb9",
+              4500: "8cb52601b8ee79a1d69b0994d501ca341620fc6f773421a6e184fe826cf1be35",
+              5000: "d8c3ea57d58c5e99362344196dcdaffd8fc6f0320b1f01e9bf970522c2a0862c",
+              5500: "ea420428e79ebf4c34204275952e0ce4fa9c047de71355d5c9851789ad82f684",
+              6000: "d03611618ec5350ef98440e344a6b80ab9185648a759a6d2e295d57a47aa6489",
+              6500: "cf39d549417ba3bad83938be3b61744b085533feb535466b970932552235ed09",
+              7000: "646aca0ce09f14b0f8561ade5377dae654e5f4bf0619a2df3ff4635e5bd6ddd4",
+              7500: "0deb3c35e149157de8dbdcdd23e0defbc7e59d103e8b42344935b1f149c37c62"
+          }
+          print("INPUT_BLOCK", len(new_block), len(new_block.encode("utf-8")), hashlib.sha256(new_block.encode("utf-8")).hexdigest())
+          for offset, expected in expected_chunks.items():
+              chunk = new_block[offset:offset + 500]
+              actual_chunk = hashlib.sha256(chunk.encode("utf-8")).hexdigest()
+              if actual_chunk != expected:
+                  print("INPUT_CHUNK_MISMATCH", offset, actual_chunk, repr(chunk))
           start = s.index(start_old)
           end = s.index(end_marker, start)
           assert start_new not in s

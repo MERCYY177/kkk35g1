@@ -5459,7 +5459,7 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                     let enabledStickerPool = [];
                     try {
                         if (window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.getPool === 'function') {
-                            // 最终版：使用历史确认的496张内置表情作为唯一内置源；119张实体资源保持排除，用户上传项继续单独合并。
+                            // 使用表情管理器此刻的可用池；已删除、隐藏及旧版残留的内置资源不会进入自动回复池。
                             enabledStickerPool = window.xiaoshuStickerStore.getPool();
                         } else if (typeof window.xiaoshuGetSharedStickerPool === 'function') {
                             enabledStickerPool = window.xiaoshuGetSharedStickerPool();
@@ -11207,11 +11207,20 @@ sendMessage();
 }
 }
 });
-// 输入框高度自适应（微信风格）。使用可复用的隐藏 textarea 测量内容高度；
-// 只有高度确实变化时才捕获聊天锚点并改动真实输入框，避免每个字符都扫描/搬动聊天 DOM。
+// 聊天1输入框高度自适应：把不随文字变化的样式测量缓存起来。
+// 每帧最多测量一次；只有输入框真正改变高度时才写入新高度，聊天布局统一观察器负责保持滚动锚点。
 let inputHeightRAF = null;
 let inputHeightMeasureClone = null;
-function measureMessageInputHeight(input) {
+let inputHeightMeasureCache = null;
+let inputHeightTrackedInput = null;
+let inputHeightLastOuterHeight = null;
+let inputHeightResizeObserver = null;
+const inputHeightStyleProps = ['box-sizing','font-family','font-size','font-weight','font-style','line-height','letter-spacing','word-spacing','text-indent','text-transform','padding-top','padding-right','padding-bottom','padding-left','border-top-width','border-right-width','border-bottom-width','border-left-width','overflow-wrap','word-break','white-space'];
+function inputHeightViewportKey() {
+  const vv = window.visualViewport;
+  return [window.innerWidth || 0, window.innerHeight || 0, vv ? Math.round(vv.width || 0) : 0, vv ? Math.round(vv.height || 0) : 0].join('x');
+}
+function ensureInputHeightMeasureClone(input) {
   if (!inputHeightMeasureClone) {
     inputHeightMeasureClone = input.cloneNode(false);
     inputHeightMeasureClone.removeAttribute('id');
@@ -11230,73 +11239,114 @@ function measureMessageInputHeight(input) {
     inputHeightMeasureClone.style.setProperty('resize', 'none', 'important');
     document.body.appendChild(inputHeightMeasureClone);
   }
-  const clone = inputHeightMeasureClone;
-  const computed = getComputedStyle(input);
-  clone.className = input.className;
-  clone.value = input.value;
-  clone.rows = input.rows || 1;
-  clone.style.setProperty('width', computed.getPropertyValue('width') || input.getBoundingClientRect().width + 'px', 'important');
-  // 复制影响文本换行/高度的关键样式，避免克隆体与真实输入框测量结果不同。
-  ['box-sizing','font-family','font-size','font-weight','font-style','line-height','letter-spacing','word-spacing','text-indent','text-transform','padding-top','padding-right','padding-bottom','padding-left','border-top-width','border-right-width','border-bottom-width','border-left-width','overflow-wrap','word-break','white-space'].forEach(function(prop) {
-    clone.style.setProperty(prop, computed.getPropertyValue(prop), 'important');
-  });
-  clone.style.setProperty('position', 'fixed', 'important');
-  clone.style.setProperty('left', '-10000px', 'important');
-  clone.style.setProperty('top', '0', 'important');
-  clone.style.setProperty('height', 'auto', 'important');
-  clone.style.setProperty('min-height', '0', 'important');
-  clone.style.setProperty('max-height', 'none', 'important');
-  clone.style.setProperty('overflow', 'hidden', 'important');
-  const borderHeight = (parseFloat(computed.getPropertyValue('border-top-width')) || 0) + (parseFloat(computed.getPropertyValue('border-bottom-width')) || 0);
-  // scrollHeight includes padding but excludes borders, regardless of box-sizing.
-  return clone.scrollHeight + borderHeight;
+  if (inputHeightTrackedInput !== input) {
+    inputHeightTrackedInput = input;
+    inputHeightMeasureCache = null;
+    inputHeightLastOuterHeight = input.getBoundingClientRect().height;
+    if (inputHeightResizeObserver) inputHeightResizeObserver.disconnect();
+    if (window.ResizeObserver) {
+      inputHeightResizeObserver = new ResizeObserver(function(entries) {
+        entries.forEach(function(entry) {
+if (entry.target !== inputHeightTrackedInput) return;
+const rect = entry.target.getBoundingClientRect();
+if (inputHeightMeasureCache && Math.abs(inputHeightMeasureCache.width - rect.width) > 0.5) inputHeightMeasureCache = null;
+inputHeightLastOuterHeight = rect.height;
+        });
+      });
+      inputHeightResizeObserver.observe(input);
+    }
+  }
+  return inputHeightMeasureClone;
 }
-DOMElements.messageInput.addEventListener('input', () => {
-  if (inputHeightRAF) cancelAnimationFrame(inputHeightRAF);
-  inputHeightRAF = requestAnimationFrame(() => {
-    inputHeightRAF = null;
-    const input = DOMElements.messageInput;
-    if (!input) return;
-    const measuredHeight = measureMessageInputHeight(input);
+function getInputHeightMetrics(input) {
+  const clone = ensureInputHeightMeasureClone(input);
+  const signature = input.className + '|' + (input.rows || 1) + '|' + inputHeightViewportKey();
+  if (!inputHeightMeasureCache || inputHeightMeasureCache.input !== input || inputHeightMeasureCache.signature !== signature) {
     const computed = getComputedStyle(input);
+    const width = computed.getPropertyValue('width') || input.getBoundingClientRect().width + 'px';
+    clone.className = input.className;
+    clone.rows = input.rows || 1;
+    clone.style.setProperty('width', width, 'important');
+    // 这些属性与文字内容无关；仅在元素样式/视口变化时复制，而不是每敲一个字都复制。
+    inputHeightStyleProps.forEach(function(prop) {
+      clone.style.setProperty(prop, computed.getPropertyValue(prop), 'important');
+    });
+    clone.style.setProperty('position', 'fixed', 'important');
+    clone.style.setProperty('left', '-10000px', 'important');
+    clone.style.setProperty('top', '0', 'important');
+    clone.style.setProperty('height', 'auto', 'important');
+    clone.style.setProperty('min-height', '0', 'important');
+    clone.style.setProperty('max-height', 'none', 'important');
+    clone.style.setProperty('overflow', 'hidden', 'important');
+    const paddingY = (parseFloat(computed.getPropertyValue('padding-top')) || 0) + (parseFloat(computed.getPropertyValue('padding-bottom')) || 0);
+    const borderY = (parseFloat(computed.getPropertyValue('border-top-width')) || 0) + (parseFloat(computed.getPropertyValue('border-bottom-width')) || 0);
     const cssMaxHeight = Number.parseFloat(computed.maxHeight);
     const cssMinHeight = Number.parseFloat(computed.minHeight);
-    const paddingY = (Number.parseFloat(computed.paddingTop) || 0) + (Number.parseFloat(computed.paddingBottom) || 0);
-    const borderY = (Number.parseFloat(computed.borderTopWidth) || 0) + (Number.parseFloat(computed.borderBottomWidth) || 0);
     const isBorderBox = computed.boxSizing === 'border-box';
-    // measuredHeight 是实际外框高度；content-box 的 min/max-height 则需加上 padding 和 border。
     const maxOuterHeight = Number.isFinite(cssMaxHeight) && cssMaxHeight > 0
       ? (isBorderBox ? cssMaxHeight : cssMaxHeight + paddingY + borderY)
       : 120;
     const minOuterHeight = Number.isFinite(cssMinHeight) && cssMinHeight > 0
       ? (isBorderBox ? cssMinHeight : cssMinHeight + paddingY + borderY)
       : 36;
-    const effectiveMinHeight = Math.min(minOuterHeight, maxOuterHeight);
+    const rect = input.getBoundingClientRect();
+    inputHeightMeasureCache = {
+      input: input,
+      signature: signature,
+      width: rect.width,
+      paddingY: paddingY,
+      borderY: borderY,
+      isBorderBox: isBorderBox,
+      maxOuterHeight: maxOuterHeight,
+      minOuterHeight: minOuterHeight
+    };
+  }
+  return inputHeightMeasureCache;
+}
+function measureMessageInputHeight(input, metrics) {
+  const clone = ensureInputHeightMeasureClone(input);
+  clone.value = input.value;
+  // scrollHeight 是必要的内容高度测量；避免在每次 input 中反复读取并复制整套计算样式。
+  return clone.scrollHeight + metrics.borderY;
+}
+function invalidateInputHeightMetrics() { inputHeightMeasureCache = null; }
+window.addEventListener('resize', invalidateInputHeightMetrics, { passive: true });
+window.addEventListener('orientationchange', invalidateInputHeightMetrics, { passive: true });
+if (window.visualViewport) window.visualViewport.addEventListener('resize', invalidateInputHeightMetrics, { passive: true });
+DOMElements.messageInput.addEventListener('input', () => {
+  if (inputHeightRAF) cancelAnimationFrame(inputHeightRAF);
+  inputHeightRAF = requestAnimationFrame(() => {
+    inputHeightRAF = null;
+    const input = DOMElements.messageInput;
+    if (!input) return;
+    const metrics = getInputHeightMetrics(input);
+    const measuredHeight = measureMessageInputHeight(input, metrics);
+    const maxOuterHeight = metrics.maxOuterHeight;
+    const effectiveMinHeight = Math.min(metrics.minOuterHeight, maxOuterHeight);
     const newOuterHeight = Math.max(effectiveMinHeight, Math.min(measuredHeight, maxOuterHeight));
-    // Compare actual outer dimensions; CSS height values differ under content-box.
-    const previousOuterHeight = input.getBoundingClientRect().height;
+    // ResizeObserver 会跟踪输入区高度；不再额外捕获/恢复一次聊天锚点，避免双重滚动恢复。
+    const previousOuterHeight = Number.isFinite(inputHeightLastOuterHeight)
+      ? inputHeightLastOuterHeight
+      : input.getBoundingClientRect().height;
     const heightChanged = Math.abs(previousOuterHeight - newOuterHeight) > 1;
-    const chatRelayoutAnchor = heightChanged && typeof window.xiaoshuCaptureChatRelayout === 'function'
-      ? window.xiaoshuCaptureChatRelayout() : null;
     const scrollTop = input.scrollTop;
-    const cssTargetHeight = isBorderBox ? newOuterHeight : Math.max(0, newOuterHeight - paddingY - borderY);
-    if (heightChanged) input.style.height = cssTargetHeight + 'px';
-    if (measuredHeight > newOuterHeight + 0.5 && newOuterHeight >= maxOuterHeight - 0.5) {
-      input.style.overflowX = 'hidden';
-      input.style.overflowY = 'auto';
-      // 高度达到 CSS 上限后保留输入时浏览器已定位到光标的滚动位置，并限制在有效范围内。
-      input.scrollTop = Math.min(scrollTop, Math.max(0, input.scrollHeight - input.clientHeight));
-    } else {
-      // 移除旧的 overflow-y 长属性，避免上一次输入留下的 auto 覆盖这里的 hidden。
-      input.style.removeProperty('overflow-y');
-      input.style.overflow = 'hidden';
-      input.scrollTop = 0;
+    const cssTargetHeight = metrics.isBorderBox ? newOuterHeight : Math.max(0, newOuterHeight - metrics.paddingY - metrics.borderY);
+    if (heightChanged) {
+      input.style.height = cssTargetHeight + 'px';
+      inputHeightLastOuterHeight = newOuterHeight;
     }
-    if (chatRelayoutAnchor && typeof window.xiaoshuRestoreChatRelayout === 'function') {
-      requestAnimationFrame(() => requestAnimationFrame(() => window.xiaoshuRestoreChatRelayout(chatRelayoutAnchor)));
+    if (measuredHeight > newOuterHeight + 0.5 && newOuterHeight >= maxOuterHeight - 0.5) {
+      if (input.style.overflowX !== 'hidden') input.style.overflowX = 'hidden';
+      if (input.style.overflowY !== 'auto') input.style.overflowY = 'auto';
+      // 保留浏览器原生光标跟随/内部滚动，不在每次输入时读取并重设 scrollHeight/scrollTop。
+    } else {
+      if (input.style.getPropertyValue('overflow-y')) input.style.removeProperty('overflow-y');
+      if (input.style.overflow !== 'hidden') input.style.overflow = 'hidden';
+      if (input.scrollTop) input.scrollTop = 0;
     }
   });
 });
+
 DOMElements.imageInput.addEventListener('change', () => {
 if (DOMElements.imageInput.files[0]) {
 if (isBatchMode) {
@@ -18046,10 +18096,10 @@ requestAnimationFrame(function(){if(mine!==generation||!frame.isConnected)return
 }
 function activate(e){var state=frame.dataset.stickerState;if(state==='loaded'){var src=img&&(img.getAttribute('data-view-src')||frame.getAttribute('data-sticker-src'));if(src&&typeof window.viewImage==='function')window.viewImage(src)}else{if(e)e.preventDefault();retryCount=0;resolveAttempts=0;start(state==='load-failed')}}
 frame.addEventListener('click',activate);frame.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();activate(e)}});
-frame.__xsStickerStart=start;frame.__xsStickerRefresh=function(){if(frame.dataset.stickerState!=='loaded')start(false)};
+frame.__xsStickerStart=start;frame.__xsStickerRefresh=function(){var state=frame.dataset.stickerState;if(state==='loading'||state==='loaded')return;if(state==='pending-resource'||state==='resource-missing')start(false)};
 if(frame.isConnected)start(false);else requestAnimationFrame(function(){start(false)});
 }
-function refresh(){document.querySelectorAll('.xs-chat-sticker-frame[data-sticker-id]').forEach(function(frame){if(!frame.__xsStickerBound)bind(frame);else if(typeof frame.__xsStickerRefresh==='function')frame.__xsStickerRefresh()})}
+var refreshRAF=null;function refresh(){if(refreshRAF)return;refreshRAF=requestAnimationFrame(function(){refreshRAF=null;document.querySelectorAll('.xs-chat-sticker-frame[data-sticker-id]').forEach(function(frame){if(!frame.__xsStickerBound)bind(frame);else if(typeof frame.__xsStickerRefresh==='function')frame.__xsStickerRefresh()})})}
 window.xiaoshuBindChatStickerFrame=bind;
 window.xiaoshuBindChatMediaImage=function(img){if(!img||img.__xsMediaAnchorBound)return;img.__xsMediaAnchorBound=true;var anchor=null;try{anchor=typeof window.xiaoshuCaptureChatRelayout==='function'?window.xiaoshuCaptureChatRelayout():null}catch(e){}var done=function(){if(!anchor)return;requestAnimationFrame(function(){requestAnimationFrame(function(){try{if(typeof window.xiaoshuRestoreChatRelayout==='function')window.xiaoshuRestoreChatRelayout(anchor)}catch(e){}})})};if(img.complete)done();else{img.addEventListener('load',done,{once:true});img.addEventListener('error',done,{once:true})}};
 window.addEventListener('xiaoshu-sticker-resources-ready',refresh);window.addEventListener('stickerLibraryUpdated',refresh);
@@ -18726,9 +18776,15 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     return map;
   }
   function mergeHidden(list){(list||[]).forEach(function(x){x=norm(x);if(x)hidden.add(x);});}
+  function isKnownBuiltinAssetSource(src){
+    // 已从当前清单/仓库删除的内置文件仍可能残留在旧版 IndexedDB。
+    // 不只比对当前清单：只要是项目 assets/stickers/ 下的资源，就不能迁移成用户上传表情。
+    var value=norm(src).split(/[?#]/,1)[0].replace(/\\/g,'/');
+    return /(?:^|\/)assets\/stickers\//i.test(value);
+  }
   function withoutBuiltins(list){
     var builtin=new Set(builtinSrcs().map(norm));
-    return uniq(list||[]).filter(function(x){return isImage(x)&&!builtin.has(norm(x));});
+    return uniq(list||[]).filter(function(x){return isImage(x)&&!builtin.has(norm(x))&&!isKnownBuiltinAssetSource(x);});
   }
   function legacyGroupItems(groups){
     var out=[];
@@ -18745,7 +18801,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   function isLegacyGroupKey(key){return String(key||'').toLowerCase().indexOf(LEGACY_GROUP_NAME.toLowerCase())!==-1;}
   function mergeLegacyGroups(groups){
     var recovered=legacyGroupItems(groups),before=uploads.length;
-    if(recovered.length)uploads=uniq(uploads.concat(recovered)).filter(isImage);
+    if(recovered.length)uploads=withoutBuiltins(uploads.concat(recovered));
     var added=Math.max(0,uploads.length-before);
     if(added)migrationState.legacyGroupItems+=added;
     clearLegacyGroupRuntime();
@@ -18753,9 +18809,9 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   }
   function loadSyncState(){
     var ls=safeWebStorage('localStorage'),ss=safeWebStorage('sessionStorage');
-    try{if(Array.isArray(window.myStickerLibrary))uploads=uniq(uploads.concat(window.myStickerLibrary)).filter(isImage);}catch(e){}
-    try{if(typeof myStickerLibrary!=='undefined'&&Array.isArray(myStickerLibrary))uploads=uniq(uploads.concat(myStickerLibrary)).filter(isImage);}catch(e){}
-    LEGACY_UPLOAD_LOCAL_KEYS.forEach(function(k){var arr=readJsonFrom(ls,k);migrationState.legacyUploadItems+=arr.length;uploads=uniq(uploads.concat(arr)).filter(isImage);});
+    try{if(Array.isArray(window.myStickerLibrary))uploads=withoutBuiltins(uploads.concat(window.myStickerLibrary));}catch(e){}
+    try{if(typeof myStickerLibrary!=='undefined'&&Array.isArray(myStickerLibrary))uploads=withoutBuiltins(uploads.concat(myStickerLibrary));}catch(e){}
+    LEGACY_UPLOAD_LOCAL_KEYS.forEach(function(k){var arr=readJsonFrom(ls,k);migrationState.legacyUploadItems+=arr.length;uploads=withoutBuiltins(uploads.concat(arr));});
     try{if(typeof stickerLibrary!=='undefined'&&Array.isArray(stickerLibrary)&&stickerLibrary.length)uploads=uniq(uploads.concat(withoutBuiltins(stickerLibrary))).filter(isImage);}catch(e){}
     try{mergeLegacyGroups(window.customStickerGroups);}catch(e){clearLegacyGroupRuntime();}
     mergeHidden(readJsonFrom(ls,CANONICAL_HIDDEN_KEY));
@@ -18815,7 +18871,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     cleanupLegacyIdbStores(hydratedSessionId||currentSessionId());
   }
   function persistUploads(){
-    uploads=uniq(uploads).filter(isImage);
+    uploads=withoutBuiltins(uploads);
     var sid=currentSessionId();
     // 读取当前会话的正式数据以前，任何空数组或同步状态都只能留在内存，禁止落盘覆盖。
     if(!sid||!sessionDataReady(sid)||!migrationState.hydrated||hydratedSessionId!==sid){pendingUploadPersist=true;return false;}
@@ -18841,7 +18897,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   function buildPool(includeBuiltins){
     var base=includeBuiltins?builtinSrcs():[];
     // 完整保留用户原有表情库；对方自动回复另走 getLocalPool，只抽取已本地化资源。
-    var all=uniq(base.concat(uploads)).filter(isImage);
+    var all=uniq(base.concat(withoutBuiltins(uploads))).filter(isImage);
     indexCatalog(all);
     var pool=all.filter(function(x){return !hidden.has(norm(x));});
     if(includeBuiltins&&!resourceMigrationCatalogReady){resourceMigrationCatalogReady=true;setTimeout(migrateCurrentChatStickerMessages,0);}
@@ -18859,6 +18915,9 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   function sendSticker(src){
     src=norm(src);
     if(!src||!isImage(src))return false;
+    // 不信任已经过期的面板/iframe 点击事件：发送时必须重新确认资源仍在当前可用池中。
+    var activePool=buildPool(true).map(norm);
+    if(activePool.indexOf(src)<0){notify('这张表情已删除或隐藏，请重新打开表情面板再选择','info',1800);return false;}
     var stickerId=registerMessageResource(src);if(!stickerId)return false;
     persistMessageResourcesNow();
     try{
@@ -19050,21 +19109,21 @@ var seed=[];
 try{if(typeof myStickerLibrary!=='undefined'&&Array.isArray(myStickerLibrary))seed=seed.concat(myStickerLibrary);}catch(e){}
 try{if(Array.isArray(window.myStickerLibrary))seed=seed.concat(window.myStickerLibrary);}catch(e){}
 // 保留会话就绪前从旧同步键/退役分组收集到的迁移候选，避免迁移数据在正式读取时被重置。
-uploads=uniq(seed.concat(uploads)).filter(isImage);
+uploads=withoutBuiltins(seed.concat(uploads));
 migrationState.hydrated=false;
 if(window.localforage){
 try{messageResources=cleanResourceObject(await window.localforage.getItem(resourceStorageKey(targetSid)));indexCatalog(Object.keys(messageResources).map(function(id){return messageResources[id];}));}catch(_resourceReadErr){messageResources=Object.create(null);}
 var canonical=await window.localforage.getItem(uploadKey);
 canonicalReadOk=true;
-if(Array.isArray(canonical))uploads=uniq(uploads.concat(canonical)).filter(isImage);
+if(Array.isArray(canonical))uploads=withoutBuiltins(uploads.concat(canonical));
 for(var i=0;i<LEGACY_UPLOAD_IDB_NAMES.length;i++){
 var scopedLegacy=storageKey(LEGACY_UPLOAD_IDB_NAMES[i],targetSid);
 var names=uniq([scopedLegacy,LEGACY_UPLOAD_IDB_NAMES[i]]);
 for(var n=0;n<names.length;n++){
-try{var arr=await window.localforage.getItem(names[n]);if(Array.isArray(arr)){migrationState.legacyUploadItems+=arr.length;uploads=uniq(uploads.concat(arr)).filter(isImage);}}catch(e){}
+try{var arr=await window.localforage.getItem(names[n]);if(Array.isArray(arr)){migrationState.legacyUploadItems+=arr.length;uploads=withoutBuiltins(uploads.concat(arr));}}catch(e){}
 }
 }
-try{var oldRuntime=await window.localforage.getItem(runtimeKey);if(Array.isArray(oldRuntime)&&oldRuntime.length){var recovered=withoutBuiltins(oldRuntime);migrationState.legacyUploadItems+=recovered.length;uploads=uniq(uploads.concat(recovered)).filter(isImage);}}catch(e){}
+try{var oldRuntime=await window.localforage.getItem(runtimeKey);if(Array.isArray(oldRuntime)&&oldRuntime.length){var recovered=withoutBuiltins(oldRuntime);migrationState.legacyUploadItems+=recovered.length;uploads=withoutBuiltins(uploads.concat(recovered));}}catch(e){}
 var allKeys=[];try{allKeys=await window.localforage.keys();}catch(e){}
 var scopedGroup=storageKey(LEGACY_GROUP_NAME,targetSid);
 var groupKeys=uniq([scopedGroup,LEGACY_GROUP_NAME].concat((allKeys||[]).filter(isLegacyGroupKey)));

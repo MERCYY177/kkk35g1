@@ -28,12 +28,19 @@
     return output;
   }
 
-  function resolveCardReplyCount(source, randomFn) {
+  // 每轮发几条消息只由 fixedCardReplyCount 决定；组合开关不再改变消息条数。
+  function resolveCardReplyCount(source) {
+    return normalizeBehaviorSettings(source).fixedCardReplyCount;
+  }
+
+  // 随机组合模式下，每一条消息独立决定由几张字卡组成。
+  function resolveComboCardCount(source, randomFn) {
     var settings = normalizeBehaviorSettings(source);
-    if (!settings.randomCardComboEnabled) return settings.fixedCardReplyCount;
+    if (!settings.randomCardComboEnabled) return 1;
     var random = typeof randomFn === 'function' ? randomFn : Math.random;
     var span = settings.randomCardComboMax - settings.randomCardComboMin + 1;
-    return settings.randomCardComboMin + Math.min(span - 1, Math.floor(Math.max(0, Math.min(0.999999999, Number(random()) || 0)) * span));
+    var value = Math.max(0, Math.min(0.999999999, Number(random()) || 0));
+    return settings.randomCardComboMin + Math.min(span - 1, Math.floor(value * span));
   }
 
   function uniqueCards(cards) {
@@ -73,13 +80,28 @@
 
   function buildCardReplyPayloads(source, cards, randomFn) {
     var settings = normalizeBehaviorSettings(source);
-    var selected = selectUniqueCards(cards, resolveCardReplyCount(settings, randomFn), randomFn);
-    if (!selected.length) return [];
-    if (settings.randomCardComboEnabled) {
-      var combined = combineCardTexts(selected);
-      return combined ? [{ text: combined, cardFragments: selected.slice() }] : [];
+    var pool = uniqueCards(cards);
+    if (!pool.length) return [];
+    var available = pool.slice();
+    var replyCount = resolveCardReplyCount(settings);
+    var payloads = [];
+    for (var index = 0; index < replyCount; index += 1) {
+      var desired = resolveComboCardCount(settings, randomFn);
+      var picked = [];
+      while (picked.length < desired) {
+        if (!available.length) available = pool.filter(function (card) { return picked.indexOf(card) < 0; });
+        if (!available.length) break;
+        var next = selectUniqueCards(available, 1, randomFn)[0];
+        if (!next) break;
+        picked.push(next);
+        var usedIndex = available.indexOf(next);
+        if (usedIndex >= 0) available.splice(usedIndex, 1);
+      }
+      if (!picked.length) continue;
+      var text = settings.randomCardComboEnabled ? combineCardTexts(picked) : picked[0];
+      if (text) payloads.push({ text: text, cardFragments: picked.slice() });
     }
-    return selected.map(function (card) { return { text: card, cardFragments: [card] }; });
+    return payloads;
   }
 
   function trySendPartnerSticker(source, dependencies, randomFn) {
@@ -190,6 +212,7 @@
   global.XiaoshuBehaviorCore = {
     normalizeBehaviorSettings: normalizeBehaviorSettings,
     resolveCardReplyCount: resolveCardReplyCount,
+    resolveComboCardCount: resolveComboCardCount,
     selectUniqueCards: selectUniqueCards,
     combineCardTexts: combineCardTexts,
     buildCardReplyPayloads: buildCardReplyPayloads,

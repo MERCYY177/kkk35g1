@@ -22,7 +22,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import subprocess
-
+          
           p = Path("index.html")
           s = p.read_text(encoding="utf-8")
           base_sha = "c2099162d3a43edc58a8369a3448358b63bb4b88"
@@ -33,160 +33,160 @@ jobs:
               raise SystemExit(0)
           if actual != base_sha:
               raise SystemExit(f"Refusing to patch unexpected index.html blob: {actual}")
-
+          
           old_comment = "// 最终版：使用历史确认的496张内置表情作为唯一内置源；119张实体资源保持排除，用户上传项继续单独合并。"
           new_comment = "// 使用表情管理器此刻的可用池；已删除、隐藏及旧版残留的内置资源不会进入自动回复池。"
           assert s.count(old_comment) == 1
           s = s.replace(old_comment, new_comment, 1)
-
+          
           start_old = "// 输入框高度自适应（微信风格）。使用可复用的隐藏 textarea 测量内容高度；"
           start_new = "// 聊天1输入框高度自适应：把不随文字变化的样式测量缓存起来。"
           end_marker = "DOMElements.imageInput.addEventListener('change', () => {"
           new_block = r'''// 聊天1输入框高度自适应：把不随文字变化的样式测量缓存起来。
-// 每帧最多测量一次；只有输入框真正改变高度时才写入新高度，聊天布局统一观察器负责保持滚动锚点。
-let inputHeightRAF = null;
-let inputHeightMeasureClone = null;
-let inputHeightMeasureCache = null;
-let inputHeightTrackedInput = null;
-let inputHeightLastOuterHeight = null;
-let inputHeightResizeObserver = null;
-const inputHeightStyleProps = ['box-sizing','font-family','font-size','font-weight','font-style','line-height','letter-spacing','word-spacing','text-indent','text-transform','padding-top','padding-right','padding-bottom','padding-left','border-top-width','border-right-width','border-bottom-width','border-left-width','overflow-wrap','word-break','white-space'];
-function inputHeightViewportKey() {
-  const vv = window.visualViewport;
-  return [window.innerWidth || 0, window.innerHeight || 0, vv ? Math.round(vv.width || 0) : 0, vv ? Math.round(vv.height || 0) : 0].join('x');
-}
-function ensureInputHeightMeasureClone(input) {
-  if (!inputHeightMeasureClone) {
-    inputHeightMeasureClone = input.cloneNode(false);
-    inputHeightMeasureClone.removeAttribute('id');
-    inputHeightMeasureClone.setAttribute('aria-hidden', 'true');
-    inputHeightMeasureClone.setAttribute('tabindex', '-1');
-    inputHeightMeasureClone.style.setProperty('position', 'fixed', 'important');
-    inputHeightMeasureClone.style.setProperty('left', '-10000px', 'important');
-    inputHeightMeasureClone.style.setProperty('top', '0', 'important');
-    inputHeightMeasureClone.style.setProperty('visibility', 'hidden', 'important');
-    inputHeightMeasureClone.style.setProperty('pointer-events', 'none', 'important');
-    inputHeightMeasureClone.style.setProperty('z-index', '-1', 'important');
-    inputHeightMeasureClone.style.setProperty('height', 'auto', 'important');
-    inputHeightMeasureClone.style.setProperty('min-height', '0', 'important');
-    inputHeightMeasureClone.style.setProperty('max-height', 'none', 'important');
-    inputHeightMeasureClone.style.setProperty('overflow', 'hidden', 'important');
-    inputHeightMeasureClone.style.setProperty('resize', 'none', 'important');
-    document.body.appendChild(inputHeightMeasureClone);
-  }
-  if (inputHeightTrackedInput !== input) {
-    inputHeightTrackedInput = input;
-    inputHeightMeasureCache = null;
-    inputHeightLastOuterHeight = input.getBoundingClientRect().height;
-    if (inputHeightResizeObserver) inputHeightResizeObserver.disconnect();
-    if (window.ResizeObserver) {
-      inputHeightResizeObserver = new ResizeObserver(function(entries) {
-        entries.forEach(function(entry) {
+          // 每帧最多测量一次；只有输入框真正改变高度时才写入新高度，聊天布局统一观察器负责保持滚动锚点。
+          let inputHeightRAF = null;
+          let inputHeightMeasureClone = null;
+          let inputHeightMeasureCache = null;
+          let inputHeightTrackedInput = null;
+          let inputHeightLastOuterHeight = null;
+          let inputHeightResizeObserver = null;
+          const inputHeightStyleProps = ['box-sizing','font-family','font-size','font-weight','font-style','line-height','letter-spacing','word-spacing','text-indent','text-transform','padding-top','padding-right','padding-bottom','padding-left','border-top-width','border-right-width','border-bottom-width','border-left-width','overflow-wrap','word-break','white-space'];
+          function inputHeightViewportKey() {
+            const vv = window.visualViewport;
+            return [window.innerWidth || 0, window.innerHeight || 0, vv ? Math.round(vv.width || 0) : 0, vv ? Math.round(vv.height || 0) : 0].join('x');
+          }
+          function ensureInputHeightMeasureClone(input) {
+            if (!inputHeightMeasureClone) {
+              inputHeightMeasureClone = input.cloneNode(false);
+              inputHeightMeasureClone.removeAttribute('id');
+              inputHeightMeasureClone.setAttribute('aria-hidden', 'true');
+              inputHeightMeasureClone.setAttribute('tabindex', '-1');
+              inputHeightMeasureClone.style.setProperty('position', 'fixed', 'important');
+              inputHeightMeasureClone.style.setProperty('left', '-10000px', 'important');
+              inputHeightMeasureClone.style.setProperty('top', '0', 'important');
+              inputHeightMeasureClone.style.setProperty('visibility', 'hidden', 'important');
+              inputHeightMeasureClone.style.setProperty('pointer-events', 'none', 'important');
+              inputHeightMeasureClone.style.setProperty('z-index', '-1', 'important');
+              inputHeightMeasureClone.style.setProperty('height', 'auto', 'important');
+              inputHeightMeasureClone.style.setProperty('min-height', '0', 'important');
+              inputHeightMeasureClone.style.setProperty('max-height', 'none', 'important');
+              inputHeightMeasureClone.style.setProperty('overflow', 'hidden', 'important');
+              inputHeightMeasureClone.style.setProperty('resize', 'none', 'important');
+              document.body.appendChild(inputHeightMeasureClone);
+            }
+            if (inputHeightTrackedInput !== input) {
+              inputHeightTrackedInput = input;
+              inputHeightMeasureCache = null;
+              inputHeightLastOuterHeight = input.getBoundingClientRect().height;
+              if (inputHeightResizeObserver) inputHeightResizeObserver.disconnect();
+              if (window.ResizeObserver) {
+                inputHeightResizeObserver = new ResizeObserver(function(entries) {
+                  entries.forEach(function(entry) {
           if (entry.target !== inputHeightTrackedInput) return;
           const rect = entry.target.getBoundingClientRect();
           if (inputHeightMeasureCache && Math.abs(inputHeightMeasureCache.width - rect.width) > 0.5) inputHeightMeasureCache = null;
           inputHeightLastOuterHeight = rect.height;
-        });
-      });
-      inputHeightResizeObserver.observe(input);
-    }
-  }
-  return inputHeightMeasureClone;
-}
-function getInputHeightMetrics(input) {
-  const clone = ensureInputHeightMeasureClone(input);
-  const signature = input.className + '|' + (input.rows || 1) + '|' + inputHeightViewportKey();
-  if (!inputHeightMeasureCache || inputHeightMeasureCache.input !== input || inputHeightMeasureCache.signature !== signature) {
-    const computed = getComputedStyle(input);
-    const width = computed.getPropertyValue('width') || input.getBoundingClientRect().width + 'px';
-    clone.className = input.className;
-    clone.rows = input.rows || 1;
-    clone.style.setProperty('width', width, 'important');
-    // 这些属性与文字内容无关；仅在元素样式/视口变化时复制，而不是每敲一个字都复制。
-    inputHeightStyleProps.forEach(function(prop) {
-      clone.style.setProperty(prop, computed.getPropertyValue(prop), 'important');
-    });
-    clone.style.setProperty('position', 'fixed', 'important');
-    clone.style.setProperty('left', '-10000px', 'important');
-    clone.style.setProperty('top', '0', 'important');
-    clone.style.setProperty('height', 'auto', 'important');
-    clone.style.setProperty('min-height', '0', 'important');
-    clone.style.setProperty('max-height', 'none', 'important');
-    clone.style.setProperty('overflow', 'hidden', 'important');
-    const paddingY = (parseFloat(computed.getPropertyValue('padding-top')) || 0) + (parseFloat(computed.getPropertyValue('padding-bottom')) || 0);
-    const borderY = (parseFloat(computed.getPropertyValue('border-top-width')) || 0) + (parseFloat(computed.getPropertyValue('border-bottom-width')) || 0);
-    const cssMaxHeight = Number.parseFloat(computed.maxHeight);
-    const cssMinHeight = Number.parseFloat(computed.minHeight);
-    const isBorderBox = computed.boxSizing === 'border-box';
-    const maxOuterHeight = Number.isFinite(cssMaxHeight) && cssMaxHeight > 0
-      ? (isBorderBox ? cssMaxHeight : cssMaxHeight + paddingY + borderY)
-      : 120;
-    const minOuterHeight = Number.isFinite(cssMinHeight) && cssMinHeight > 0
-      ? (isBorderBox ? cssMinHeight : cssMinHeight + paddingY + borderY)
-      : 36;
-    const rect = input.getBoundingClientRect();
-    inputHeightMeasureCache = {
-      input: input,
-      signature: signature,
-      width: rect.width,
-      paddingY: paddingY,
-      borderY: borderY,
-      isBorderBox: isBorderBox,
-      maxOuterHeight: maxOuterHeight,
-      minOuterHeight: minOuterHeight
-    };
-  }
-  return inputHeightMeasureCache;
-}
-function measureMessageInputHeight(input, metrics) {
-  const clone = ensureInputHeightMeasureClone(input);
-  clone.value = input.value;
-  // scrollHeight 是必要的内容高度测量；避免在每次 input 中反复读取并复制整套计算样式。
-  return clone.scrollHeight + metrics.borderY;
-}
-function invalidateInputHeightMetrics() { inputHeightMeasureCache = null; }
-window.addEventListener('resize', invalidateInputHeightMetrics, { passive: true });
-window.addEventListener('orientationchange', invalidateInputHeightMetrics, { passive: true });
-if (window.visualViewport) window.visualViewport.addEventListener('resize', invalidateInputHeightMetrics, { passive: true });
-DOMElements.messageInput.addEventListener('input', () => {
-  if (inputHeightRAF) cancelAnimationFrame(inputHeightRAF);
-  inputHeightRAF = requestAnimationFrame(() => {
-    inputHeightRAF = null;
-    const input = DOMElements.messageInput;
-    if (!input) return;
-    const metrics = getInputHeightMetrics(input);
-    const measuredHeight = measureMessageInputHeight(input, metrics);
-    const maxOuterHeight = metrics.maxOuterHeight;
-    const effectiveMinHeight = Math.min(metrics.minOuterHeight, maxOuterHeight);
-    const newOuterHeight = Math.max(effectiveMinHeight, Math.min(measuredHeight, maxOuterHeight));
-    // ResizeObserver 会跟踪输入区高度；不再额外捕获/恢复一次聊天锚点，避免双重滚动恢复。
-    const previousOuterHeight = Number.isFinite(inputHeightLastOuterHeight)
-      ? inputHeightLastOuterHeight
-      : input.getBoundingClientRect().height;
-    const heightChanged = Math.abs(previousOuterHeight - newOuterHeight) > 1;
-    const scrollTop = input.scrollTop;
-    const cssTargetHeight = metrics.isBorderBox ? newOuterHeight : Math.max(0, newOuterHeight - metrics.paddingY - metrics.borderY);
-    if (heightChanged) {
-      input.style.height = cssTargetHeight + 'px';
-      inputHeightLastOuterHeight = newOuterHeight;
-    }
-    if (measuredHeight > newOuterHeight + 0.5 && newOuterHeight >= maxOuterHeight - 0.5) {
-      if (input.style.overflowX !== 'hidden') input.style.overflowX = 'hidden';
-      if (input.style.overflowY !== 'auto') input.style.overflowY = 'auto';
-      // 保留浏览器原生光标跟随/内部滚动，不在每次输入时读取并重设 scrollHeight/scrollTop。
-    } else {
-      if (input.style.getPropertyValue('overflow-y')) input.style.removeProperty('overflow-y');
-      if (input.style.overflow !== 'hidden') input.style.overflow = 'hidden';
-      if (input.scrollTop) input.scrollTop = 0;
-    }
-  });
-});
-'''
+                  });
+                });
+                inputHeightResizeObserver.observe(input);
+              }
+            }
+            return inputHeightMeasureClone;
+          }
+          function getInputHeightMetrics(input) {
+            const clone = ensureInputHeightMeasureClone(input);
+            const signature = input.className + '|' + (input.rows || 1) + '|' + inputHeightViewportKey();
+            if (!inputHeightMeasureCache || inputHeightMeasureCache.input !== input || inputHeightMeasureCache.signature !== signature) {
+              const computed = getComputedStyle(input);
+              const width = computed.getPropertyValue('width') || input.getBoundingClientRect().width + 'px';
+              clone.className = input.className;
+              clone.rows = input.rows || 1;
+              clone.style.setProperty('width', width, 'important');
+              // 这些属性与文字内容无关；仅在元素样式/视口变化时复制，而不是每敲一个字都复制。
+              inputHeightStyleProps.forEach(function(prop) {
+                clone.style.setProperty(prop, computed.getPropertyValue(prop), 'important');
+              });
+              clone.style.setProperty('position', 'fixed', 'important');
+              clone.style.setProperty('left', '-10000px', 'important');
+              clone.style.setProperty('top', '0', 'important');
+              clone.style.setProperty('height', 'auto', 'important');
+              clone.style.setProperty('min-height', '0', 'important');
+              clone.style.setProperty('max-height', 'none', 'important');
+              clone.style.setProperty('overflow', 'hidden', 'important');
+              const paddingY = (parseFloat(computed.getPropertyValue('padding-top')) || 0) + (parseFloat(computed.getPropertyValue('padding-bottom')) || 0);
+              const borderY = (parseFloat(computed.getPropertyValue('border-top-width')) || 0) + (parseFloat(computed.getPropertyValue('border-bottom-width')) || 0);
+              const cssMaxHeight = Number.parseFloat(computed.maxHeight);
+              const cssMinHeight = Number.parseFloat(computed.minHeight);
+              const isBorderBox = computed.boxSizing === 'border-box';
+              const maxOuterHeight = Number.isFinite(cssMaxHeight) && cssMaxHeight > 0
+                ? (isBorderBox ? cssMaxHeight : cssMaxHeight + paddingY + borderY)
+                : 120;
+              const minOuterHeight = Number.isFinite(cssMinHeight) && cssMinHeight > 0
+                ? (isBorderBox ? cssMinHeight : cssMinHeight + paddingY + borderY)
+                : 36;
+              const rect = input.getBoundingClientRect();
+              inputHeightMeasureCache = {
+                input: input,
+                signature: signature,
+                width: rect.width,
+                paddingY: paddingY,
+                borderY: borderY,
+                isBorderBox: isBorderBox,
+                maxOuterHeight: maxOuterHeight,
+                minOuterHeight: minOuterHeight
+              };
+            }
+            return inputHeightMeasureCache;
+          }
+          function measureMessageInputHeight(input, metrics) {
+            const clone = ensureInputHeightMeasureClone(input);
+            clone.value = input.value;
+            // scrollHeight 是必要的内容高度测量；避免在每次 input 中反复读取并复制整套计算样式。
+            return clone.scrollHeight + metrics.borderY;
+          }
+          function invalidateInputHeightMetrics() { inputHeightMeasureCache = null; }
+          window.addEventListener('resize', invalidateInputHeightMetrics, { passive: true });
+          window.addEventListener('orientationchange', invalidateInputHeightMetrics, { passive: true });
+          if (window.visualViewport) window.visualViewport.addEventListener('resize', invalidateInputHeightMetrics, { passive: true });
+          DOMElements.messageInput.addEventListener('input', () => {
+            if (inputHeightRAF) cancelAnimationFrame(inputHeightRAF);
+            inputHeightRAF = requestAnimationFrame(() => {
+              inputHeightRAF = null;
+              const input = DOMElements.messageInput;
+              if (!input) return;
+              const metrics = getInputHeightMetrics(input);
+              const measuredHeight = measureMessageInputHeight(input, metrics);
+              const maxOuterHeight = metrics.maxOuterHeight;
+              const effectiveMinHeight = Math.min(metrics.minOuterHeight, maxOuterHeight);
+              const newOuterHeight = Math.max(effectiveMinHeight, Math.min(measuredHeight, maxOuterHeight));
+              // ResizeObserver 会跟踪输入区高度；不再额外捕获/恢复一次聊天锚点，避免双重滚动恢复。
+              const previousOuterHeight = Number.isFinite(inputHeightLastOuterHeight)
+                ? inputHeightLastOuterHeight
+                : input.getBoundingClientRect().height;
+              const heightChanged = Math.abs(previousOuterHeight - newOuterHeight) > 1;
+              const scrollTop = input.scrollTop;
+              const cssTargetHeight = metrics.isBorderBox ? newOuterHeight : Math.max(0, newOuterHeight - metrics.paddingY - metrics.borderY);
+              if (heightChanged) {
+                input.style.height = cssTargetHeight + 'px';
+                inputHeightLastOuterHeight = newOuterHeight;
+              }
+              if (measuredHeight > newOuterHeight + 0.5 && newOuterHeight >= maxOuterHeight - 0.5) {
+                if (input.style.overflowX !== 'hidden') input.style.overflowX = 'hidden';
+                if (input.style.overflowY !== 'auto') input.style.overflowY = 'auto';
+                // 保留浏览器原生光标跟随/内部滚动，不在每次输入时读取并重设 scrollHeight/scrollTop。
+              } else {
+                if (input.style.getPropertyValue('overflow-y')) input.style.removeProperty('overflow-y');
+                if (input.style.overflow !== 'hidden') input.style.overflow = 'hidden';
+                if (input.scrollTop) input.scrollTop = 0;
+              }
+            });
+          });
+          '''
           start = s.index(start_old)
           end = s.index(end_marker, start)
           assert start_new not in s
           s = s[:start] + new_block + "\n" + s[end:]
-
+          
           replacements = [
               ("frame.__xsStickerStart=start;frame.__xsStickerRefresh=function(){if(frame.dataset.stickerState!=='loaded')start(false)};",
                "frame.__xsStickerStart=start;frame.__xsStickerRefresh=function(){var state=frame.dataset.stickerState;if(state==='loading'||state==='loaded')return;if(state==='pending-resource'||state==='resource-missing')start(false)};"),
@@ -196,7 +196,7 @@ DOMElements.messageInput.addEventListener('input', () => {
           for old, new in replacements:
               assert s.count(old) == 1, (old[:90], s.count(old))
               s = s.replace(old, new, 1)
-
+          
           old = """  function withoutBuiltins(list){
               var builtin=new Set(builtinSrcs().map(norm));
               return uniq(list||[]).filter(function(x){return isImage(x)&&!builtin.has(norm(x));});
@@ -216,7 +216,7 @@ DOMElements.messageInput.addEventListener('input', () => {
           new = new.replace("            ", "  ")
           assert s.count(old) == 1, ("withoutBuiltins block", s.count(old))
           s = s.replace(old, new, 1)
-
+          
           replacement_map = {
               "uploads=uniq(uploads.concat(window.myStickerLibrary)).filter(isImage);": "uploads=withoutBuiltins(uploads.concat(window.myStickerLibrary));",
               "uploads=uniq(uploads.concat(myStickerLibrary)).filter(isImage);": "uploads=withoutBuiltins(uploads.concat(myStickerLibrary));",
@@ -228,17 +228,17 @@ DOMElements.messageInput.addEventListener('input', () => {
           for old, new in replacement_map.items():
               assert old in s, old
               s = s.replace(old, new)
-
+          
           old = "    uploads=uniq(uploads).filter(isImage);"
           new = "    uploads=withoutBuiltins(uploads);"
           assert s.count(old) == 2, s.count(old)
           s = s.replace(old, new, 1)
-
+          
           old = "    var all=uniq(base.concat(uploads)).filter(isImage);"
           new = "    var all=uniq(base.concat(withoutBuiltins(uploads))).filter(isImage);"
           assert s.count(old) == 1
           s = s.replace(old, new, 1)
-
+          
           old = "    var stickerId=registerMessageResource(src);if(!stickerId)return false;"
           new = """    // 不信任已经过期的面板/iframe 点击事件：发送时必须重新确认资源仍在当前可用池中。
               var activePool=buildPool(true).map(norm);
@@ -247,7 +247,7 @@ DOMElements.messageInput.addEventListener('input', () => {
           new = new.replace("              ", "    ")
           assert s.count(old) == 1
           s = s.replace(old, new, 1)
-
+          
           p.write_text(s, encoding="utf-8")
           actual = subprocess.check_output(["git", "hash-object", str(p)], text=True).strip()
           if actual != target_sha:
@@ -257,28 +257,28 @@ DOMElements.messageInput.addEventListener('input', () => {
           git diff --check
           cat > '聊天1输入与表情资源修复说明.txt' <<'NOTE'
           kkk35g1-main｜聊天1输入与表情资源修复版
-
+          
           基线
           - 基于用户指定的 kkk35g1-main-final-移除38张新增表情版.zip 修改。
           - 这次只修改 index.html，并新增本说明；media-core.js、behavior-core.js、sticker-core.js 及其他既有项目文件均未改动。
           - 保留原包中的 104 张删除结果；未重新加入 imported_001 至 imported_038。
-
+          
           本次修改
           1. 聊天1输入框
           - 对不随文字改变的计算样式做缓存，在输入框 class、尺寸或视口变化后刷新。
           - 每帧合并输入高度计算，减少每次敲字时重复复制整套样式和布局读取。
           - 移除输入框高度变化时额外的二次聊天滚动锚点恢复，交给现有输入区 ResizeObserver 统一处理。
           - 不再每次输入都重复写入相同的 overflow 样式，达到最大高度时保留浏览器原生光标滚动行为。
-
+          
           2. 聊天1表情加载
           - 合并同一帧内重复触发的表情刷新事件。
           - 已处于 loading 或 loaded 状态的图片不再被刷新事件重新启动；待解析资源仍可以在资源就绪事件后继续查找。
-
+          
           3. 已删除表情的恢复与发送
           - 旧版 IndexedDB、localStorage、运行时缓存中的 assets/stickers/ 路径，不再被当成“用户上传表情”迁移回来。
           - 在旧数据合并、资源池构建与持久化入口再次过滤旧内置资源路径。
           - 发送时重新核验表情仍属于当前可见可用池，过期面板或 iframe 的旧点击不能直接发送已删除/隐藏的资源。
-
+          
           已完成的自动检查
           - index.html 的 67 段内联 JavaScript：语法检查通过。
           - media-core.js、behavior-core.js、sticker-core.js：语法检查通过。
@@ -286,7 +286,7 @@ DOMElements.messageInput.addEventListener('input', () => {
           - 104 张删除清单中的路径：不在当前 HTML 清单中，实体文件也不在当前项目中。
           - imported_001 至 imported_038：未包含在当前资源目录。
           - 针对旧内置资源过滤、发送池校验、加载中图片不重复启动和输入高开销路径的回归检查通过。
-
+          
           验证范围说明
           以上是源码、语法、资源引用和回归逻辑检查；本次没有完成实际手机浏览器的长文本连续输入/发图交互测试，因此不能把设备端卡顿问题表述为已在所有设备上彻底消失。此版本针对查出的高开销和旧资源恢复路径做了修复，仍需在实际使用环境验证体感表现。
           NOTE

@@ -135,7 +135,9 @@
   }
 
   function install(api) {
-    if (!api || api.__xsDeleteGuardPatched || typeof api.getUploads !== 'function' || typeof api.getPool !== 'function') return false;
+    if (!api) return false;
+    if (api.__xsDeleteGuardPatched) return true;
+    if (typeof api.getUploads !== 'function' || typeof api.getPool !== 'function') return false;
     api.__xsDeleteGuardPatched = true;
     loadDeleted();
 
@@ -228,8 +230,7 @@
       purgeDeletedUploads();
       var before = new Set(rawGetUploads().map(norm));
       return Promise.resolve(rawAddFiles.apply(api, arguments)).then(function (result) {
-        var after = rawGetUploads();
-        after.forEach(function (src) { if (!before.has(norm(src))) unmarkDeleted(src); });
+        rawGetUploads().forEach(function (src) { if (!before.has(norm(src))) unmarkDeleted(src); });
         return result;
       });
     };
@@ -252,9 +253,18 @@
           }, 0);
         }, true);
       }
+      if (root.addEventListener && !root.__xsDeleteGuardReadyBound) {
+        root.__xsDeleteGuardReadyBound = true;
+        root.addEventListener('xiaoshu-sticker-resources-ready', function () {
+          purgeDeletedUploads();
+          // The controller assigns its legacy aliases immediately after creating the store.
+          root.xiaoshuGetSharedStickerPool = api.getPool;
+          root.xiaoshuSendSharedSticker = api.send;
+          root.xiaoshuHideStickerNow = api.hide;
+        });
+      }
     } catch (_) {}
 
-    // Public aliases used by older call sites must obey the same guard.
     root.xiaoshuGetSharedStickerPool = api.getPool;
     root.xiaoshuSendSharedSticker = api.send;
     root.xiaoshuHideStickerNow = api.hide;
@@ -262,8 +272,28 @@
     return true;
   }
 
+  // Intercept the store's assignment so the guard is installed before its first session hydrate.
+  var storeDescriptor = null;
+  try { storeDescriptor = Object.getOwnPropertyDescriptor(root, 'xiaoshuStickerStore'); } catch (_) {}
+  if (!storeDescriptor || storeDescriptor.configurable) {
+    var storeValue = storeDescriptor && 'value' in storeDescriptor ? storeDescriptor.value : null;
+    try {
+      Object.defineProperty(root, 'xiaoshuStickerStore', {
+        configurable: true,
+        enumerable: true,
+        get: function () { return storeValue; },
+        set: function (value) {
+          storeValue = value;
+          if (value) install(value);
+        }
+      });
+      if (storeValue) install(storeValue);
+    } catch (_) {}
+  }
+
   function attemptInstall() {
-    if (root.xiaoshuStickerStore && install(root.xiaoshuStickerStore)) {
+    var api = root.xiaoshuStickerStore;
+    if (api && install(api)) {
       try { root.clearInterval(root.__xiaoshuStickerDeleteGuardTimer); } catch (_) {}
       root.__xiaoshuStickerDeleteGuardTimer = null;
       return true;

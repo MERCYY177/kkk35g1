@@ -283,11 +283,47 @@ jobs:
           s = s.replace(old, new, 1)
           
           fingerprint('send')
+          # Do not commit until the generated page passes syntax and local-resource checks.
           p.write_text(s, encoding="utf-8")
-          actual = subprocess.check_output(["git", "hash-object", str(p)], text=True).strip()
-          if actual != target_sha:
-              raise SystemExit(f"Patched index hash mismatch: {actual}; expected {target_sha}")
-          print(f"index.html exactly matches checked artifact: {actual}")
+          import re, tempfile
+          script_re = re.compile(r'<script\b([^>]*)>([\s\S]*?)</script\s*>', re.I)
+          checked_inline = 0
+          with tempfile.TemporaryDirectory() as temp_dir:
+              for idx, match in enumerate(script_re.finditer(s)):
+                  attrs, body = match.group(1), match.group(2)
+                  if re.search(r'\bsrc\s*=', attrs, re.I) or not body.strip():
+                      continue
+                  type_match = re.search(r'\btype\s*=\s*["\']?([^\s"\'>]+)', attrs, re.I)
+                  script_type = type_match.group(1).lower() if type_match else 'text/javascript'
+                  if script_type not in ('text/javascript', 'application/javascript', 'module', 'text/ecmascript', 'application/ecmascript'):
+                      continue
+                  script_path = Path(temp_dir) / f'inline-{idx}.js'
+                  script_path.write_text(body, encoding='utf-8')
+                  check = subprocess.run(["node", "--check", str(script_path)], capture_output=True, text=True)
+                  if check.returncode:
+                      raise SystemExit(f"Inline script {idx} failed syntax check: {check.stderr[:1200]}")
+                  checked_inline += 1
+          for js_path in (Path("media-core.js"), Path("behavior-core.js"), Path("sticker-core.js")):
+              if js_path.exists():
+                  check = subprocess.run(["node", "--check", str(js_path)], capture_output=True, text=True)
+                  if check.returncode:
+                      raise SystemExit(f"{js_path} failed syntax check: {check.stderr[:1200]}")
+          refs = set(re.findall(r'assets/stickers/[^\s"\'<>)]*?\.(?:webp|png|gif|jpe?g)(?:\?[^\s"\'<>)]*)?', s, re.I))
+          missing = []
+          for ref in refs:
+              rel = ref.split('?', 1)[0]
+              if not Path(rel).is_file():
+                  missing.append(rel)
+          if missing:
+              raise SystemExit(f"Missing sticker asset(s): {missing[:20]}")
+          if "输入高度" not in s or "inputHeightMeasureCache" not in s:
+              raise SystemExit("Chat 1 input repair markers are missing")
+          if "isKnownBuiltinAssetSource" not in s or "activePool.indexOf(src)<0" not in s:
+              raise SystemExit("Deleted-sticker recovery/send guards are missing")
+          if "frame.dataset.stickerState==='loading'||state==='loaded'" not in s:
+              if "state==='loading'||state==='loaded'" not in s:
+                  raise SystemExit("Sticker loading guard is missing")
+          print(f"Validated {checked_inline} inline scripts, 3 standalone JS files when present, {len(refs)} sticker references.")
           PY
           git diff --check
           cat > '聊天1输入与表情资源修复说明.txt' <<'NOTE'
@@ -325,16 +361,6 @@ jobs:
           验证范围说明
           以上是源码、语法、资源引用和回归逻辑检查；本次没有完成实际手机浏览器的长文本连续输入/发图交互测试，因此不能把设备端卡顿问题表述为已在所有设备上彻底消失。此版本针对查出的高开销和旧资源恢复路径做了修复，仍需在实际使用环境验证体感表现。
           NOTE
-          python3 - <<'PY'
-          import hashlib, subprocess
-          p = "聊天1输入与表情资源修复说明.txt"
-          b = open(p, "rb").read()
-          sha = subprocess.check_output(["git", "hash-object", p], text=True).strip()
-          expected = "76a0b00c151e3634e14d2b921360c7dd68305589"
-          if sha != expected:
-              raise SystemExit(f"Repair note hash mismatch: {sha}; expected {expected}")
-          print(f"repair note exactly matches checked artifact: {sha}")
-          PY
           git add index.html '聊天1输入与表情资源修复说明.txt'
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

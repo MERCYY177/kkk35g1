@@ -191,7 +191,7 @@ jobs:
           start = s.index(start_old)
           end = s.index(end_marker, start)
           assert start_new not in s
-          s = s[:start] + new_block + s[end:]
+          s = s[:start] + new_block + "\n" + s[end:]
           fingerprint('input')
           
           replacements = [

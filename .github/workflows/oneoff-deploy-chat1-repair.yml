@@ -22,6 +22,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import subprocess
+          import hashlib
           
           p = Path("index.html")
           s = p.read_text(encoding="utf-8")
@@ -34,10 +35,15 @@ jobs:
           if actual != base_sha:
               raise SystemExit(f"Refusing to patch unexpected index.html blob: {actual}")
           
+          def fingerprint(label):
+              b = s.encode("utf-8")
+              sha = hashlib.sha1(b"blob " + str(len(b)).encode() + b"\0" + b).hexdigest()
+              print("PATCH_FINGERPRINT", label, len(b), sha)
           old_comment = "// 最终版：使用历史确认的496张内置表情作为唯一内置源；119张实体资源保持排除，用户上传项继续单独合并。"
           new_comment = "// 使用表情管理器此刻的可用池；已删除、隐藏及旧版残留的内置资源不会进入自动回复池。"
           assert s.count(old_comment) == 1
           s = s.replace(old_comment, new_comment, 1)
+          fingerprint('comment')
           
           start_old = "// 输入框高度自适应（微信风格）。使用可复用的隐藏 textarea 测量内容高度；"
           start_new = "// 聊天1输入框高度自适应：把不随文字变化的样式测量缓存起来。"
@@ -186,6 +192,7 @@ jobs:
           end = s.index(end_marker, start)
           assert start_new not in s
           s = s[:start] + new_block + s[end:]
+          fingerprint('input')
           
           replacements = [
               ("frame.__xsStickerStart=start;frame.__xsStickerRefresh=function(){if(frame.dataset.stickerState!=='loaded')start(false)};",
@@ -196,6 +203,7 @@ jobs:
           for old, new in replacements:
               assert s.count(old) == 1, (old[:90], s.count(old))
               s = s.replace(old, new, 1)
+          fingerprint('loader')
           
           old = """  function withoutBuiltins(list){
               var builtin=new Set(builtinSrcs().map(norm));
@@ -217,6 +225,7 @@ jobs:
           assert s.count(old) == 1, ("withoutBuiltins block", s.count(old))
           s = s.replace(old, new, 1)
           
+          fingerprint('helper')
           replacement_map = {
               "uploads=uniq(uploads.concat(window.myStickerLibrary)).filter(isImage);": "uploads=withoutBuiltins(uploads.concat(window.myStickerLibrary));",
               "uploads=uniq(uploads.concat(myStickerLibrary)).filter(isImage);": "uploads=withoutBuiltins(uploads.concat(myStickerLibrary));",
@@ -229,6 +238,7 @@ jobs:
               assert old in s, old
               s = s.replace(old, new)
           
+          fingerprint('migration-replacements')
           old = "    uploads=uniq(uploads).filter(isImage);"
           new = "    uploads=withoutBuiltins(uploads);"
           assert s.count(old) == 2, s.count(old)
@@ -239,6 +249,7 @@ jobs:
           assert s.count(old) == 1
           s = s.replace(old, new, 1)
           
+          fingerprint('pool')
           old = "    var stickerId=registerMessageResource(src);if(!stickerId)return false;"
           new = """    // 不信任已经过期的面板/iframe 点击事件：发送时必须重新确认资源仍在当前可用池中。
               var activePool=buildPool(true).map(norm);
@@ -247,6 +258,7 @@ jobs:
           assert s.count(old) == 1
           s = s.replace(old, new, 1)
           
+          fingerprint('send')
           p.write_text(s, encoding="utf-8")
           actual = subprocess.check_output(["git", "hash-object", str(p)], text=True).strip()
           if actual != target_sha:

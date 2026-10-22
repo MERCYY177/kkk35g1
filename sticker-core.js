@@ -73,3 +73,211 @@
   }
   root.XiaoshuStickerCore = { safeResourceUrl: safeResourceUrl, withRetryToken: withRetryToken, requestUrl: requestUrl, stickerId: stickerId, rebuildResourceMap: rebuildResourceMap, createLoadMachine: createLoadMachine };
 })(typeof window !== 'undefined' ? window : globalThis);
+
+/* Runtime guard for uploaded-sticker deletion. Keep this in sticker-core.js so the existing page loads it. */
+(function (root) {
+  'use strict';
+  if (!root || root.__xiaoshuStickerDeleteGuardV1) return;
+  root.__xiaoshuStickerDeleteGuardV1 = true;
+
+  var STORE_KEY_PREFIX = 'xiaoshu_deleted_upload_hashes_v1_';
+  var deleted = new Set();
+  var loadedKey = '';
+  var norm = function (value) { return String(value == null ? '' : value).trim(); };
+
+  function sessionKey() {
+    var sid = '';
+    try { sid = String(root.__xiaoshuSessionDataReady || root.SESSION_ID || 'unscoped'); } catch (_) { sid = 'unscoped'; }
+    sid = sid.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120) || 'unscoped';
+    return STORE_KEY_PREFIX + sid;
+  }
+  function loadDeleted() {
+    var key = sessionKey();
+    if (key === loadedKey) return;
+    loadedKey = key;
+    deleted.clear();
+    try {
+      var raw = root.localStorage && root.localStorage.getItem(key);
+      var values = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(values)) values.forEach(function (value) {
+        if (typeof value === 'string' && /^stk_[a-z0-9_]+$/i.test(value)) deleted.add(value);
+      });
+    } catch (_) {}
+  }
+  function hash(src) {
+    try { return root.XiaoshuStickerCore && root.XiaoshuStickerCore.stickerId(norm(src)); } catch (_) { return ''; }
+  }
+  function isDeleted(src) {
+    loadDeleted();
+    var id = hash(src);
+    return !!id && deleted.has(id);
+  }
+  function saveDeleted() {
+    try { if (root.localStorage) root.localStorage.setItem(loadedKey || sessionKey(), JSON.stringify(Array.from(deleted))); } catch (error) {
+      try { if (root.console && root.console.warn) root.console.warn('[表情删除保护] 删除标记保存失败，当前页面内仍会阻止恢复', error); } catch (_) {}
+    }
+  }
+  function markDeleted(src) {
+    loadDeleted();
+    var id = hash(src);
+    if (!id) return;
+    deleted.add(id);
+    saveDeleted();
+  }
+  function unmarkDeleted(src) {
+    loadDeleted();
+    var id = hash(src);
+    if (id && deleted.delete(id)) saveDeleted();
+  }
+  function matches(list, src) {
+    src = norm(src);
+    return !!src && (list || []).some(function (item) { return norm(item) === src; });
+  }
+
+  function install(api) {
+    if (!api || api.__xsDeleteGuardPatched || typeof api.getUploads !== 'function' || typeof api.getPool !== 'function') return false;
+    api.__xsDeleteGuardPatched = true;
+    loadDeleted();
+
+    var rawGetUploads = api.getUploads.bind(api);
+    var rawGetPool = api.getPool.bind(api);
+    var rawRemoveUpload = api.removeUpload.bind(api);
+    var rawClearUploads = api.clearUploads.bind(api);
+    var rawHide = api.hide.bind(api);
+    var rawSend = api.send.bind(api);
+    var rawHydrate = api.hydrate.bind(api);
+    var rawSync = api.sync.bind(api);
+    var rawOpenAdmin = api.openAdmin.bind(api);
+    var rawAddFiles = api.addFiles.bind(api);
+
+    function purgeDeletedUploads() {
+      loadDeleted();
+      var stale = rawGetUploads().filter(function (src) { return isDeleted(src); });
+      stale.forEach(function (src) { rawRemoveUpload(src, false); });
+      return stale.length;
+    }
+
+    api.getUploads = function () {
+      loadDeleted();
+      return rawGetUploads().filter(function (src) { return !isDeleted(src); });
+    };
+    api.getPool = function () {
+      loadDeleted();
+      return rawGetPool().filter(function (src) { return !isDeleted(src); });
+    };
+    api.removeUpload = function (src, ask) {
+      src = norm(src);
+      loadDeleted();
+      var exists = matches(rawGetUploads(), src);
+      if (!exists) return rawRemoveUpload(src, ask);
+      if (ask !== false) {
+        var ok = false;
+        try { ok = root.confirm('删除这张上传表情？'); } catch (_) {}
+        if (!ok) return false;
+      }
+      markDeleted(src);
+      var removed = rawRemoveUpload(src, false);
+      if (!removed) unmarkDeleted(src);
+      return removed;
+    };
+    api.clearUploads = function (ask) {
+      loadDeleted();
+      var list = rawGetUploads();
+      if (ask !== false) {
+        var ok = false;
+        try { ok = root.confirm('清空全部上传表情包？内置表情不会受影响。'); } catch (_) {}
+        if (!ok) return false;
+      }
+      list.forEach(markDeleted);
+      return rawClearUploads(false);
+    };
+    api.hide = function (src, silent) {
+      src = norm(src);
+      loadDeleted();
+      if (matches(rawGetUploads(), src)) return api.removeUpload(src, false);
+      return rawHide(src, silent);
+    };
+    api.send = function (src) {
+      src = norm(src);
+      loadDeleted();
+      if (isDeleted(src) || !matches(api.getPool(), src)) {
+        try {
+          if (typeof root.showNotification === 'function') root.showNotification('这张表情已删除或隐藏，请重新打开表情面板再选择', 'info', 1800);
+        } catch (_) {}
+        return false;
+      }
+      return rawSend(src);
+    };
+    api.sync = function () {
+      purgeDeletedUploads();
+      return rawSync.apply(api, arguments);
+    };
+    api.hydrate = function () {
+      loadDeleted();
+      return Promise.resolve(rawHydrate.apply(api, arguments)).then(function (result) {
+        var removed = purgeDeletedUploads();
+        if (removed) rawSync();
+        return result;
+      });
+    };
+    api.openAdmin = function () {
+      purgeDeletedUploads();
+      return rawOpenAdmin.apply(api, arguments);
+    };
+    api.addFiles = function () {
+      purgeDeletedUploads();
+      var before = new Set(rawGetUploads().map(norm));
+      return Promise.resolve(rawAddFiles.apply(api, arguments)).then(function (result) {
+        var after = rawGetUploads();
+        after.forEach(function (src) { if (!before.has(norm(src))) unmarkDeleted(src); });
+        return result;
+      });
+    };
+
+    // The picker calls api.hide for its × control. Uploaded images must be permanently deleted;
+    // built-in images still use the reversible hidden list.
+    try {
+      if (root.document && !root.document.__xsDeleteGuardBatchBound) {
+        root.document.__xsDeleteGuardBatchBound = true;
+        root.document.addEventListener('click', function (event) {
+          var target = event.target && event.target.closest ? event.target.closest('#xs-delete-selected-stickers') : null;
+          if (!target) return;
+          loadDeleted();
+          var before = rawGetUploads().map(norm);
+          root.setTimeout(function () {
+            var after = new Set(rawGetUploads().map(norm));
+            var changed = false;
+            before.forEach(function (src) { if (!after.has(src)) { markDeleted(src); changed = true; } });
+            if (changed) purgeDeletedUploads();
+          }, 0);
+        }, true);
+      }
+    } catch (_) {}
+
+    // Public aliases used by older call sites must obey the same guard.
+    root.xiaoshuGetSharedStickerPool = api.getPool;
+    root.xiaoshuSendSharedSticker = api.send;
+    root.xiaoshuHideStickerNow = api.hide;
+    purgeDeletedUploads();
+    return true;
+  }
+
+  function attemptInstall() {
+    if (root.xiaoshuStickerStore && install(root.xiaoshuStickerStore)) {
+      try { root.clearInterval(root.__xiaoshuStickerDeleteGuardTimer); } catch (_) {}
+      root.__xiaoshuStickerDeleteGuardTimer = null;
+      return true;
+    }
+    return false;
+  }
+  if (!attemptInstall()) {
+    try {
+      root.__xiaoshuStickerDeleteGuardTimer = root.setInterval(attemptInstall, 20);
+      if (root.document) root.document.addEventListener('DOMContentLoaded', attemptInstall, { once: true });
+      root.setTimeout(function () {
+        try { if (root.__xiaoshuStickerDeleteGuardTimer) root.clearInterval(root.__xiaoshuStickerDeleteGuardTimer); } catch (_) {}
+        root.__xiaoshuStickerDeleteGuardTimer = null;
+      }, 15000);
+    } catch (_) {}
+  }
+})(typeof window !== 'undefined' ? window : globalThis);

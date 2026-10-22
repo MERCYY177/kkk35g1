@@ -3131,8 +3131,6 @@ settings.partnerName = String(settings.partnerName || '').trim() || '对方';
 // 已移除旧定制脚本的 DOMContentLoaded + 300/1200ms 重复重置；
 // 无独立设置入口的声音保持关闭，底栏与混入项沿用原启动默认。
 settings.soundEnabled = false;
-settings.emojiMixEnabled = false;
-settings.kaomojiMixEnabled = false;
 try {
 const __xsSystemFontStack = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
 if (!settings.customFontUrl && (!settings.messageFontFamily || /Noto\s+Serif\s+SC/i.test(String(settings.messageFontFamily)))) {
@@ -19327,7 +19325,16 @@ function scheduleStickerGridFill(generation,fillGeneration){
 }
   function hideStickerFromGrid(src){
     src=norm(src);if(!src)return;clearStickerDeleteButton();
-    if(window.xiaoshuStickerStore)window.xiaoshuStickerStore.hide(src);else if(window.xiaoshuHideStickerNow)window.xiaoshuHideStickerNow(src);
+    // Remove the tile before persistence/event work so an obsolete loading tile cannot leave a blank grid cell.
+    var grid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
+    if(grid){Array.prototype.slice.call(grid.querySelectorAll('.xs-final-sticker-btn')).forEach(function(btn){if(norm(btn.__stickerSrc)===src)btn.remove();});}
+    var store=window.xiaoshuStickerStore;
+    if(store&&typeof store.getUploads==='function'&&typeof store.removeUpload==='function'){
+      var uploads=[];try{uploads=store.getUploads()||[];}catch(_e){}
+      if(Array.isArray(uploads)&&uploads.some(function(item){return norm(item)===src;})){store.removeUpload(src,false);return;}
+      if(typeof store.hide==='function'){store.hide(src);return;}
+    }
+    if(typeof window.xiaoshuHideStickerNow==='function')window.xiaoshuHideStickerNow(src);
   }
   function sendStickerFromGrid(src){
     src=norm(src);if(!src)return;

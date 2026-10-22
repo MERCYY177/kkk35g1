@@ -241,9 +241,9 @@ jobs:
           
           old = "    var stickerId=registerMessageResource(src);if(!stickerId)return false;"
           new = """    // 不信任已经过期的面板/iframe 点击事件：发送时必须重新确认资源仍在当前可用池中。
-    var activePool=buildPool(true).map(norm);
-    if(activePool.indexOf(src)<0){notify('这张表情已删除或隐藏，请重新打开表情面板再选择','info',1800);return false;}
-    var stickerId=registerMessageResource(src);if(!stickerId)return false;"""
+              var activePool=buildPool(true).map(norm);
+              if(activePool.indexOf(src)<0){notify('这张表情已删除或隐藏，请重新打开表情面板再选择','info',1800);return false;}
+              var stickerId=registerMessageResource(src);if(!stickerId)return false;"""
           assert s.count(old) == 1
           s = s.replace(old, new, 1)
           

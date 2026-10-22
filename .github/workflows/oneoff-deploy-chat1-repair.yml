@@ -185,7 +185,7 @@ jobs:
           start = s.index(start_old)
           end = s.index(end_marker, start)
           assert start_new not in s
-          s = s[:start] + new_block + "\n" + s[end:]
+          s = s[:start] + new_block + s[end:]
           
           replacements = [
               ("frame.__xsStickerStart=start;frame.__xsStickerRefresh=function(){if(frame.dataset.stickerState!=='loaded')start(false)};",

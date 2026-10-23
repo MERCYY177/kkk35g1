@@ -18929,7 +18929,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
         }catch(_e){}
       }else{return false;}
     }catch(e){console.warn('[共享表情包发送]',e);return false;}
-    try{var p=$('user-sticker-picker');if(p)p.classList.remove('active');}catch(e){}
+    // 发送表情后保留共享表情面板；关闭仍由 closePicker / 面板外点击等原有交互负责。
     return true;
   }
   function emit(pool){
@@ -19201,7 +19201,7 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
   function norm(s){ return String(s||'').trim(); }
   function uniq(arr){ var out=[], seen=new Set(); (arr||[]).forEach(function(x){ x=norm(x); if(x&&!seen.has(x)){ seen.add(x); out.push(x); } }); return out; }
   function isImg(s){ s=norm(s); return /^(data:image\/|blob:|https?:\/\/|file:|content:)/i.test(s)||/\.(png|jpe?g|gif|webp|bmp|svg)(\?|#|$)/i.test(s); }
-  function closePicker(){stickerFillGeneration++;stickerFillScheduled=null;clearStickerDeleteButton();stickerLoadQueue.forEach(function(img){if(img)img.__xsQueued=false;});stickerLoadQueue=[];disconnectStickerImageObserver();var p=picker();if(p)p.classList.remove('active');}
+  function closePicker(){stickerFillGeneration++;cancelStickerGridFill();clearStickerDeleteButton();stickerLoadQueue.forEach(function(img){if(img)img.__xsQueued=false;});stickerLoadQueue=[];disconnectStickerImageObserver();var p=picker();if(p)p.classList.remove('active');}
   function closeMore(){ var m=$('xs-wx-more-panel'); if(m) m.classList.remove('active'); }
   function header(kind){
     var p=picker(); if(!p) return;
@@ -19244,7 +19244,7 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
     var arr=[]; try{if(window.xiaoshuStickerStore)arr=window.xiaoshuStickerStore.getPool();else if(typeof window.xiaoshuGetSharedStickerPool==='function')arr=window.xiaoshuGetSharedStickerPool();}catch(e){}
     return uniq(arr).filter(isImg);
   }
-  var STICKER_BATCH_SIZE=25,stickerPool=[],stickerRenderedCount=0,armedStickerButton=null,stickerLoadQueue=[],stickerActiveLoads=0,stickerLoadingImages=new Set(),stickerFailedSources=new Map(),stickerLoadGeneration=0,stickerFillGeneration=0,stickerFillScheduled=null,stickerRenderedSignature='';
+  var STICKER_BATCH_SIZE=25,stickerPool=[],stickerRenderedCount=0,armedStickerButton=null,stickerLoadQueue=[],stickerActiveLoads=0,stickerLoadingImages=new Set(),stickerFailedSources=new Map(),stickerLoadGeneration=0,stickerFillGeneration=0,stickerFillTask=null,stickerRenderedSignature='';
   var STICKER_LOAD_LIMIT=5,STICKER_LOAD_TIMEOUT=9000;
   function clearStickerDeleteButton(){if(armedStickerButton&&armedStickerButton.classList)armedStickerButton.classList.remove('delete-armed');armedStickerButton=null;}
   function armStickerDeleteButton(btn){if(!btn)return;if(armedStickerButton&&armedStickerButton!==btn&&armedStickerButton.classList)armedStickerButton.classList.remove('delete-armed');armedStickerButton=btn;btn.classList.add('delete-armed');}
@@ -19309,6 +19309,12 @@ function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){return {'&'
     }
     grid.appendChild(frag);pending.forEach(function(img){queueStickerThumb(img,img.__stickerSrc,false);});
   }
+function cancelStickerGridFill(){
+  var task=stickerFillTask;
+  stickerFillTask=null;
+  // 先清空任务引用，再取消计时器；即使回调已经进入队列，也会因引用不匹配而退出。
+  if(task&&task.id!==null&&task.id!==undefined)clearTimeout(task.id);
+}
 function scheduleStickerGridFill(generation,fillGeneration){
   if(generation!==stickerLoadGeneration)return;
   fillGeneration=typeof fillGeneration==='number'?fillGeneration:stickerFillGeneration;
@@ -19316,12 +19322,24 @@ function scheduleStickerGridFill(generation,fillGeneration){
   var p=picker();if(!p||!p.classList.contains('active')||p.dataset.xsPanelKind!=='stickers')return;
   var grid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
   if(!grid||!grid.isConnected||stickerRenderedCount>=stickerPool.length)return;
-  appendStickerBatch();
-  if(generation!==stickerLoadGeneration||fillGeneration!==stickerFillGeneration||stickerRenderedCount>=stickerPool.length)return;
-  if(stickerFillScheduled===fillGeneration)return;
-  stickerFillScheduled=fillGeneration;
-  var next=function(){if(stickerFillScheduled===fillGeneration)stickerFillScheduled=null;scheduleStickerGridFill(generation,fillGeneration);};
-  if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(next,{timeout:120});else setTimeout(next,16);
+  if(stickerFillTask){
+    if(stickerFillTask.generation===generation&&stickerFillTask.fillGeneration===fillGeneration)return;
+    cancelStickerGridFill();
+  }
+  // 每次只在一个短定时任务中创建下一批，给输入、滚动和绘制留出主线程时间。
+  // 不依赖 requestIdleCallback，避免特定 WebView/浏览器中空闲回调迟迟不执行。
+  var task={id:null,generation:generation,fillGeneration:fillGeneration};
+  stickerFillTask=task;
+  task.id=setTimeout(function(){
+    if(stickerFillTask!==task)return;
+    stickerFillTask=null;
+    if(task.generation!==stickerLoadGeneration||task.fillGeneration!==stickerFillGeneration)return;
+    var currentPicker=picker();
+    var currentGrid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
+    if(!currentPicker||!currentPicker.classList.contains('active')||currentPicker.dataset.xsPanelKind!=='stickers'||!currentGrid||!currentGrid.isConnected)return;
+    appendStickerBatch();
+    if(task.generation===stickerLoadGeneration&&task.fillGeneration===stickerFillGeneration&&stickerRenderedCount<stickerPool.length)scheduleStickerGridFill(task.generation,task.fillGeneration);
+  },16);
 }
   function hideStickerFromGrid(src){
     src=norm(src);if(!src)return;clearStickerDeleteButton();
@@ -19372,12 +19390,12 @@ function scheduleStickerGridFill(generation,fillGeneration){
     p.classList.add('active');header('stickers');clearStickerDeleteButton();
     if(canReuse){
       stickerPool=nextPool;
-      stickerFillGeneration++;stickerFillScheduled=null;
+      stickerFillGeneration++;cancelStickerGridFill();
       resumeStickerGridLoads(existingGrid);
       scheduleStickerGridFill(stickerLoadGeneration,stickerFillGeneration);
       return;
     }
-    stickerLoadGeneration++;stickerFillGeneration++;stickerFillScheduled=null;
+    stickerLoadGeneration++;stickerFillGeneration++;cancelStickerGridFill();
     stickerLoadQueue.forEach(function(img){if(img)img.__xsQueued=false;});stickerLoadQueue=[];cancelStaleStickerLoads();
     stickerPool=nextPool;stickerRenderedSignature=nextSignature;stickerRenderedCount=0;
     a.innerHTML=uploadRow()+(stickerPool.length?'<div class="xs-final-sticker-bar"><span>共享表情包 · '+stickerPool.length+' 个</span></div><div class="xs-final-sticker-grid"></div>':'<div class="xs-final-empty">暂无</div>');a.scrollTop=0;

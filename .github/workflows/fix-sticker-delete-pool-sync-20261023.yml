@@ -104,7 +104,7 @@ jobs:
     }
     if(typeof window.xiaoshuHideStickerNow==='function')window.xiaoshuHideStickerNow(src);
   }
-'''
+          '''
           source = source[:start] + new_block + source[end:]
 
           old_listener = "  window.addEventListener('stickerLibraryUpdated',function(){var p=picker();if(!p||!p.classList.contains('active')||p.dataset.xsPanelKind!=='stickers')return;var nextPool=getSharedStickers().filter(function(src){return !(stickerFailedSources.has(src)&&Date.now()-stickerFailedSources.get(src)<300000);});if(JSON.stringify(nextPool)!==stickerRenderedSignature)openStickers(true);});"

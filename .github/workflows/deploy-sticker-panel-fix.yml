@@ -52,7 +52,7 @@ jobs:
           )
 
           start = s.find('function scheduleStickerGridFill(generation,fillGeneration){')
-          end = s.find('\\n  function hideStickerFromGrid(src){', start)
+          end = s.find('\n  function hideStickerFromGrid(src){', start)
           if start < 0 or end < 0:
               raise SystemExit('sticker fill function bounds missing; refusing a blind rewrite')
           old_block = s[start:end]
@@ -138,11 +138,11 @@ jobs:
               raise SystemExit('behavior invariant failed')
 
           scripts = 0
-          for i, m in enumerate(re.finditer(r'<script\\b([^>]*)>(.*?)</script\\s*>', s, re.I|re.S)):
+          for i, m in enumerate(re.finditer(r'<script\b([^>]*)>(.*?)</script\s*>', s, re.I|re.S)):
               attrs, code = m.group(1), m.group(2)
-              if re.search(r'\\bsrc\\s*=', attrs, re.I) or not code.strip():
+              if re.search(r'\bsrc\s*=', attrs, re.I) or not code.strip():
                   continue
-              typ=re.search(r'\\btype\\s*=\\s*["\\']?([^\\s"\\'>]+)', attrs, re.I)
+              typ=re.search(r'\btype\s*=\s*["\']?([^\s"\'>]+)', attrs, re.I)
               if typ and ('json' in typ.group(1).lower() or 'template' in typ.group(1).lower()):
                   continue
               f=Path(f'/tmp/inline-sticker-check-{i}.js')

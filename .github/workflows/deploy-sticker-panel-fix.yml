@@ -1,0 +1,170 @@
+name: Deploy verified sticker panel fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-sticker-panel-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply only the verified sticker panel changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          original = s
+
+          def replace_exact(old, new, label, count=1):
+              global s
+              found = s.count(old)
+              if found != count:
+                  raise SystemExit(f'{label}: expected {count} exact match(es), found {found}; refusing to patch')
+              s = s.replace(old, new, count)
+
+          replace_exact(
+              "try{var p=$('user-sticker-picker');if(p)p.classList.remove('active');}catch(e){}",
+              "// 发送表情后保留共享表情面板；关闭仍由 closePicker / 面板外点击等原有交互负责。",
+              'keep sticker panel open after send'
+          )
+          replace_exact(
+              'function closePicker(){stickerFillGeneration++;stickerFillScheduled=null;clearStickerDeleteButton();',
+              'function closePicker(){stickerFillGeneration++;cancelStickerGridFill();clearStickerDeleteButton();',
+              'cancel sticker fill when closing'
+          )
+          replace_exact(
+              'stickerFillScheduled=null,stickerRenderedSignature',
+              'stickerFillTask=null,stickerRenderedSignature',
+              'replace scheduled-task sentinel'
+          )
+
+          start = s.find('function scheduleStickerGridFill(generation,fillGeneration){')
+          end = s.find('\\n  function hideStickerFromGrid(src){', start)
+          if start < 0 or end < 0:
+              raise SystemExit('sticker fill function bounds missing; refusing a blind rewrite')
+          old_block = s[start:end]
+          if 'stickerFillScheduled' not in old_block or 'requestIdleCallback' not in old_block:
+              raise SystemExit('sticker fill function does not match the expected source; refusing to patch')
+
+          new_block = """function cancelStickerGridFill(){
+            var task=stickerFillTask;
+            stickerFillTask=null;
+            // 先清空任务引用，再取消计时器；即使回调已经进入队列，也会因引用不匹配而退出。
+            if(task&&task.id!==null&&task.id!==undefined)clearTimeout(task.id);
+          }
+          function scheduleStickerGridFill(generation,fillGeneration){
+            if(generation!==stickerLoadGeneration)return;
+            fillGeneration=typeof fillGeneration==='number'?fillGeneration:stickerFillGeneration;
+            if(fillGeneration!==stickerFillGeneration)return;
+            var p=picker();if(!p||!p.classList.contains('active')||p.dataset.xsPanelKind!=='stickers')return;
+            var grid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
+            if(!grid||!grid.isConnected||stickerRenderedCount>=stickerPool.length)return;
+            if(stickerFillTask){
+              if(stickerFillTask.generation===generation&&stickerFillTask.fillGeneration===fillGeneration)return;
+              cancelStickerGridFill();
+            }
+            // 每次只在一个短定时任务中创建下一批，给输入、滚动和绘制留出主线程时间。
+            // 不依赖 requestIdleCallback，避免特定 WebView/浏览器中空闲回调迟迟不执行。
+            var task={id:null,generation:generation,fillGeneration:fillGeneration};
+            stickerFillTask=task;
+            task.id=setTimeout(function(){
+              if(stickerFillTask!==task)return;
+              stickerFillTask=null;
+              if(task.generation!==stickerLoadGeneration||task.fillGeneration!==stickerFillGeneration)return;
+              var currentPicker=picker();
+              var currentGrid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
+              if(!currentPicker||!currentPicker.classList.contains('active')||currentPicker.dataset.xsPanelKind!=='stickers'||!currentGrid||!currentGrid.isConnected)return;
+              appendStickerBatch();
+              if(task.generation===stickerLoadGeneration&&task.fillGeneration===stickerFillGeneration&&stickerRenderedCount<stickerPool.length)scheduleStickerGridFill(task.generation,task.fillGeneration);
+            },16);
+          }"""
+          s = s[:start] + new_block + s[end:]
+
+          replace_exact(
+              'stickerFillGeneration++;stickerFillScheduled=null;',
+              'stickerFillGeneration++;cancelStickerGridFill();',
+              'cancel fill task on panel reuse and fresh open',
+              count=2
+          )
+
+          if 'stickerFillScheduled' in s:
+              raise SystemExit('stale stickerFillScheduled reference remains')
+          if s.count('function cancelStickerGridFill(){') != 1:
+              raise SystemExit('cancel function count is not one')
+          if s.count('function scheduleStickerGridFill(generation,fillGeneration){') != 1:
+              raise SystemExit('scheduler function count is not one')
+          if "classList.remove('active');}catch(e){}" in s[s.find("function sendSticker(src)"):s.find("function emit(pool)")]:
+              raise SystemExit('sendSticker still contains the automatic close')
+          if s == original:
+              raise SystemExit('no file changes produced')
+          p.write_text(s, encoding='utf-8')
+          print('PATCH_APPLIED')
+          print('Original bytes:', len(original.encode('utf-8')))
+          print('Patched bytes:', len(s.encode('utf-8')))
+          PY
+
+      - name: Verify changed behavior and JavaScript syntax
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess
+
+          s=Path('index.html').read_text(encoding='utf-8')
+          checks = {
+            'send keeps panel open': '发送表情后保留共享表情面板' in s,
+            'cancellable task exists': 'function cancelStickerGridFill(){' in s and 'clearTimeout(task.id)' in s,
+            'generation guard exists': 'task.generation!==stickerLoadGeneration||task.fillGeneration!==stickerFillGeneration' in s,
+            'old sentinel removed': 'stickerFillScheduled' not in s,
+            'image failure logic retained': 'STICKER_LOAD_TIMEOUT=9000' in s and 'stickerFailedSources' in s,
+            'Chat1 input core still present': 'xiaoshu-chat1-sticker-loader-v1-js' in s,
+          }
+          for name, ok in checks.items():
+              print(('PASS' if ok else 'FAIL') + ': ' + name)
+          if not all(checks.values()):
+              raise SystemExit('behavior invariant failed')
+
+          scripts = 0
+          for i, m in enumerate(re.finditer(r'<script\\b([^>]*)>(.*?)</script\\s*>', s, re.I|re.S)):
+              attrs, code = m.group(1), m.group(2)
+              if re.search(r'\\bsrc\\s*=', attrs, re.I) or not code.strip():
+                  continue
+              typ=re.search(r'\\btype\\s*=\\s*["\\']?([^\\s"\\'>]+)', attrs, re.I)
+              if typ and ('json' in typ.group(1).lower() or 'template' in typ.group(1).lower()):
+                  continue
+              f=Path(f'/tmp/inline-sticker-check-{i}.js')
+              f.write_text(code, encoding='utf-8')
+              subprocess.run(['node','--check',str(f)],check=True)
+              scripts += 1
+          print('Inline JavaScript syntax checks:',scripts)
+          if scripts < 50:
+              raise SystemExit(f'unexpectedly few inline scripts checked: {scripts}')
+          print('STATIC_CHECKS_GREEN')
+          PY
+
+      - name: Remove one-shot workflow and commit the fix
+        shell: bash
+        run: |
+          rm -f .github/workflows/deploy-sticker-panel-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html .github/workflows/deploy-sticker-panel-fix.yml
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+            exit 1
+          fi
+          git commit -m 'fix: keep sticker picker open and resume loading'
+          git push

@@ -31,79 +31,79 @@ jobs:
           start = source.index(start_marker)
           end = source.index(end_marker, start)
           new_block = r'''  function updateStickerPoolCount(){
-    var a=area(),label=a&&a.querySelector('.xs-final-sticker-bar span');
-    if(label)label.textContent='共享表情包 · '+stickerPool.length+' 个';
-  }
-  function showStickerEmptyState(){
-    var a=area();if(!a)return;
-    var bar=a.querySelector('.xs-final-sticker-bar');if(bar)bar.remove();
-    var grid=a.querySelector('.xs-final-sticker-grid');
-    if(grid){var empty=document.createElement('div');empty.className='xs-final-empty';empty.textContent='暂无';grid.replaceWith(empty);}
-  }
-  function cancelStickerSourceLoads(src,keepSet){
-    stickerLoadQueue=stickerLoadQueue.filter(function(img){
-      if(!img)return false;
-      var source=norm(img.__stickerSrc);
-      var remove=keepSet?!keepSet.has(source):source===src;
-      if(remove){img.__xsQueued=false;return false;}return true;
-    });
-    Array.from(stickerLoadingImages).forEach(function(img){
-      if(!img)return;var source=norm(img.__stickerSrc),remove=keepSet?!keepSet.has(source):source===src;
-      if(remove&&typeof img.__xsCancelLoad==='function')img.__xsCancelLoad();
-    });
-  }
-  function reconcileStickerPool(nextPool){
-    var nextSignature=JSON.stringify(nextPool);
-    if(nextSignature===stickerRenderedSignature)return true;
-    var oldPool=stickerPool.slice(),oldRenderedCount=stickerRenderedCount,keptOldIndices=[],searchFrom=0,subset=true;
-    for(var ni=0;ni<nextPool.length;ni++){
-      var found=-1;
-      for(var oi=searchFrom;oi<oldPool.length;oi++){
-        if(norm(oldPool[oi])===norm(nextPool[ni])){found=oi;break;}
-      }
-      if(found<0){subset=false;break;}
-      keptOldIndices.push(found);searchFrom=found+1;
-    }
-    // 新上传项只会追加在池尾：保留已有图片节点，只继续渲染新增项。
-    if(!subset&&oldPool.length>0&&nextPool.length>oldPool.length&&oldPool.every(function(src,i){return norm(src)===norm(nextPool[i]);})){
-      stickerPool=nextPool.slice();stickerRenderedSignature=nextSignature;updateStickerPoolCount();
-      if(stickerRenderedCount<stickerPool.length)scheduleStickerGridFill(stickerLoadGeneration,stickerFillGeneration);
-      return true;
-    }
-    // 纯删除/隐藏时只清掉失效资源，不销毁剩余格子并重新加载全部图片。
-    if(!subset)return false;
-    var keepSet=new Set(nextPool.map(norm));
-    var grid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
-    if(grid){Array.prototype.slice.call(grid.querySelectorAll('.xs-final-sticker-btn')).forEach(function(btn){if(!keepSet.has(norm(btn.__stickerSrc)))btn.remove();});}
-    cancelStickerSourceLoads('',keepSet);
-    stickerPool=nextPool.slice();
-    stickerRenderedCount=keptOldIndices.filter(function(index){return index<oldRenderedCount;}).length;
-    stickerRenderedSignature=nextSignature;updateStickerPoolCount();
-    if(!stickerPool.length)showStickerEmptyState();
-    else scheduleStickerGridFill(stickerLoadGeneration,stickerFillGeneration);
-    return true;
-  }
-  function hideStickerFromGrid(src){
-    src=norm(src);if(!src)return;clearStickerDeleteButton();
-    // 先删除页面节点，再同步当前批次快照；否则下一个定时批次可能从旧快照把这张图重新创建。
-    var grid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
-    if(grid){Array.prototype.slice.call(grid.querySelectorAll('.xs-final-sticker-btn')).forEach(function(btn){if(norm(btn.__stickerSrc)===src)btn.remove();});}
-    var poolIndex=-1;
-    for(var pi=0;pi<stickerPool.length;pi++){if(norm(stickerPool[pi])===src){poolIndex=pi;break;}}
-    if(poolIndex>=0){
-      if(poolIndex<stickerRenderedCount)stickerRenderedCount=Math.max(0,stickerRenderedCount-1);
-      stickerPool.splice(poolIndex,1);stickerRenderedSignature=JSON.stringify(stickerPool);
-      updateStickerPoolCount();if(!stickerPool.length)showStickerEmptyState();
-    }
-    cancelStickerSourceLoads(src,null);
-    var store=window.xiaoshuStickerStore;
-    if(store&&typeof store.getUploads==='function'&&typeof store.removeUpload==='function'){
-      var uploads=[];try{uploads=store.getUploads()||[];}catch(_e){}
-      if(Array.isArray(uploads)&&uploads.some(function(item){return norm(item)===src;})){store.removeUpload(src,false);return;}
-      if(typeof store.hide==='function'){store.hide(src);return;}
-    }
-    if(typeof window.xiaoshuHideStickerNow==='function')window.xiaoshuHideStickerNow(src);
-  }
+              var a=area(),label=a&&a.querySelector('.xs-final-sticker-bar span');
+              if(label)label.textContent='共享表情包 · '+stickerPool.length+' 个';
+            }
+            function showStickerEmptyState(){
+              var a=area();if(!a)return;
+              var bar=a.querySelector('.xs-final-sticker-bar');if(bar)bar.remove();
+              var grid=a.querySelector('.xs-final-sticker-grid');
+              if(grid){var empty=document.createElement('div');empty.className='xs-final-empty';empty.textContent='暂无';grid.replaceWith(empty);}
+            }
+            function cancelStickerSourceLoads(src,keepSet){
+              stickerLoadQueue=stickerLoadQueue.filter(function(img){
+                if(!img)return false;
+                var source=norm(img.__stickerSrc);
+                var remove=keepSet?!keepSet.has(source):source===src;
+                if(remove){img.__xsQueued=false;return false;}return true;
+              });
+              Array.from(stickerLoadingImages).forEach(function(img){
+                if(!img)return;var source=norm(img.__stickerSrc),remove=keepSet?!keepSet.has(source):source===src;
+                if(remove&&typeof img.__xsCancelLoad==='function')img.__xsCancelLoad();
+              });
+            }
+            function reconcileStickerPool(nextPool){
+              var nextSignature=JSON.stringify(nextPool);
+              if(nextSignature===stickerRenderedSignature)return true;
+              var oldPool=stickerPool.slice(),oldRenderedCount=stickerRenderedCount,keptOldIndices=[],searchFrom=0,subset=true;
+              for(var ni=0;ni<nextPool.length;ni++){
+                var found=-1;
+                for(var oi=searchFrom;oi<oldPool.length;oi++){
+                  if(norm(oldPool[oi])===norm(nextPool[ni])){found=oi;break;}
+                }
+                if(found<0){subset=false;break;}
+                keptOldIndices.push(found);searchFrom=found+1;
+              }
+              // 新上传项只会追加在池尾：保留已有图片节点，只继续渲染新增项。
+              if(!subset&&oldPool.length>0&&nextPool.length>oldPool.length&&oldPool.every(function(src,i){return norm(src)===norm(nextPool[i]);})){
+                stickerPool=nextPool.slice();stickerRenderedSignature=nextSignature;updateStickerPoolCount();
+                if(stickerRenderedCount<stickerPool.length)scheduleStickerGridFill(stickerLoadGeneration,stickerFillGeneration);
+                return true;
+              }
+              // 纯删除/隐藏时只清掉失效资源，不销毁剩余格子并重新加载全部图片。
+              if(!subset)return false;
+              var keepSet=new Set(nextPool.map(norm));
+              var grid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
+              if(grid){Array.prototype.slice.call(grid.querySelectorAll('.xs-final-sticker-btn')).forEach(function(btn){if(!keepSet.has(norm(btn.__stickerSrc)))btn.remove();});}
+              cancelStickerSourceLoads('',keepSet);
+              stickerPool=nextPool.slice();
+              stickerRenderedCount=keptOldIndices.filter(function(index){return index<oldRenderedCount;}).length;
+              stickerRenderedSignature=nextSignature;updateStickerPoolCount();
+              if(!stickerPool.length)showStickerEmptyState();
+              else scheduleStickerGridFill(stickerLoadGeneration,stickerFillGeneration);
+              return true;
+            }
+            function hideStickerFromGrid(src){
+              src=norm(src);if(!src)return;clearStickerDeleteButton();
+              // 先删除页面节点，再同步当前批次快照；否则下一个定时批次可能从旧快照把这张图重新创建。
+              var grid=document.querySelector('#combo-content-area .xs-final-sticker-grid');
+              if(grid){Array.prototype.slice.call(grid.querySelectorAll('.xs-final-sticker-btn')).forEach(function(btn){if(norm(btn.__stickerSrc)===src)btn.remove();});}
+              var poolIndex=-1;
+              for(var pi=0;pi<stickerPool.length;pi++){if(norm(stickerPool[pi])===src){poolIndex=pi;break;}}
+              if(poolIndex>=0){
+                if(poolIndex<stickerRenderedCount)stickerRenderedCount=Math.max(0,stickerRenderedCount-1);
+                stickerPool.splice(poolIndex,1);stickerRenderedSignature=JSON.stringify(stickerPool);
+                updateStickerPoolCount();if(!stickerPool.length)showStickerEmptyState();
+              }
+              cancelStickerSourceLoads(src,null);
+              var store=window.xiaoshuStickerStore;
+              if(store&&typeof store.getUploads==='function'&&typeof store.removeUpload==='function'){
+                var uploads=[];try{uploads=store.getUploads()||[];}catch(_e){}
+                if(Array.isArray(uploads)&&uploads.some(function(item){return norm(item)===src;})){store.removeUpload(src,false);return;}
+                if(typeof store.hide==='function'){store.hide(src);return;}
+              }
+              if(typeof window.xiaoshuHideStickerNow==='function')window.xiaoshuHideStickerNow(src);
+            }
           '''
           source = source[:start] + new_block + source[end:]
 

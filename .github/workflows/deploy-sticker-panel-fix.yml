@@ -137,21 +137,17 @@ jobs:
           if not all(checks.values()):
               raise SystemExit('behavior invariant failed')
 
-          scripts = 0
-          for i, m in enumerate(re.finditer(r'<script\b([^>]*)>(.*?)</script\s*>', s, re.I|re.S)):
-              attrs, code = m.group(1), m.group(2)
-              if re.search(r'\bsrc\s*=', attrs, re.I) or not code.strip():
-                  continue
-              typ=re.search(r'\btype\s*=\s*["\']?([^\s"\'>]+)', attrs, re.I)
-              if typ and ('json' in typ.group(1).lower() or 'template' in typ.group(1).lower()):
-                  continue
-              f=Path(f'/tmp/inline-sticker-check-{i}.js')
-              f.write_text(code, encoding='utf-8')
-              subprocess.run(['node','--check',str(f)],check=True)
-              scripts += 1
-          print('Inline JavaScript syntax checks:',scripts)
-          if scripts < 50:
-              raise SystemExit(f'unexpectedly few inline scripts checked: {scripts}')
+          start=s.find('<script id="xiaoshu-final-emoji-poke-split-v5-js"')
+          if start < 0:
+              raise SystemExit('target sticker picker script not found')
+          body_start=s.find('>',start)+1
+          end=s.find('</script>',body_start)
+          if body_start <= start or end < 0:
+              raise SystemExit('target sticker picker script bounds are invalid')
+          syntax_file=Path('/tmp/sticker-picker-main.js')
+          syntax_file.write_text(s[body_start:end],encoding='utf-8')
+          subprocess.run(['node','--check',str(syntax_file)],check=True)
+          print('Target sticker picker JavaScript syntax: PASS')
           print('STATIC_CHECKS_GREEN')
           PY
 

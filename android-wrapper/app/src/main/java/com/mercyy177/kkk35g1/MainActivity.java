@@ -6,10 +6,10 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
+import android.util.TypedValue;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
-import android.util.TypedValue;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -20,13 +20,11 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.app.AppCompatDelegate;
 import androidx.webkit.WebViewAssetLoader;
 
 import java.io.OutputStream;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 1001;
     private static final int SAVE_FILE_REQUEST = 1002;
 
@@ -39,10 +37,10 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // Let AppCompat select the light/dark resources from the device's current system setting.
-        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
         super.onCreate(savedInstanceState);
 
+        // The Android theme is resolved from values/ vs values-night/.
+        // This exposes the correct isLightTheme to WebView's prefers-color-scheme on API 33+.
         Window window = getWindow();
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
@@ -190,7 +188,7 @@ public class MainActivity extends AppCompatActivity {
 
     private String sanitizeFileName(String name) {
         if (name == null || name.trim().isEmpty()) return "export.bin";
-        String safe = name.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+        String safe = name.replaceAll("[\\\\/:*?\\\"<>|]", "_").trim();
         return safe.isEmpty() ? "export.bin" : safe;
     }
 

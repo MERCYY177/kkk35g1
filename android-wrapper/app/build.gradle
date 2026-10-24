@@ -2,18 +2,17 @@ plugins {
     id "com.android.application"
 }
 
-def buildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
-
 android {
     namespace "com.mercyy177.kkk35g1"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.mercyy177.kkk35g1.systemtheme"
+        applicationId "com.mercyy177.kkk35g1"
         minSdk 23
-        targetSdk 32
-        versionCode buildNumber
-        versionName "1.0.${buildNumber}"
+        // API 33+ makes WebView's prefers-color-scheme follow the app's isLightTheme.
+        targetSdk 33
+        versionCode 1
+        versionName "1.0.0"
     }
 
     compileOptions {
@@ -29,6 +28,5 @@ android {
 }
 
 dependencies {
-    implementation "androidx.appcompat:appcompat:1.7.0"
     implementation "androidx.webkit:webkit:1.12.1"
 }

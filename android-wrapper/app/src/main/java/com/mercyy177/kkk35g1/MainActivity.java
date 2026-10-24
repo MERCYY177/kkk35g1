@@ -3,13 +3,13 @@ package com.mercyy177.kkk35g1;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.util.TypedValue;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -20,11 +20,13 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AppCompatDelegate;
 import androidx.webkit.WebViewAssetLoader;
 
 import java.io.OutputStream;
 
-public class MainActivity extends Activity {
+public class MainActivity extends AppCompatActivity {
     private static final int FILE_CHOOSER_REQUEST = 1001;
     private static final int SAVE_FILE_REQUEST = 1002;
 
@@ -37,14 +39,11 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Let AppCompat select the light/dark resources from the device's current system setting.
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
         super.onCreate(savedInstanceState);
 
         Window window = getWindow();
-        window.setStatusBarColor(Color.WHITE);
-        window.setNavigationBarColor(Color.WHITE);
-        window.getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-        );
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
         assetLoader = new WebViewAssetLoader.Builder()
@@ -52,7 +51,7 @@ public class MainActivity extends Activity {
                 .build();
 
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.WHITE);
+        webView.setBackgroundColor(resolveThemeColor(android.R.attr.colorBackground));
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
@@ -127,6 +126,17 @@ public class MainActivity extends Activity {
 
         setContentView(webView);
         webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html");
+    }
+
+    private int resolveThemeColor(int attr) {
+        TypedValue value = new TypedValue();
+        if (getTheme().resolveAttribute(attr, value, true)) {
+            if (value.resourceId != 0) {
+                return getResources().getColor(value.resourceId);
+            }
+            return value.data;
+        }
+        return 0xFFFAFAFA;
     }
 
     private void installBlobDownloadBridge() {

@@ -23,7 +23,6 @@ import android.widget.Toast;
 import androidx.webkit.WebViewAssetLoader;
 
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 1001;
@@ -118,7 +117,7 @@ public class MainActivity extends Activity {
                     Intent intent = fileChooserParams.createIntent();
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST);
                     return true;
-                } catch (ActivityNotFoundException | RuntimeException exception) {
+                } catch (RuntimeException exception) {
                     filePathCallback = null;
                     Toast.makeText(MainActivity.this, "无法打开文件选择器", Toast.LENGTH_SHORT).show();
                     return false;

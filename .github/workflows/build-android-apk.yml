@@ -17,6 +17,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: chuanxun-android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build installable debug APK
@@ -36,6 +40,12 @@ jobs:
 
       - name: Install Android platform and build tools
         run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Reuse debug signing key for future test APK updates
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: chuanxun-debug-keystore-v1-linux
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

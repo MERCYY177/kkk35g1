@@ -252,6 +252,77 @@
       });
     };
 
+    // Final guard for the picker renderer: never leave a tile in the grid if its
+    // source is no longer in the authoritative shared pool. The inline picker can
+    // have an already-scheduled batch append; the MutationObserver prunes such stale
+    // nodes before the browser paints them, preventing an empty cell while image retry
+    // logic eventually removes the unavailable tile.
+    function installPickerTilePruner() {
+      var doc = root.document;
+      if (!doc || doc.__xsStickerTilePrunerV1) return;
+      doc.__xsStickerTilePrunerV1 = true;
+
+      function allowedSources() {
+        try {
+          var store = root.xiaoshuStickerStore;
+          var pool = store && typeof store.getPool === 'function' ? store.getPool() : [];
+          return new Set((pool || []).map(norm));
+        } catch (_) {
+          return new Set();
+        }
+      }
+
+      function pruneButton(button, allowed) {
+        if (!button || !button.isConnected) return;
+        var img = button.querySelector ? button.querySelector('img') : null;
+        var src = norm(button.__stickerSrc || (img && img.__stickerSrc));
+        if (src && allowed.has(src)) return;
+        if (img) {
+          try { if (typeof img.__xsCancelLoad === 'function') img.__xsCancelLoad(); } catch (_) {}
+          img.onload = null;
+          img.onerror = null;
+          try { img.removeAttribute('src'); } catch (_) {}
+        }
+        button.remove();
+      }
+
+      function reconcile() {
+        var area = doc.getElementById('combo-content-area');
+        if (!area) return;
+        var allowed = allowedSources();
+        Array.prototype.slice.call(area.querySelectorAll('.xs-final-sticker-btn')).forEach(function (button) {
+          pruneButton(button, allowed);
+        });
+      }
+
+      function bindObserver() {
+        var area = doc.getElementById('combo-content-area');
+        if (!area || area.__xsStickerTilePrunerObserverV1 || typeof root.MutationObserver !== 'function') return;
+        var observer = new root.MutationObserver(function (records) {
+          var candidates = [];
+          records.forEach(function (record) {
+            Array.prototype.forEach.call(record.addedNodes || [], function (node) {
+              if (!node || node.nodeType !== 1) return;
+              if (node.matches && node.matches('.xs-final-sticker-btn')) candidates.push(node);
+              if (node.querySelectorAll) candidates = candidates.concat(Array.prototype.slice.call(node.querySelectorAll('.xs-final-sticker-btn')));
+            });
+          });
+          if (!candidates.length) return;
+          var allowed = allowedSources();
+          candidates.forEach(function (button) { pruneButton(button, allowed); });
+        });
+        observer.observe(area, { childList: true, subtree: true });
+        area.__xsStickerTilePrunerObserverV1 = observer;
+        reconcile();
+      }
+
+      root.addEventListener('stickerLibraryUpdated', reconcile);
+      root.addEventListener('xiaoshu-sticker-resources-ready', reconcile);
+      if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', bindObserver, { once: true });
+      else bindObserver();
+    }
+    installPickerTilePruner();
+
     // Intercept the management dialog's single-delete button before its closure-level
     // handler runs. That handler bypasses api.removeUpload(), so without interception it
     // bypasses the deletion tombstone and stale legacy sources can re-enter the pool.

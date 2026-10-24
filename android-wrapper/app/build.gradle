@@ -7,12 +7,12 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.mercyy177.kkk35g1"
+        applicationId "com.mercyy177.kkk35g1.darkmode"
         minSdk 23
         // API 33+ makes WebView's prefers-color-scheme follow the app's isLightTheme.
         targetSdk 33
         versionCode 1
-        versionName "1.0.0"
+        versionName "1.0.1"
     }
 
     compileOptions {

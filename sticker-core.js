@@ -252,6 +252,34 @@
       });
     };
 
+    // Capture single-upload deletes from the management dialog too. Its handler calls the
+    // closure-level removeUpload() directly, bypassing api.removeUpload() and therefore
+    // bypassing the tombstone guard. Without a tombstone, a stale legacy source can be
+    // merged back into the pool, render as a blank tile, and disappear only after image retry.
+    try {
+      if (root.document && !root.document.__xsDeleteGuardSingleBound) {
+        root.document.__xsDeleteGuardSingleBound = true;
+        root.document.addEventListener('click', function (event) {
+          var target = event.target && event.target.closest ? event.target.closest('[data-xs-remove-upload]') : null;
+          if (!target) return;
+          var src = norm(target.getAttribute('data-xs-remove-upload'));
+          if (!src) return;
+          loadDeleted();
+          root.setTimeout(function () {
+            var stillExists = false;
+            try { stillExists = matches(rawGetUploads(), src); } catch (_) {}
+            // A canceled confirmation leaves the source in uploads; only tombstone real deletions.
+            if (stillExists) return;
+            markDeleted(src);
+            var removed = purgeDeletedUploads();
+            // Republish the canonical pool after tombstoning so active picker grids reconcile
+            // before the browser paints an obsolete tile or its delayed failed-image removal.
+            try { rawSync(); } catch (_) {}
+          }, 0);
+        }, true);
+      }
+    } catch (_) {}
+
     // The picker calls api.hide for its × control. Uploaded images must be permanently deleted;
     // built-in images still use the reversible hidden list.
     try {

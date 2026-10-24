@@ -171,6 +171,7 @@ async function compressImage(file,context){
     }
   }catch(error){throw core.classifyMediaError(error,'canvas',context);}
   if(!best)throw core.MediaError('COMPRESS_FAILED','compress',new Error('compression produced no output'),context);
+  if(await compressedJpegLooksCorrupted(best,ctx,w,h))return raw;
   return best;
 }
 function logError(error,context){var normalized=core.classifyMediaError(error,error&&error.stage||context&&context.stage,context);console.error('[media]',{stage:normalized.stage,code:normalized.code,originalName:normalized.originalName,originalMessage:normalized.originalMessage,index:context&&context.index||null,kind:context&&context.kind||null,isIndexedDB:/^(DB_|WRITE_|QUOTA_|VERIFY_)/.test(normalized.code),isQuota:normalized.code==='QUOTA_EXCEEDED',isDecode:/FORMAT|DECODE/.test(normalized.code),isCanvas:/CANVAS|COMPRESS/.test(normalized.code),isVerify:normalized.code==='VERIFY_FAILED'},normalized.cause||normalized);return normalized;}

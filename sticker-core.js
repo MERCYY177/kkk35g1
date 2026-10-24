@@ -94,6 +94,12 @@
   function loadDeleted() {
     var key = sessionKey();
     if (key === loadedKey) return;
+
+    // Keep tombstones created before the session ID finished initializing.
+    // Otherwise a switch from the temporary "_unscoped" key clears those
+    // in-memory deletions and lets old uploaded stickers re-enter the pool.
+    var previousKey = loadedKey;
+    var previousDeleted = new Set(deleted);
     loadedKey = key;
     deleted.clear();
     try {
@@ -103,6 +109,13 @@
         if (typeof value === 'string' && /^stk_[a-z0-9_]+$/i.test(value)) deleted.add(value);
       });
     } catch (_) {}
+
+    // Migrate only from the temporary unscoped key to the resolved key.
+    // Do not leak one established session's deleted items into another.
+    if (previousKey && previousKey !== key && /_unscoped$/.test(previousKey)) {
+      previousDeleted.forEach(function (value) { deleted.add(value); });
+      saveDeleted();
+    }
   }
   function hash(src) {
     try { return root.XiaoshuStickerCore && root.XiaoshuStickerCore.stickerId(norm(src)); } catch (_) { return ''; }

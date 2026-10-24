@@ -143,6 +143,21 @@ function repositoryFor(localforageInstance,cache){
 }
 function readFile(file){return new Promise(function(resolve,reject){var reader=new FileReader();reader.onload=function(){resolve(String(reader.result||''));};reader.onerror=function(){reject(core.classifyMediaError(reader.error||new Error('FileReader failed'),'decode'));};try{reader.readAsDataURL(file);}catch(error){reject(core.classifyMediaError(error,'decode'));}});}
 function decodeImage(source){return new Promise(function(resolve,reject){var image=new Image();image.onload=function(){resolve(image);};image.onerror=function(){reject(core.classifyMediaError(new Error('image decode failed'),'decode'));};image.src=source;});}
+async function compressedJpegLooksCorrupted(data,sourceCtx,width,height){
+  try{
+    var image=await decodeImage(data),check=document.createElement('canvas');check.width=width;check.height=height;
+    var checkCtx=check.getContext('2d',{willReadFrequently:true});if(!checkCtx)return false;
+    checkCtx.fillStyle='#fff';checkCtx.fillRect(0,0,width,height);checkCtx.drawImage(image,0,0,width,height);
+    var original=sourceCtx.getImageData(0,0,width,height).data,encoded=checkCtx.getImageData(0,0,width,height).data;
+    var points=[[.2,.2],[.5,.2],[.8,.2],[.2,.5],[.5,.5],[.8,.5],[.2,.8],[.5,.8],[.8,.8]],mismatch=0,checked=0;
+    for(var i=0;i<points.length;i++){
+      var x=Math.min(width-1,Math.max(0,Math.floor(width*points[i][0]))),y=Math.min(height-1,Math.max(0,Math.floor(height*points[i][1]))),p=(y*width+x)*4;
+      var sourceMax=Math.max(original[p],original[p+1],original[p+2]),encodedMax=Math.max(encoded[p],encoded[p+1],encoded[p+2]);
+      if(sourceMax>45){checked++;if(encodedMax<18)mismatch++;}
+    }
+    return checked>=3&&mismatch>=Math.min(3,Math.ceil(checked*.6));
+  }catch(_error){return false;}
+}
 async function compressImage(file,context){
   context=context||{};
   if(!file||!/^image\/(?:png|jpe?g|webp|gif|bmp|avif)$/i.test(String(file.type||'')))throw core.MediaError('INVALID_FORMAT','format',new Error('unsupported image type: '+String(file&&file.type||'')),context);
@@ -152,7 +167,7 @@ async function compressImage(file,context){
   try{
     for(var i=0;i<plans.length;i++){
       var plan=plans[i],ratio=Math.min(1,plan.max/Math.max(width,height)),w=Math.max(1,Math.round(width*ratio)),h=Math.max(1,Math.round(height*ratio)),canvas=document.createElement('canvas');
-      canvas.width=w;canvas.height=h;var ctx=canvas.getContext('2d');if(!ctx)throw new Error('2D canvas unavailable');ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(image,0,0,w,h);var data=canvas.toDataURL('image/jpeg',plan.q);if(!core.isDataImage(data))throw new Error('canvas returned invalid image');best=data;if(data.length<=plan.limit*1.38)return data;
+      canvas.width=w;canvas.height=h;var ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('2D canvas unavailable');ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(image,0,0,w,h);var data=canvas.toDataURL('image/jpeg',plan.q);if(!core.isDataImage(data))throw new Error('canvas returned invalid image');best=data;if(data.length<=plan.limit*1.38){if(await compressedJpegLooksCorrupted(data,ctx,w,h))return raw;return data;}
     }
   }catch(error){throw core.classifyMediaError(error,'canvas',context);}
   if(!best)throw core.MediaError('COMPRESS_FAILED','compress',new Error('compression produced no output'),context);

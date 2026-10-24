@@ -188,7 +188,7 @@ public class MainActivity extends Activity {
 
     private String sanitizeFileName(String name) {
         if (name == null || name.trim().isEmpty()) return "export.bin";
-        String safe = name.replaceAll("[\\\\/:*?\\\"<>|]", "_").trim();
+        String safe = name.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
         return safe.isEmpty() ? "export.bin" : safe;
     }
 

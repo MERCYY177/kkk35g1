@@ -2,16 +2,18 @@ plugins {
     id "com.android.application"
 }
 
+def buildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+
 android {
     namespace "com.mercyy177.kkk35g1"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.mercyy177.kkk35g1"
+        applicationId "com.mercyy177.kkk35g1.systemtheme"
         minSdk 23
         targetSdk 32
-        versionCode 1
-        versionName "1.0.0"
+        versionCode buildNumber
+        versionName "1.0.${buildNumber}"
     }
 
     compileOptions {

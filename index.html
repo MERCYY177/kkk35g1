@@ -193,6 +193,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 .dm-action-drawer .dm-drawer-actions{flex:0 0 auto!important;}
 @media(max-height:560px){.dm-action-drawer .dm-drawer-title{padding-top:9px!important;padding-bottom:8px!important}.dm-action-drawer .dm-drawer-actions{padding-top:9px!important;gap:7px!important}.dm-action-drawer .dm-drawer-action-btn{padding:10px 14px!important}.dm-action-drawer .dm-drawer-cancel{padding:10px!important;margin-top:6px!important}}
 </style>
+<style id="xs-collection-timeline-fixes-css">
+#ta-phone-container .xs-collection-jump{margin-top:10px!important;border:1px solid #d9d9d9!important;border-radius:9px!important;background:#fff!important;color:#555!important;padding:7px 11px!important;font-size:13px!important;cursor:pointer!important}
+.tl-month-nav{display:flex;align-items:center;justify-content:space-between;gap:5px;margin:0 0 12px;flex-wrap:wrap}
+.tl-month-nav strong{font-size:13px;color:var(--text-primary,#111);white-space:nowrap}
+.tl-month-btn{border:1px solid var(--border-color,#ddd);border-radius:9px;background:var(--secondary-bg,#fff);color:var(--text-primary,#555);padding:6px 8px;font-size:11px;cursor:pointer}
+.tl-month-current{margin-left:auto}
+html[data-theme="dark"] #ta-phone-container .xs-collection-jump{background:#1e1e1e!important;color:#ddd!important;border-color:#444!important}
+</style>
+
 </head>
 <body>
 <div class="home-page-bg" id="home-page-bg"></div>
@@ -18375,7 +18384,31 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
   function showTaPhoneTab(t){if(t==='moments')return callApi('showCollectApp',['moments']);return callApi('showCollectApp',['chat']);}
   function showSystemApp(t){var map={'收藏':'collect','朋友圈':'moments','相册':'album','相机':'camera','电话':'phone','短信':'sms'};return open(map[String(t||'')]||String(t||''));}
   function hit(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('#ta-phone-container [data-clean-app]');if(!b)return;ev.preventDefault();ev.stopPropagation();open(b.getAttribute('data-clean-app'));return false;}
-  function tryCollectChat(text,timestamp,msgRef){try{var c=collections();c.chat.unshift({id:Date.now()+Math.random(),content:String(text||''),originalTime:timestamp||Date.now(),collectedTime:Date.now(),msgType:msgRef&&msgRef.type});saveJSON(COLLECTION_KEY,c);}catch(e){}return true;}
+  // 随机收藏：每累计随机 3–7 条符合条件的普通文字消息，收藏触发间隔的最后一条。
+// 计数与下一次间隔持久化，避免刷新页面后重新开始计数。
+var RANDOM_COLLECT_STATE_KEY = COLLECTION_KEY + '_random_state_v1';
+function randomCollectInterval(){return 3 + Math.floor(Math.random() * 5);}
+function tryCollectChat(text,timestamp,msgRef){
+  try{
+    var content=String(text==null?'':text).trim();
+    if(!content || !msgRef || msgRef.type!=='normal' || msgRef.image || msgRef.video || msgRef.videoBlobKey || msgRef.sticker || msgRef.stickerId) return false;
+    var state=loadJSON(RANDOM_COLLECT_STATE_KEY,null);
+    if(!state || typeof state!=='object' || !Number.isFinite(Number(state.count)) || !Number.isFinite(Number(state.nextAt)) || Number(state.nextAt)<3 || Number(state.nextAt)>7){
+      state={count:0,nextAt:randomCollectInterval()};
+    }
+    state.count=Number(state.count)+1;
+    if(state.count < Number(state.nextAt)){
+      saveJSON(RANDOM_COLLECT_STATE_KEY,state);
+      return false;
+    }
+    var c=collections(),now=Date.now();
+    c.chat.unshift({id:String(msgRef.id!=null?msgRef.id:(now+Math.random())),content:content,originalTime:timestamp||now,collectedTime:now,msgType:msgRef.type,messageId:msgRef.id!=null?String(msgRef.id):null,conversationId:msgRef.conversationId!=null?String(msgRef.conversationId):null});
+    saveJSON(COLLECTION_KEY,c);
+    state={count:0,nextAt:randomCollectInterval()};
+    saveJSON(RANDOM_COLLECT_STATE_KEY,state);
+    return true;
+  }catch(e){return false;}
+}
   function deleteCollection(type,id){var c=collections();c[type]=(c[type]||[]).filter(function(x){return String(x.id)!==String(id);});saveJSON(COLLECTION_KEY,c);return callApi('showCollectApp',[type]);}
 
   var shared={byId:$,escapeHTML:esc,loadJSON:loadJSON,saveJSON:saveJSON,formatDateTime:fmt,enterApp:enterApp,myName:myName,myAvatar:myAvatar,avatarHTML:avatarHTML,collections:collections,contentImagesFromRaw:contentImagesFromRaw,stripHTML:stripHTML,circleStore:circleStore,postImages:postImages};
@@ -18436,8 +18469,8 @@ if(!api||!U) return;
 var esc=U.escapeHTML, fmt=U.formatDateTime, enterApp=U.enterApp;
 function hasVisibleContent(item){if(!item)return false;if(U.contentImagesFromRaw(item.content).length)return true;return !!U.stripHTML(item.content);}
 function renderCollectedContent(item){var raw=String(item.content||''),imgs=U.contentImagesFromRaw(raw),txt=U.stripHTML(raw);return (txt?'<div class="xs-clean-text">'+esc(txt)+'</div>':'')+(imgs.length?'<div class="xs-clean-images">'+imgs.map(function(src){return '<img src="'+esc(src)+'">';}).join('')+'</div>':'');}
-function collectItemHTML(item){return '<div class="xs-clean-item"><div class="xs-clean-person">'+U.avatarHTML()+'<div><div class="xs-clean-name">'+esc(U.myName())+'</div><div class="xs-clean-time">'+esc(fmt(item.originalTime||item.time||item.collectedTime))+'</div></div></div>'+renderCollectedContent(item)+'</div>';}
-function renderCollect(type){var t=enterApp();if(!t)return false;type=type||'chat';var data=U.collections(),raw=(data[type]||[]).slice().sort(function(a,b){return (b.collectedTime||0)-(a.collectedTime||0);}),arr=raw.filter(hasVisibleContent),removed=raw.length-arr.length;t.innerHTML='<div class="xs-clean-tabs"><button class="xs-clean-tab '+(type==='chat'?'active':'')+'" data-tab="chat">聊天收藏</button><button class="xs-clean-tab '+(type==='moments'?'active':'')+'" data-tab="moments">朋友圈收藏</button></div>'+(removed?'<div class="xs-clean-time" style="margin:-12px 0 14px;">已隐藏 '+removed+' 条空收藏</div>':'')+'<div class="xs-clean-list">'+(arr.length?arr.map(collectItemHTML).join(''):'<div class="xs-clean-empty">暂无收藏</div>')+'</div>';t.querySelectorAll('.xs-clean-tab').forEach(function(b){b.onclick=function(){return renderCollect(b.dataset.tab);};});return false;}
+function collectItemHTML(item,type){var jump=type==='chat'?'<button type="button" class="xs-collection-jump" data-collection-message-id="'+esc(item&&item.messageId||'')+'" data-collection-message-content="'+esc(item&&item.content||'')+'" data-collection-message-time="'+esc(item&&item.originalTime||item&&item.time||'')+'">查看原消息</button>':'';return '<div class="xs-clean-item"><div class="xs-clean-person">'+U.avatarHTML()+'<div><div class="xs-clean-name">'+esc(U.myName())+'</div><div class="xs-clean-time">'+esc(fmt(item.originalTime||item.time||item.collectedTime))+'</div></div></div>'+renderCollectedContent(item)+jump+'</div>'; }
+function renderCollect(type){var t=enterApp();if(!t)return false;type=type||'chat';var data=U.collections(),raw=(data[type]||[]).slice().sort(function(a,b){return (b.collectedTime||0)-(a.collectedTime||0);}),arr=raw.filter(hasVisibleContent),removed=raw.length-arr.length;t.innerHTML='<div class="xs-clean-tabs"><button class="xs-clean-tab '+(type==='chat'?'active':'')+'" data-tab="chat">聊天收藏</button><button class="xs-clean-tab '+(type==='moments'?'active':'')+'" data-tab="moments">朋友圈收藏</button></div>'+(removed?'<div class="xs-clean-time" style="margin:-12px 0 14px;">已隐藏 '+removed+' 条空收藏</div>':'')+'<div class="xs-clean-list">'+(arr.length?arr.map(function(item){return collectItemHTML(item,type);}).join(''):'<div class="xs-clean-empty">暂无收藏</div>')+'</div>';t.querySelectorAll('.xs-clean-tab').forEach(function(b){b.onclick=function(){return renderCollect(b.dataset.tab);};});t.querySelectorAll('.xs-collection-jump').forEach(function(b){b.onclick=async function(){var id=b.getAttribute('data-collection-message-id'),content=b.getAttribute('data-collection-message-content')||'',time=b.getAttribute('data-collection-message-time')||'';try{if(window.TaPhoneApp&&typeof window.TaPhoneApp.hideTaPhone==='function')window.TaPhoneApp.hideTaPhone();if(typeof window.xiaoshuEnsureStatsModule==='function')await window.xiaoshuEnsureStatsModule();if(typeof window.xiaoshuJumpToMessageFromCollection==='function')await window.xiaoshuJumpToMessageFromCollection(id,content,time);else if(typeof showNotification==='function')showNotification('暂时无法定位原消息','info',2500);}catch(e){if(typeof showNotification==='function')showNotification('原消息定位失败','info',2500);}};});return false;}
 api.showCollectApp=renderCollect;
 })();
 </script>
@@ -19906,12 +19939,13 @@ if (!arr.length) { box.innerHTML = controls+'<div class="xs-stats-empty"><i clas
 var max = arr[0].count || 1;
 box.innerHTML = controls+'<div class="xs-stats-scope-caption">'+scopeLabel()+' · 纯文字词频</div><div class="xs-wordcloud-wrap">'+arr.map(function(x){var size=13+Math.round(x.count/max*20);var op=.55+Math.min(.4,x.count/max*.4);return'<span class="xs-word-token" title="'+esc(x.count+'次')+'" style="font-size:'+size+'px;opacity:'+op+'">'+esc(x.text)+'</span>';}).join('')+'</div>';
 }
+var timelineMonth = new Date();
 function renderTimeline(){
 var box = $('timeline-container'); if (!box) return;
-var all = pureFor(), now = new Date(), year=now.getFullYear(), month=now.getMonth(), counts=Object.create(null);
+var all = pureFor(), view = new Date(timelineMonth.getFullYear(),timelineMonth.getMonth(),1), year=view.getFullYear(), month=view.getMonth(), counts=Object.create(null);
 all.forEach(function(m){var t=timeMs(m);if(!t)return;var d=new Date(t);if(d.getFullYear()!==year||d.getMonth()!==month)return;var k=year+'-'+String(month+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');counts[k]=(counts[k]||0)+1;});
 var vals=Object.keys(counts).map(function(k){return counts[k];}),total=vals.reduce(function(a,b){return a+b;},0),active=vals.length,days=new Date(year,month+1,0).getDate(),start=new Date(year,month,1).getDay(),max=Math.max.apply(null,vals.concat([1]));
-var html='<div class="xs-stats-scope-caption">'+scopeLabel()+' · '+year+'年'+(month+1)+'月纯文字</div><div class="tl-summary-row"><div class="tl-summary-item"><span class="tl-summary-value">'+total+'</span><span class="tl-summary-label">纯文字</span></div><div class="tl-summary-item"><span class="tl-summary-value">'+active+'</span><span class="tl-summary-label">天活跃</span></div><div class="tl-summary-item"><span class="tl-summary-value">'+(active?Math.round(total/active):0)+'</span><span class="tl-summary-label">日均</span></div></div><div class="tl-cal-weekdays"><div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div></div><div class="tl-cal-grid">';
+var html='<div class="tl-month-nav"><button type="button" class="tl-month-btn" data-timeline-step="-1" aria-label="上个月">‹ 上个月</button><strong>'+year+'年'+(month+1)+'月</strong><button type="button" class="tl-month-btn" data-timeline-step="1" aria-label="下个月">下个月 ›</button><button type="button" class="tl-month-btn tl-month-current" data-timeline-step="0">本月</button></div><div class="xs-stats-scope-caption">'+scopeLabel()+' · '+year+'年'+(month+1)+'月纯文字</div><div class="tl-summary-row"><div class="tl-summary-item"><span class="tl-summary-value">'+total+'</span><span class="tl-summary-label">纯文字</span></div><div class="tl-summary-item"><span class="tl-summary-value">'+active+'</span><span class="tl-summary-label">天活跃</span></div><div class="tl-summary-item"><span class="tl-summary-value">'+(active?Math.round(total/active):0)+'</span><span class="tl-summary-label">日均</span></div></div><div class="tl-cal-weekdays"><div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div></div><div class="tl-cal-grid">';
 for(var i=0;i<start;i++)html+='<div class="tl-cal-day empty"></div>';
 for(var day=1;day<=days;day++){var key=year+'-'+String(month+1).padStart(2,'0')+'-'+String(day).padStart(2,'0'),c=counts[key]||0,a=c?(.12+.7*c/max):0;html+='<div class="tl-cal-day '+(c?'has-msg':'')+'" style="background:'+(c?'rgba(var(--accent-color-rgb,51,51,51),'+a+')':'transparent')+'"><span class="tl-day-num">'+day+'</span>'+(c?'<span class="tl-day-count">'+c+'</span>':'')+'</div>';}
 box.innerHTML=html+'</div><p class="xs-stats-stat-note">时间轴只统计纯文字，表情包、图片、视频、语音、卡片和拍一拍不计入。</p>';
@@ -19965,6 +19999,7 @@ if(typeof renderMessages==='function')renderMessages(false);
 el=await waitForRenderedMessage(id,2500);if(!highlightRenderedMessage(el)&&typeof showNotification==='function')showNotification('消息定位失败','info',2000);
 }
 window._scrollToMsg = function(a,b){ return jumpToMessage(b === undefined ? a : b); };
+window.xiaoshuJumpToMessageFromCollection = async function(id,content,originalTime){if(!state.loaded)await refreshData();if(id==null||id===''){var wanted=String(content||'').trim(),targetTime=Number(originalTime)||0,best=null,bestDelta=Infinity;listFor().forEach(function(m){if(!m||textOf(m)!==wanted)return;var delta=Math.abs(timeMs(m)-targetTime);if(delta<bestDelta){best=m;bestDelta=delta;}});if(best&&best.id!=null)id=best.id;}if(id==null||id===''){if(typeof showNotification==='function')showNotification('没有找到对应的原始消息','info',2500);return false;}return jumpToMessage(id);};
 function showPanel(tab){
 ['stats','search','favorites','wordcloud','timeline'].forEach(function(k){var panel=$(k+'-panel'),btn=$(k+'-tab-btn');if(panel)panel.style.display=k===tab?'block':'none';if(btn)btn.classList.toggle('active',k===tab);});
 }
@@ -20050,6 +20085,7 @@ var open=e.target&&e.target.closest&&e.target.closest('#stats-function');if(open
 var close=e.target&&e.target.closest&&e.target.closest('#close-stats');if(close&&state.embedded){e.preventDefault();e.stopPropagation();return closeStatsModal(false);}
 var nav=e.target&&e.target.closest&&e.target.closest('#stats-modal .stats-nav-btn');if(nav){e.preventDefault();return window.switchStatsTab(nav.getAttribute('data-tab'));}
 var sender=e.target&&e.target.closest&&e.target.closest('[data-word-sender]');if(sender){e.preventDefault();state.wordSender=sender.getAttribute('data-word-sender')||'all';renderWordCloud();return;}
+var monthBtn=e.target&&e.target.closest&&e.target.closest('#timeline-container [data-timeline-step]');if(monthBtn){e.preventDefault();var step=Number(monthBtn.getAttribute('data-timeline-step'));if(step===0)timelineMonth=new Date();else timelineMonth=new Date(timelineMonth.getFullYear(),timelineMonth.getMonth()+step,1);renderTimeline();return;}
 var jump=e.target&&e.target.closest&&e.target.closest('#stats-modal .xs-stats-jump[data-msg-id]');if(jump){e.preventDefault();return jumpToMessage(jump.getAttribute('data-msg-id'));}
 },true);
 })();
@@ -22112,7 +22148,7 @@ if(global.ChatBackup){
 
 // ---------- 正式导出：只使用v99 build，构建和ZIP均有总看门狗 ----------
 async function v99ExportBackupToFile(flags){
- if(typeof showNotification==='function')showNotification('v99：正在抓取全部模块最新状态并校验…','info',5000);
+ if(typeof showNotification==='function')showNotification('正在检查数据并准备备份…','info',5000);
  var payload=await ChatBackup.buildBackupPayload(flags),pre=ChatBackup.preflightBackup(payload);if(!pre.ok)throw new Error('导出前完整性检查失败：'+pre.errors.join('；'));
  var nameBase='chatapp-backup-'+nowStamp(),blob,name,format;
  if(global.JSZip){var zip=new JSZip(),idx={};Object.keys(payload.mediaStore||{}).forEach(function(id){var url=payload.mediaStore[id],p=dataUrlBytes(url),path='media/'+id;if(p){zip.file(path,p.bytes,{binary:true});idx[id]={path:path,mime:p.mime,size:p.bytes.length,checksum:mediaChecksum(p.bytes)};}else{var txt=String(url),u=new TextEncoder().encode(txt),tp=path+'.txt';zip.file(tp,txt);idx[id]={path:tp,mime:'text/plain+dataurl',size:u.length,checksum:mediaChecksum(u)};}});var body={type:'chatapp-backup-v6',formatVersion:6,appName:'ChatApp',timestamp:payload.timestamp,sessionId:payload.sessionId,appPrefix:payload.appPrefix,modules:payload.modules,manifest:payload.manifest,diagnostics:payload.diagnostics,localforage:payload.localforage,localStorage:payload.localStorage,mediaIndex:idx};zip.file('backup.json','\uFEFF'+JSON.stringify(body));blob=await timeoutPromise(zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}}),V99.zipTimeout,'ZIP压缩');name=nameBase+'.zip';format='zip';}

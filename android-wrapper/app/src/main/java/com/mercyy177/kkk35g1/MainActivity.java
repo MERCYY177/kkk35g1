@@ -64,6 +64,9 @@ public class MainActivity extends Activity {
         settings.setAllowContentAccess(true);
         settings.setLoadsImagesAutomatically(true);
         settings.setDefaultTextEncodingName("UTF-8");
+        // Keep CSS generic font families mapped to Android WebView/system font fallback.
+        settings.setStandardFontFamily("sans-serif");
+        settings.setSansSerifFontFamily("sans-serif");
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
 
         webView.addJavascriptInterface(new AndroidDownloadBridge(), "AndroidDownload");

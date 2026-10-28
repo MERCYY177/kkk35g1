@@ -99,6 +99,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 installBlobDownloadBridge();
+                installSystemFontFollowBridge();
             }
         });
 
@@ -138,6 +139,32 @@ public class MainActivity extends Activity {
             return value.data;
         }
         return 0xFFFAFAFA;
+    }
+
+
+    /**
+     * Prefer Android's generic sans-serif family for page text. This gives WebView
+     * the best chance to resolve the device's current system font instead of the
+     * website's cross-platform system-ui/fallback stack.
+     */
+    private void installSystemFontFollowBridge() {
+        String script =
+                "(function(){"
+                + "if(window.__systemFontFollowBridgeInstalled)return;"
+                + "window.__systemFontFollowBridgeInstalled=true;"
+                + "function apply(doc){"
+                + "if(!doc||!doc.documentElement)return;"
+                + "var root=doc.documentElement;"
+                + "root.style.setProperty('--font-family','sans-serif','important');"
+                + "root.style.setProperty('--message-font-family','sans-serif','important');"
+                + "var style=doc.getElementById('__system_font_follow_bridge_css');"
+                + "if(!style){style=doc.createElement('style');style.id='__system_font_follow_bridge_css';(doc.head||root).appendChild(style);}"
+                + "style.textContent='html,body{font-family:sans-serif!important} body :not(svg):not(path):not(i):not([class*=icon]):not([class*=Icon]):not([class*=symbol]):not([class*=fa-]){font-family:sans-serif!important} input,textarea,select,button{font-family:sans-serif!important}';"
+                + "}"
+                + "function scan(){apply(document);document.querySelectorAll('iframe').forEach(function(frame){try{apply(frame.contentDocument);frame.addEventListener('load',function(){try{apply(frame.contentDocument)}catch(e){}})}catch(e){}})}"
+                + "scan();new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true});"
+                + "})();";
+        webView.evaluateJavascript(script, null);
     }
 
     private void installBlobDownloadBridge() {

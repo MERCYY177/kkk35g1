@@ -2,22 +2,22 @@ package com.mercyy.transmission;
 
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
-import android.view.Window;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
-
 import androidx.activity.ComponentActivity;
 import androidx.activity.OnBackPressedCallback;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
 
 public class MainActivity extends ComponentActivity {
-    private static final String HOME_URL = "https://mercyy177.github.io/kkk35g1/";
+    private static final String HOME_URL = "file:///android_asset/site/index.html";
     private WebView webView;
     private ValueCallback<Uri[]> fileChooserCallback;
     private static final int FILE_CHOOSER_REQUEST = 4107;
@@ -25,7 +25,6 @@ public class MainActivity extends ComponentActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().requestFeature(Window.FEATURE_PROGRESS);
         getWindow().setStatusBarColor(getColor(android.R.color.black));
         getWindow().setNavigationBarColor(getColor(android.R.color.black));
 
@@ -46,38 +45,22 @@ public class MainActivity extends ComponentActivity {
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setSupportMultipleWindows(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " TransmissionApp/2.0");
+        settings.setDefaultTextEncodingName("UTF-8");
+        settings.setTextZoom(100);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+            WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_AUTO);
+        }
 
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                Uri uri = request.getUrl();
-                String scheme = uri.getScheme();
-                if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
-                    view.loadUrl(uri.toString());
-                    return true;
-                }
-                return true;
-            }
-        });
-
+        webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onProgressChanged(WebView view, int progress) {
-                getWindow().setFeatureInt(Window.FEATURE_PROGRESS, progress * 100);
-            }
-
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
                                              FileChooserParams params) {
-                if (fileChooserCallback != null) {
-                    fileChooserCallback.onReceiveValue(null);
-                }
+                if (fileChooserCallback != null) fileChooserCallback.onReceiveValue(null);
                 fileChooserCallback = callback;
                 try {
-                    Intent intent = params.createIntent();
-                    startActivityForResult(intent, FILE_CHOOSER_REQUEST);
+                    startActivityForResult(params.createIntent(), FILE_CHOOSER_REQUEST);
                     return true;
                 } catch (Exception e) {
                     fileChooserCallback = null;
@@ -87,20 +70,13 @@ public class MainActivity extends ComponentActivity {
             }
         });
 
-        if (savedInstanceState == null) {
-            webView.loadUrl(HOME_URL);
-        } else {
-            webView.restoreState(savedInstanceState);
-        }
+        if (savedInstanceState == null) webView.loadUrl(HOME_URL);
+        else if (webView.restoreState(savedInstanceState) == null) webView.loadUrl(HOME_URL);
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
-            @Override
-            public void handleOnBackPressed() {
-                if (webView != null && webView.canGoBack()) {
-                    webView.goBack();
-                } else {
-                    finish();
-                }
+            @Override public void handleOnBackPressed() {
+                if (webView != null && webView.canGoBack()) webView.goBack();
+                else finish();
             }
         });
     }
@@ -109,8 +85,7 @@ public class MainActivity extends ComponentActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == FILE_CHOOSER_REQUEST && fileChooserCallback != null) {
-            Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
-            fileChooserCallback.onReceiveValue(results);
+            fileChooserCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
             fileChooserCallback = null;
         }
     }
@@ -123,15 +98,8 @@ public class MainActivity extends ComponentActivity {
 
     @Override
     protected void onDestroy() {
-        if (fileChooserCallback != null) {
-            fileChooserCallback.onReceiveValue(null);
-            fileChooserCallback = null;
-        }
-        if (webView != null) {
-            webView.stopLoading();
-            webView.destroy();
-            webView = null;
-        }
+        if (fileChooserCallback != null) { fileChooserCallback.onReceiveValue(null); fileChooserCallback = null; }
+        if (webView != null) { webView.stopLoading(); webView.destroy(); webView = null; }
         super.onDestroy();
     }
 }

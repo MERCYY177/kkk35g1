@@ -69,6 +69,72 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Apply Android system-font behavior to the bundled web app
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("index.html")
+          html = path.read_text(encoding="utf-8")
+          original = html
+
+          # Replace the old named-font stack with Android's generic sans-serif family.
+          stack_pattern = re.compile(
+              r'system-ui\s*,\s*-apple-system\s*,\s*BlinkMacSystemFont\s*,\s*"Segoe UI"\s*,\s*"PingFang SC"\s*,\s*"Hiragino Sans GB"\s*,\s*"Microsoft YaHei"\s*,\s*sans-serif',
+              re.IGNORECASE,
+          )
+          html, stack_count = stack_pattern.subn("sans-serif", html)
+          if stack_count < 5:
+              raise SystemExit(f"Expected at least five default font stacks; found {stack_count}")
+
+          # Migrate the old value already stored in local app settings to generic system sans-serif.
+          settings_marker = 'window.settings = settings; // 暴露到 window，供 home.js 等模块读取'
+          if html.count(settings_marker) != 1:
+              raise SystemExit(f"Expected one settings marker; found {html.count(settings_marker)}")
+          migration = r'''try {
+            const __xsSavedFontFamily = String(settings.messageFontFamily || '').trim();
+            const __xsWasLegacySystemStack = /system-ui/i.test(__xsSavedFontFamily) &&
+              /sans-serif/i.test(__xsSavedFontFamily) &&
+              /(?:PingFang SC|Microsoft YaHei|Segoe UI|Hiragino Sans GB)/i.test(__xsSavedFontFamily);
+            if (!settings.customFontUrl && (!__xsSavedFontFamily || __xsWasLegacySystemStack || /Noto\s+Serif\s+SC/i.test(__xsSavedFontFamily))) {
+              settings.messageFontFamily = 'sans-serif';
+            }
+            if (!settings.customFontUrl) {
+              document.documentElement.setAttribute('data-follow-system-font', 'true');
+            } else {
+              document.documentElement.removeAttribute('data-follow-system-font');
+            }
+          } catch (e) {}'''
+          html = html.replace(settings_marker, migration + "\n" + settings_marker, 1)
+
+          # Apply after any saved custom styles; leave the icon-font families and SVG artwork intact.
+          style_marker = '} catch(e) { console.warn("样式应用失败", e); }\nif (savedPokes) customPokes = savedPokes;'
+          if html.count(style_marker) != 1:
+              raise SystemExit(f"Expected one style marker; found {html.count(style_marker)}")
+          enforcer = r''' } catch(e) { console.warn("样式应用失败", e); }
+          try {
+            if (!settings.customFontUrl) {
+              const __xsStyleId = 'xiaoshu-follow-android-system-font';
+              let __xsFontStyle = document.getElementById(__xsStyleId);
+              if (!__xsFontStyle) {
+                __xsFontStyle = document.createElement('style');
+                __xsFontStyle.id = __xsStyleId;
+                document.head.appendChild(__xsFontStyle);
+              }
+              __xsFontStyle.textContent = 'html[data-follow-system-font="true"],html[data-follow-system-font="true"] body,html[data-follow-system-font="true"] body *:not(.fa):not(.fas):not(.far):not(.fab):not(.fa-solid):not(.fa-regular):not(.fa-brands):not(.fa-classic):not([class^="fa-"]):not([class*=" fa-"]):not(.material-icons):not(.material-symbols-outlined):not(svg):not(path){font-family:sans-serif !important;}';
+            }
+          } catch (e) {}
+          if (savedPokes) customPokes = savedPokes;'''
+          html = html.replace(style_marker, enforcer, 1)
+
+          if html == original:
+              raise SystemExit("Android system-font patch made no changes")
+          path.write_text(html, encoding="utf-8")
+          print(f"Applied system font patch: {stack_count} stack replacements; output {len(html)} characters")
+          PY
       - name: Bundle the full website and sticker assets into the app
         shell: bash
         run: |

@@ -10,8 +10,8 @@ android {
         applicationId = "com.mercyy.transmission"
         minSdk = 23
         targetSdk = 33
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 3
+        versionName = "3.0"
     }
 
     flavorDimensions += "edition"
@@ -22,18 +22,14 @@ android {
         }
         create("darkfix") {
             dimension = "edition"
-            applicationIdSuffix = ".darkfix"
-            resValue("string", "app_name", "传讯·深色修复版")
+            applicationIdSuffix = ".new"
+            resValue("string", "app_name", "传讯新版")
         }
     }
 
     buildTypes {
-        debug {
-            isDebuggable = true
-        }
-        release {
-            isMinifyEnabled = false
-        }
+        debug { isDebuggable = true }
+        release { isMinifyEnabled = false }
     }
 
     compileOptions {

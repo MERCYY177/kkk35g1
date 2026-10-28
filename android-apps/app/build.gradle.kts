@@ -10,8 +10,8 @@ android {
         applicationId = "com.mercyy.transmission"
         minSdk = 23
         targetSdk = 33
-        versionCode = 3
-        versionName = "3.0"
+        versionCode = 4
+        versionName = "4.0"
     }
 
     flavorDimensions += "edition"

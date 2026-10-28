@@ -90,6 +90,13 @@ jobs:
           if stack_count < 5:
               raise SystemExit(f"Expected at least five default font stacks; found {stack_count}")
 
+          # Keep text drawn on generated canvas cards/images on the same system font.
+          canvas_stack = '-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Noto Sans JP",sans-serif'
+          canvas_count = html.count(canvas_stack)
+          if canvas_count < 2:
+              raise SystemExit(f"Expected canvas font stacks; found {canvas_count}")
+          html = html.replace(canvas_stack, "sans-serif")
+
           # Migrate the old value already stored in local app settings to generic system sans-serif.
           settings_marker = 'window.settings = settings; // 暴露到 window，供 home.js 等模块读取'
           if html.count(settings_marker) != 1:
@@ -124,7 +131,7 @@ jobs:
                 __xsFontStyle.id = __xsStyleId;
                 document.head.appendChild(__xsFontStyle);
               }
-              __xsFontStyle.textContent = 'html[data-follow-system-font="true"],html[data-follow-system-font="true"] body,html[data-follow-system-font="true"] body *:not(.fa):not(.fas):not(.far):not(.fab):not(.fa-solid):not(.fa-regular):not(.fa-brands):not(.fa-classic):not([class^="fa-"]):not([class*=" fa-"]):not(.material-icons):not(.material-symbols-outlined):not(svg):not(path){font-family:sans-serif !important;}';
+              __xsFontStyle.textContent = 'html[data-follow-system-font="true"],html[data-follow-system-font="true"] body,html[data-follow-system-font="true"] body *:not(#__xsNoSuchSystemFontId__):not(.fa):not(.fas):not(.far):not(.fab):not(.fa-solid):not(.fa-regular):not(.fa-brands):not(.fa-classic):not([class^="fa-"]):not([class*=" fa-"]):not(.material-icons):not(.material-symbols-outlined):not(svg):not(path){font-family:sans-serif !important;}';
             }
           } catch (e) {}
           if (savedPokes) customPokes = savedPokes;'''

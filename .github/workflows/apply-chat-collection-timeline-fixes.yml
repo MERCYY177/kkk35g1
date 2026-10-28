@@ -1,0 +1,138 @@
+name: Apply chat collection and timeline fixes
+
+on:
+  push:
+    paths:
+      - ".github/workflows/apply-chat-collection-timeline-fixes.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Apply verified patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path("index.html")
+          s = p.read_text(encoding="utf-8")
+          changes = 0
+
+          def replace_once(old, new, label):
+              global s, changes
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly 1 match, found {count}; aborting without changing index.html")
+              s = s.replace(old, new, 1)
+              changes += 1
+
+          replace_once(
+              "  function tryCollectChat(text,timestamp,msgRef){try{var c=collections();c.chat.unshift({id:Date.now()+Math.random(),content:String(text||''),originalTime:timestamp||Date.now(),collectedTime:Date.now(),msgType:msgRef&&msgRef.type});saveJSON(COLLECTION_KEY,c);}catch(e){}return true;}",
+              """  // 随机收藏：每累计随机 3–7 条符合条件的普通文字消息，收藏触发间隔的最后一条。
+          // 计数与下一次间隔持久化，避免刷新页面后重新开始计数。
+          var RANDOM_COLLECT_STATE_KEY = COLLECTION_KEY + '_random_state_v1';
+          function randomCollectInterval(){return 3 + Math.floor(Math.random() * 5);}
+          function tryCollectChat(text,timestamp,msgRef){
+            try{
+              var content=String(text==null?'':text).trim();
+              if(!content || !msgRef || msgRef.type!=='normal' || msgRef.image || msgRef.video || msgRef.videoBlobKey || msgRef.sticker || msgRef.stickerId) return false;
+              var state=loadJSON(RANDOM_COLLECT_STATE_KEY,null);
+              if(!state || typeof state!=='object' || !Number.isFinite(Number(state.count)) || !Number.isFinite(Number(state.nextAt)) || Number(state.nextAt)<3 || Number(state.nextAt)>7){
+                state={count:0,nextAt:randomCollectInterval()};
+              }
+              state.count=Number(state.count)+1;
+              if(state.count < Number(state.nextAt)){
+                saveJSON(RANDOM_COLLECT_STATE_KEY,state);
+                return false;
+              }
+              var c=collections(),now=Date.now();
+              c.chat.unshift({id:String(msgRef.id!=null?msgRef.id:(now+Math.random())),content:content,originalTime:timestamp||now,collectedTime:now,msgType:msgRef.type,messageId:msgRef.id!=null?String(msgRef.id):null,conversationId:msgRef.conversationId!=null?String(msgRef.conversationId):null});
+              saveJSON(COLLECTION_KEY,c);
+              state={count:0,nextAt:randomCollectInterval()};
+              saveJSON(RANDOM_COLLECT_STATE_KEY,state);
+              return true;
+            }catch(e){return false;}
+          }""",
+              "random collection"
+          )
+
+          replace_once(
+              "function collectItemHTML(item){return '<div class=\"xs-clean-item\"><div class=\"xs-clean-person\">'+U.avatarHTML()+'<div><div class=\"xs-clean-name\">'+esc(U.myName())+'</div><div class=\"xs-clean-time\">'+esc(fmt(item.originalTime||item.time||item.collectedTime))+'</div></div></div>'+renderCollectedContent(item)+'</div>';}",
+              """function collectItemHTML(item,type){var jump=type==='chat'?'<button type="button" class="xs-collection-jump" data-collection-message-id="'+esc(item&&item.messageId||'')+'" data-collection-message-content="'+esc(item&&item.content||'')+'" data-collection-message-time="'+esc(item&&item.originalTime||item&&item.time||'')+'">查看原消息</button>':'';return '<div class="xs-clean-item"><div class="xs-clean-person">'+U.avatarHTML()+'<div><div class="xs-clean-name">'+esc(U.myName())+'</div><div class="xs-clean-time">'+esc(fmt(item.originalTime||item.time||item.collectedTime))+'</div></div></div>'+renderCollectedContent(item)+jump+'</div>'; }""",
+              "collection item renderer"
+          )
+
+          replace_once(
+              """function renderCollect(type){var t=enterApp();if(!t)return false;type=type||'chat';var data=U.collections(),raw=(data[type]||[]).slice().sort(function(a,b){return (b.collectedTime||0)-(a.collectedTime||0);}),arr=raw.filter(hasVisibleContent),removed=raw.length-arr.length;t.innerHTML='<div class="xs-clean-tabs"><button class="xs-clean-tab '+(type==='chat'?'active':'')+'" data-tab="chat">聊天收藏</button><button class="xs-clean-tab '+(type==='moments'?'active':'')+'" data-tab="moments">朋友圈收藏</button></div>'+(removed?'<div class="xs-clean-time" style="margin:-12px 0 14px;">已隐藏 '+removed+' 条空收藏</div>':'')+'<div class="xs-clean-list">'+(arr.length?arr.map(collectItemHTML).join(''):'<div class="xs-clean-empty">暂无收藏</div>')+'</div>';t.querySelectorAll('.xs-clean-tab').forEach(function(b){b.onclick=function(){return renderCollect(b.dataset.tab);};});return false;}""",
+              """function renderCollect(type){var t=enterApp();if(!t)return false;type=type||'chat';var data=U.collections(),raw=(data[type]||[]).slice().sort(function(a,b){return (b.collectedTime||0)-(a.collectedTime||0);}),arr=raw.filter(hasVisibleContent),removed=raw.length-arr.length;t.innerHTML='<div class="xs-clean-tabs"><button class="xs-clean-tab '+(type==='chat'?'active':'')+'" data-tab="chat">聊天收藏</button><button class="xs-clean-tab '+(type==='moments'?'active':'')+'" data-tab="moments">朋友圈收藏</button></div>'+(removed?'<div class="xs-clean-time" style="margin:-12px 0 14px;">已隐藏 '+removed+' 条空收藏</div>':'')+'<div class="xs-clean-list">'+(arr.length?arr.map(function(item){return collectItemHTML(item,type);}).join(''):'<div class="xs-clean-empty">暂无收藏</div>')+'</div>';t.querySelectorAll('.xs-clean-tab').forEach(function(b){b.onclick=function(){return renderCollect(b.dataset.tab);};});t.querySelectorAll('.xs-collection-jump').forEach(function(b){b.onclick=async function(){var id=b.getAttribute('data-collection-message-id'),content=b.getAttribute('data-collection-message-content')||'',time=b.getAttribute('data-collection-message-time')||'';try{if(window.TaPhoneApp&&typeof window.TaPhoneApp.hideTaPhone==='function')window.TaPhoneApp.hideTaPhone();if(typeof window.xiaoshuEnsureStatsModule==='function')await window.xiaoshuEnsureStatsModule();if(typeof window.xiaoshuJumpToMessageFromCollection==='function')await window.xiaoshuJumpToMessageFromCollection(id,content,time);else if(typeof showNotification==='function')showNotification('暂时无法定位原消息','info',2500);}catch(e){if(typeof showNotification==='function')showNotification('原消息定位失败','info',2500);}};});return false;}""",
+              "collection list jump action"
+          )
+
+          replace_once(
+              "function renderTimeline(){",
+              "var timelineMonth = new Date();\nfunction renderTimeline(){",
+              "timeline month state"
+          )
+          replace_once(
+              "var all = pureFor(), now = new Date(), year=now.getFullYear(), month=now.getMonth(), counts=Object.create(null);",
+              "var all = pureFor(), view = new Date(timelineMonth.getFullYear(),timelineMonth.getMonth(),1), year=view.getFullYear(), month=view.getMonth(), counts=Object.create(null);",
+              "timeline month source"
+          )
+          replace_once(
+              "var html='<div class=\"xs-stats-scope-caption\">'+scopeLabel()+' · '+year+'年'+(month+1)+'月纯文字</div>",
+              "var html='<div class=\"tl-month-nav\"><button type=\"button\" class=\"tl-month-btn\" data-timeline-step=\"-1\" aria-label=\"上个月\">‹ 上个月</button><strong>'+year+'年'+(month+1)+'月</strong><button type=\"button\" class=\"tl-month-btn\" data-timeline-step=\"1\" aria-label=\"下个月\">下个月 ›</button><button type=\"button\" class=\"tl-month-btn tl-month-current\" data-timeline-step=\"0\">本月</button></div><div class=\"xs-stats-scope-caption\">'+scopeLabel()+' · '+year+'年'+(month+1)+'月纯文字</div>",
+              "timeline month navigation"
+          )
+          replace_once(
+              "window._scrollToMsg = function(a,b){ return jumpToMessage(b === undefined ? a : b); };",
+              """window._scrollToMsg = function(a,b){ return jumpToMessage(b === undefined ? a : b); };
+          window.xiaoshuJumpToMessageFromCollection = async function(id,content,originalTime){if(!state.loaded)await refreshData();if(id==null||id===''){var wanted=String(content||'').trim(),targetTime=Number(originalTime)||0,best=null,bestDelta=Infinity;listFor().forEach(function(m){if(!m||textOf(m)!==wanted)return;var delta=Math.abs(timeMs(m)-targetTime);if(delta<bestDelta){best=m;bestDelta=delta;}});if(best&&best.id!=null)id=best.id;}if(id==null||id===''){if(typeof showNotification==='function')showNotification('没有找到对应的原始消息','info',2500);return false;}return jumpToMessage(id);};""",
+              "collection jump helper"
+          )
+          replace_once(
+              "var jump=e.target&&e.target.closest&&e.target.closest('#stats-modal .xs-stats-jump[data-msg-id]');",
+              """var monthBtn=e.target&&e.target.closest&&e.target.closest('#timeline-container [data-timeline-step]');if(monthBtn){e.preventDefault();var step=Number(monthBtn.getAttribute('data-timeline-step'));if(step===0)timelineMonth=new Date();else timelineMonth=new Date(timelineMonth.getFullYear(),timelineMonth.getMonth()+step,1);renderTimeline();return;}
+          var jump=e.target&&e.target.closest&&e.target.closest('#stats-modal .xs-stats-jump[data-msg-id]');""",
+              "timeline month click handler"
+          )
+          replace_once(
+              "if(typeof showNotification==='function')showNotification('v99：正在抓取全部模块最新状态并校验…','info',5000);",
+              "if(typeof showNotification==='function')showNotification('正在检查数据并准备备份…','info',5000);",
+              "backup notification"
+          )
+
+          style = """<style id="xs-collection-timeline-fixes-css">
+          #ta-phone-container .xs-collection-jump{margin-top:10px!important;border:1px solid #d9d9d9!important;border-radius:9px!important;background:#fff!important;color:#555!important;padding:7px 11px!important;font-size:13px!important;cursor:pointer!important}
+          .tl-month-nav{display:flex;align-items:center;justify-content:space-between;gap:5px;margin:0 0 12px;flex-wrap:wrap}
+          .tl-month-nav strong{font-size:13px;color:var(--text-primary,#111);white-space:nowrap}
+          .tl-month-btn{border:1px solid var(--border-color,#ddd);border-radius:9px;background:var(--secondary-bg,#fff);color:var(--text-primary,#555);padding:6px 8px;font-size:11px;cursor:pointer}
+          .tl-month-current{margin-left:auto}
+          html[data-theme="dark"] #ta-phone-container .xs-collection-jump{background:#1e1e1e!important;color:#ddd!important;border-color:#444!important}
+          </style>
+          """
+          if 'id="xs-collection-timeline-fixes-css"' not in s:
+              if "</head>" not in s:
+                  raise SystemExit("head close tag not found; aborting")
+              s = s.replace("</head>", style + "\n</head>", 1)
+              changes += 1
+
+          p.write_text(s, encoding="utf-8")
+          print(f"Applied {changes} verified edits to index.html")
+          PY
+
+      - name: Commit fixes and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/apply-chat-collection-timeline-fixes.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html .github/workflows/apply-chat-collection-timeline-fixes.yml
+          git commit -m "Fix random collection, timeline navigation, and collection jump"
+          git push

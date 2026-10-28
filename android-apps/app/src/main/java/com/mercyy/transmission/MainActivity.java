@@ -1,10 +1,8 @@
 package com.mercyy.transmission;
 
-import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.view.View;
 import android.view.Window;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -15,9 +13,10 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import androidx.activity.ComponentActivity;
 import androidx.activity.OnBackPressedCallback;
 
-public class MainActivity extends Activity {
+public class MainActivity extends ComponentActivity {
     private static final String HOME_URL = "https://mercyy177.github.io/kkk35g1/";
     private WebView webView;
     private ValueCallback<Uri[]> fileChooserCallback;
@@ -76,9 +75,8 @@ public class MainActivity extends Activity {
                     fileChooserCallback.onReceiveValue(null);
                 }
                 fileChooserCallback = callback;
-                Intent intent;
                 try {
-                    intent = params.createIntent();
+                    Intent intent = params.createIntent();
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST);
                     return true;
                 } catch (Exception e) {

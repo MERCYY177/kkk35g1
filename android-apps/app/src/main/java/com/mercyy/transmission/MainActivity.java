@@ -46,7 +46,7 @@ public class MainActivity extends ComponentActivity {
         settings.setSupportMultipleWindows(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setDefaultTextEncodingName("UTF-8");
-        settings.setTextZoom(100);
+        settings.setTextZoom(getSystemTextZoom());
 
         // Use Android's generic system sans-serif family for WebView fallback fonts.
         // The page's CSS prefers "system-ui" and writes its own font stack at runtime,
@@ -104,7 +104,7 @@ public class MainActivity extends ComponentActivity {
         String js = "(function(){try{"
                 + "var id='android-system-font-follow-v1';"
                 + "var css=':root{--font-family:sans-serif!important;--message-font-family:sans-serif!important;}"
-                + "html body,html body *:not(.fa):not(.fas):not(.far):not(.fab):not(.fa-solid):not(.fa-regular):not(.fa-brands):not(.fa-classic){font-family:sans-serif!important;}';"
+                + "html body,html body *:not(.fa):not(.fas):not(.far):not(.fab):not(.fa-solid):not(.fa-regular):not(.fa-brands):not(.fa-classic):not([class^='fa-']):not([class*=' fa-']){font-family:sans-serif!important;}';"
                 + "var style=document.getElementById(id);"
                 + "if(!style){style=document.createElement('style');style.id=id;}"
                 + "style.textContent=css;"
@@ -113,6 +113,22 @@ public class MainActivity extends ComponentActivity {
                 + "document.documentElement.style.setProperty('--message-font-family','sans-serif','important');"
                 + "}catch(e){}})();";
         webView.evaluateJavascript(js, null);
+    }
+
+    /** Mirrors Android's font-size/accessibility scaling in the embedded WebView. */
+    private int getSystemTextZoom() {
+        float scale = getResources().getConfiguration().fontScale;
+        int zoom = Math.round(scale * 100f);
+        return Math.max(50, Math.min(300, zoom));
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) {
+            webView.getSettings().setTextZoom(getSystemTextZoom());
+            applySystemFontOverride();
+        }
     }
 
     @Override

@@ -6,6 +6,9 @@ on:
     paths:
       - "android-apps/**"
       - ".github/workflows/build-transmission-apps.yml"
+      - "index.html"
+      - "*.js"
+      - "assets/**"
   workflow_dispatch:
 
 permissions:
@@ -17,34 +20,38 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-
+      - name: Bundle the complete web app locally
+        run: |
+          set -eux
+          mkdir -p android-apps/app/src/main/assets/site
+          cp index.html android-apps/app/src/main/assets/site/
+          find . -maxdepth 1 -type f -name '*.js' -exec cp {} android-apps/app/src/main/assets/site/ \;
+          if [ -d assets ]; then cp -R assets android-apps/app/src/main/assets/site/; fi
+          test -s android-apps/app/src/main/assets/site/index.html
+          du -sh android-apps/app/src/main/assets/site
+          find android-apps/app/src/main/assets/site -maxdepth 2 -type f | wc -l
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
-
       - name: Build both APKs
         working-directory: android-apps
         run: gradle --no-daemon :app:assembleStandardDebug :app:assembleDarkfixDebug
-
       - name: Prepare APK files
         run: |
           mkdir -p release-apks
           cp android-apps/app/build/outputs/apk/standard/debug/app-standard-debug.apk release-apks/传讯.apk
-          cp android-apps/app/build/outputs/apk/darkfix/debug/app-darkfix-debug.apk release-apks/传讯-深色修复版.apk
+          cp android-apps/app/build/outputs/apk/darkfix/debug/app-darkfix-debug.apk release-apks/传讯新版.apk
           ls -lh release-apks
-
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -52,7 +59,6 @@ jobs:
           path: release-apks/*.apk
           if-no-files-found: error
           retention-days: 30
-
       - name: Publish APK download release
         uses: softprops/action-gh-release@v2
         with:

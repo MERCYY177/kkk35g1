@@ -1,0 +1,210 @@
+name: Build two Android apps
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-two-apps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Generate Android WebView wrapper
+        shell: bash
+        run: |
+          mkdir -p app/src/main/java/com/mercyy177/chuanxun
+          mkdir -p app/src/main/res/values
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "ChuanXunApps"
+          include(":app")
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.mercyy177.chuanxun'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.mercyy177.chuanxun'
+                  minSdk 23
+                  targetSdk 28
+                  versionCode 1
+                  versionName '1.0'
+              }
+
+              flavorDimensions += 'edition'
+              productFlavors {
+                  chuanxun {
+                      dimension 'edition'
+                      applicationId 'com.mercyy177.chuanxun'
+                      resValue 'string', 'app_name', '传讯'
+                  }
+                  chuanxunNew {
+                      dimension 'edition'
+                      applicationId 'com.mercyy177.chuanxun.new'
+                      resValue 'string', 'app_name', '传讯新版'
+                  }
+              }
+
+              buildTypes {
+                  debug {
+                      debuggable false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="true"
+                  android:usesCleartextTraffic="false"
+                  android:label="@string/app_name"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:supportsRtl="true">
+                  <activity
+                      android:name="com.mercyy177.chuanxun.MainActivity"
+                      android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/mercyy177/chuanxun/MainActivity.java <<'EOF'
+          package com.mercyy177.chuanxun;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.view.View;
+          import android.graphics.Color;
+
+          public class MainActivity extends Activity {
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  getWindow().setStatusBarColor(Color.rgb(250, 250, 250));
+                  getWindow().setNavigationBarColor(Color.rgb(250, 250, 250));
+                  getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+                  webView = new WebView(this);
+                  webView.setBackgroundColor(Color.WHITE);
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setDatabaseEnabled(true);
+                  settings.setLoadsImagesAutomatically(true);
+                  settings.setJavaScriptCanOpenWindowsAutomatically(false);
+                  settings.setSupportMultipleWindows(false);
+                  settings.setAllowFileAccess(false);
+                  settings.setAllowContentAccess(true);
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.setWebChromeClient(new WebChromeClient());
+                  setContentView(webView);
+                  webView.loadUrl("https://mercyy177.github.io/kkk35g1/");
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (webView != null) {
+                      webView.destroy();
+                      webView = null;
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+      - name: Build both APKs
+        run: gradle --no-daemon assembleChuanxunDebug assembleChuanxunNewDebug
+
+      - name: Rename APKs
+        shell: bash
+        run: |
+          mkdir -p output
+          cp app/build/outputs/apk/chuanxun/debug/app-chuanxun-debug.apk output/传讯.apk
+          cp app/build/outputs/apk/chuanxunNew/debug/app-chuanxunNew-debug.apk output/传讯新版.apk
+          ls -lh output
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: chuanxun-two-apks
+          path: output/*.apk
+          if-no-files-found: error
+          retention-days: 14

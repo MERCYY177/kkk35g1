@@ -2,6 +2,7 @@ package com.mercyy.transmission;
 
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -15,6 +16,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 import androidx.activity.ComponentActivity;
 import androidx.activity.OnBackPressedCallback;
@@ -25,6 +28,8 @@ import java.util.Locale;
 public class MainActivity extends ComponentActivity {
     private static final String HOME_URL = "file:///android_asset/site/index.html";
     private WebView webView;
+    private FrameLayout rootLayout;
+    private LinearLayout nativeDiagnosticPanel;
     private ValueCallback<Uri[]> fileChooserCallback;
     private static final int FILE_CHOOSER_REQUEST = 4107;
 
@@ -33,6 +38,7 @@ public class MainActivity extends ComponentActivity {
         getWindow().setStatusBarColor(getColor(android.R.color.black));
         getWindow().setNavigationBarColor(getColor(android.R.color.black));
         FrameLayout root = new FrameLayout(this);
+        rootLayout = root;
         webView = new WebView(this);
         root.addView(webView, new FrameLayout.LayoutParams(-1, -1));
 
@@ -116,10 +122,17 @@ public class MainActivity extends ComponentActivity {
 
     private void runFontDiagnostic() {
         if (webView == null) return;
+        WebSettings ws = webView.getSettings();
+        Typeface defaultTypeface = Typeface.DEFAULT;
+        Typeface sansTypeface = Typeface.create("sans-serif", Typeface.NORMAL);
         String nativeInfo = String.format(Locale.US,
-                "Android SDK=%d；fontScale=%.2f；WebView textZoom=%d%%；AppTheme fontFamily=%s",
+                "Android SDK=%d；fontScale=%.2f；WebView textZoom=%d%%；AppTheme fontFamily=%s\\nWebSettings standard=%s；sans-serif=%s；serif=%s；monospace=%s\\nTypeface.DEFAULT=%s；DEFAULT_BOLD=%s；sans-serif Typeface=%s",
                 Build.VERSION.SDK_INT, getResources().getConfiguration().fontScale,
-                webView.getSettings().getTextZoom(), getThemeFontFamily());
+                ws.getTextZoom(), getThemeFontFamily(),
+                safeFontName(ws.getStandardFontFamily()), safeFontName(ws.getSansSerifFontFamily()),
+                safeFontName(ws.getSerifFontFamily()), safeFontName(ws.getFixedFontFamily()),
+                defaultTypeface.toString(), Typeface.DEFAULT_BOLD.toString(), sansTypeface.toString());
+        showNativeFontSample(defaultTypeface, sansTypeface);
         String escaped = nativeInfo.replace("\\", "\\\\").replace("'", "\\'");
         String js = "(function(){"
           + "var old=document.getElementById('__font_diag_panel');if(old)old.remove();"
@@ -133,6 +146,53 @@ public class MainActivity extends ComponentActivity {
           + "var ss=[['system-ui','system-ui'],['sans-serif','sans-serif'],['ui-sans-serif','ui-sans-serif'],['serif','serif'],['monospace','monospace'],['页面变量','var(--font-family)']];"
           + "ss.forEach(function(s){var b=document.createElement('div');b.style.cssText='border-top:1px solid #ddd;padding:8px 0';var l=document.createElement('div');l.textContent=s[0]+'；computed='+s[1];l.style.cssText='font:12px monospace;color:#555;margin-bottom:4px';var x=document.createElement('div');x.textContent='字体样本：传讯 你好世界 中文 ABC abc 0123 鬼龙红郎';x.style.cssText='font-family:'+s[1]+' !important;font-size:20px;line-height:1.5';b.appendChild(l);b.appendChild(x);p.appendChild(b)});document.body.appendChild(p)})();";
         webView.evaluateJavascript(js, null);
+    }
+
+    private String safeFontName(String name) { return name == null ? "(null)" : name; }
+
+    private void showNativeFontSample(Typeface defaultTypeface, Typeface sansTypeface) {
+        if (rootLayout == null) return;
+        if (nativeDiagnosticPanel != null) rootLayout.removeView(nativeDiagnosticPanel);
+        nativeDiagnosticPanel = new LinearLayout(this);
+        nativeDiagnosticPanel.setOrientation(LinearLayout.VERTICAL);
+        nativeDiagnosticPanel.setPadding(dp(12), dp(8), dp(12), dp(8));
+        nativeDiagnosticPanel.setBackgroundColor(Color.rgb(255, 249, 220));
+        nativeDiagnosticPanel.setElevation(dp(18));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
+        lp.setMargins(dp(8), dp(8), dp(8), 0);
+
+        TextView heading = new TextView(this);
+        heading.setText("原生 Android 字体对照（此区不是网页）");
+        heading.setTextColor(Color.BLACK);
+        heading.setTextSize(14);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        nativeDiagnosticPanel.addView(heading);
+
+        TextView defaultSample = new TextView(this);
+        defaultSample.setText("Typeface.DEFAULT：传讯 你好世界 中文 ABC abc 0123 鬼龙红郎");
+        defaultSample.setTextColor(Color.BLACK);
+        defaultSample.setTextSize(20);
+        defaultSample.setTypeface(defaultTypeface);
+        nativeDiagnosticPanel.addView(defaultSample);
+
+        TextView sansSample = new TextView(this);
+        sansSample.setText("Typeface sans-serif：传讯 你好世界 中文 ABC abc 0123 鬼龙红郎");
+        sansSample.setTextColor(Color.BLACK);
+        sansSample.setTextSize(20);
+        sansSample.setTypeface(sansTypeface);
+        nativeDiagnosticPanel.addView(sansSample);
+
+        TextView details = new TextView(this);
+        details.setText("请与下方网页样本比较。点此关闭原生对照区。");
+        details.setTextColor(Color.DKGRAY);
+        details.setTextSize(12);
+        nativeDiagnosticPanel.addView(details);
+        nativeDiagnosticPanel.setOnClickListener(v -> {
+            rootLayout.removeView(nativeDiagnosticPanel);
+            nativeDiagnosticPanel = null;
+        });
+        rootLayout.addView(nativeDiagnosticPanel, lp);
+        nativeDiagnosticPanel.bringToFront();
     }
 
     private int getSystemTextZoom() {

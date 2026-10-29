@@ -26,7 +26,7 @@ jobs:
           set -eux
           mkdir -p android-apps/app/src/main/assets/site
           cp index.html android-apps/app/src/main/assets/site/
-          find . -maxdepth 1 -type f -name '*.js' -exec cp {} android-apps/app/src/main/assets/site/ +
+          for f in ./*.js; do if [ -f "$f" ]; then cp "$f" android-apps/app/src/main/assets/site/; fi; done
           if [ -d assets ]; then cp -R assets android-apps/app/src/main/assets/site/; fi
           test -s android-apps/app/src/main/assets/site/index.html
           du -sh android-apps/app/src/main/assets/site

@@ -87,7 +87,11 @@
 
   function sessionKey() {
     var sid = '';
-    try { sid = String(root.__xiaoshuSessionDataReady || root.SESSION_ID || 'unscoped'); } catch (_) { sid = 'unscoped'; }
+    try {
+      // __xiaoshuSessionDataReady is a readiness marker, not an ID unless it is a string.
+      // Prefer the real active session ID so tombstones never land under "true".
+      sid = String(root.SESSION_ID || (typeof root.__xiaoshuSessionDataReady === 'string' ? root.__xiaoshuSessionDataReady : '') || 'unscoped');
+    } catch (_) { sid = 'unscoped'; }
     sid = sid.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120) || 'unscoped';
     return STORE_KEY_PREFIX + sid;
   }
@@ -112,7 +116,9 @@
 
     // Migrate only from the temporary unscoped key to the resolved key.
     // Do not leak one established session's deleted items into another.
-    if (previousKey && previousKey !== key && /_unscoped$/.test(previousKey)) {
+    if (previousKey && previousKey !== key && /_(?:unscoped|true|false)$/.test(previousKey)) {
+      // Migrate tombstones created by older builds before a real session ID was available,
+      // including builds that accidentally used the boolean readiness flag as the ID.
       previousDeleted.forEach(function (value) { deleted.add(value); });
       saveDeleted();
     }

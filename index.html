@@ -18908,6 +18908,18 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     var runtimeKey=storageKey(CANONICAL_RUNTIME_NAME,sid);
     if(!uploadKey||!runtimeKey){pendingUploadPersist=true;return false;}
     cleanupLegacySyncStores();
+    // Keep the main app's saveData alias synchronized with the authoritative upload list.
+    // Otherwise a later general save can write deleted stickers back into IndexedDB.
+    try {
+      var authoritativeUploads = uploads.slice();
+      if (typeof myStickerLibrary !== 'undefined') myStickerLibrary = authoritativeUploads.slice();
+      window.myStickerLibrary = authoritativeUploads.slice();
+      // stickerLibrary is a runtime pool, not a persistent upload list.
+      if (typeof stickerLibrary !== 'undefined' && Array.isArray(stickerLibrary)) stickerLibrary = [];
+      window.stickerLibrary = [];
+    } catch (aliasSyncError) {
+      try { console.warn('[共享表情包] 同步上传表情权威副本失败', aliasSyncError); } catch (_) {}
+    }
     try{
       if(window.localforage){
         window.localforage.setItem(uploadKey,uploads.slice()).catch(function(err){console.warn('[共享表情包] 上传表情保存失败',err);});

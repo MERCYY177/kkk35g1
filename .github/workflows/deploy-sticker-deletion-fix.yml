@@ -1,84 +1,69 @@
-name: Deploy sticker deletion resurrection fix
-
-on: push
-
+name: Deploy sticker deletion fix
+on:
+  push:
+    branches:
+      - main
 permissions:
   contents: write
   pages: write
   id-token: write
-
-concurrency:
-  group: sticker-deletion-deploy
-  cancel-in-progress: false
-
 jobs:
-  patch-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
-      - name: Patch canonical upload logic
+      - name: Patch index
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path("index.html")
-          s = p.read_text(encoding="utf-8")
-          pairs = [
-              ("{ key: 'myStickerLibrary',       val: () => localforage.setItem(getStorageKey('myStickerLibrary'), myStickerLibrary) },",
-               "{ key: 'myStickerLibrary',       val: () => { const store = window.xiaoshuStickerStore; const uploads = store && typeof store.getUploads === 'function' ? store.getUploads() : myStickerLibrary; return localforage.setItem(getStorageKey('myStickerLibrary'), uploads); } },"),
-              ("var pendingUploadPersist = false;\nvar sessionReadyTimer = null;",
-               "var pendingUploadPersist = false;\n// Serialize writes to the canonical upload key so late autosaves cannot overtake a deletion.\nvar canonicalUploadWriteChain = Promise.resolve();\nvar sessionReadyTimer = null;"),
-              ("      var guarded=function(key,value){\n        if(isLegacyGroupKey(key)){",
-               "      var guarded=function(key,value){\n        key=String(key||'');\n        if(isLegacyGroupKey(key)){"),
-              ("        return raw(key,value);\n      };",
-               """        // The canonical upload key has one writer: this controller's current uploads list.
-        // Ignore stale snapshots supplied by saveData(), and suppress writes before hydration.
-        var activeSid=currentSessionId();
+          p=Path("index.html")
+          s=p.read_text(encoding="utf-8")
+          pairs=[
+          ("{ key: 'myStickerLibrary',       val: () => localforage.setItem(getStorageKey('myStickerLibrary'), myStickerLibrary) },",
+           "{ key: 'myStickerLibrary',       val: () => { const store = window.xiaoshuStickerStore; const uploads = store && typeof store.getUploads === 'function' ? store.getUploads() : myStickerLibrary; return localforage.setItem(getStorageKey('myStickerLibrary'), uploads); } },"),
+          ("var pendingUploadPersist = false;\nvar sessionReadyTimer = null;",
+           "var pendingUploadPersist = false;\nvar canonicalUploadWriteChain = Promise.resolve();\nvar sessionReadyTimer = null;"),
+          ("      var guarded=function(key,value){\n        if(isLegacyGroupKey(key)){",
+           "      var guarded=function(key,value){\n        key=String(key||'');\n        if(isLegacyGroupKey(key)){"),
+          ("        return raw(key,value);\n      };",
+           """        var activeSid=currentSessionId();
         var canonicalKey=activeSid?storageKey(CANONICAL_UPLOAD_NAME,activeSid):'';
         if(canonicalKey&&key===canonicalKey){
           if(!migrationState.hydrated||hydratedSessionId!==activeSid)return Promise.resolve(value);
-          var snapshot=uploads.slice();
           canonicalUploadWriteChain=canonicalUploadWriteChain.catch(function(){return null;}).then(function(){
             if(currentSessionId()!==activeSid||!migrationState.hydrated||hydratedSessionId!==activeSid)return null;
             return raw(key,uploads.slice());
           });
-          return canonicalUploadWriteChain.then(function(){return snapshot;});
+          return canonicalUploadWriteChain.then(function(){return uploads.slice();});
         }
         return raw(key,value);
       };"""),
-              ("if(Array.isArray(canonical))uploads=withoutBuiltins(uploads.concat(canonical));",
-               """if(Array.isArray(canonical)){
-// An existing canonical array (including []) is authoritative. Never merge stale aliases.
-uploads=withoutBuiltins(canonical);
-}else{
-// One-time migration only when the canonical key does not exist yet."""),
-              ("try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}\n}\nvar hkeys=[CANONICAL_HIDDEN_KEY]",
-               "try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}\n}\n}\nvar hkeys=[CANONICAL_HIDDEN_KEY]")
+          ("if(Array.isArray(canonical))uploads=withoutBuiltins(uploads.concat(canonical));",
+           "if(Array.isArray(canonical)){\nuploads=withoutBuiltins(canonical);\n}else{\n// One-time migration only when canonical key is absent."),
+          ("try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}\n}\nvar hkeys=[CANONICAL_HIDDEN_KEY]",
+           "try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}\n}\n}\nvar hkeys=[CANONICAL_HIDDEN_KEY]")
           ]
-          for old, new in pairs:
-              n = s.count(old)
-              if n != 1:
-                  raise SystemExit(f"Expected one match, got {n}: {old[:80]!r}")
-              s = s.replace(old, new, 1)
-          p.write_text(s, encoding="utf-8")
-          print("Applied six guarded replacements.")
+          for old,new in pairs:
+            n=s.count(old)
+            if n != 1:
+              raise SystemExit("Unsafe patch: expected one match, got %s for %r"%(n,old[:80]))
+            s=s.replace(old,new,1)
+          p.write_text(s,encoding="utf-8")
+          print("Patch applied")
           PY
           git diff --check
-          git diff --stat
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
           git commit -m "Prevent deleted stickers from returning through stale saves"
           git push origin HEAD:main
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v5
         with:
           enablement: true
-      - name: Upload site
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: .
-      - name: Deploy Pages
-        uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v4

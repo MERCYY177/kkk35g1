@@ -2,7 +2,7 @@ name: Build Transmission Android Apps
 
 on:
   push:
-    branches: [main]
+    branches: [main, diagnostic-font-family]
     paths:
       - "android-apps/**"
       - ".github/workflows/build-transmission-apps.yml"
@@ -26,7 +26,7 @@ jobs:
           set -eux
           mkdir -p android-apps/app/src/main/assets/site
           cp index.html android-apps/app/src/main/assets/site/
-          find . -maxdepth 1 -type f -name '*.js' -exec cp {} android-apps/app/src/main/assets/site/ \;
+          find . -maxdepth 1 -type f -name '*.js' -exec cp {} android-apps/app/src/main/assets/site/ \\;
           if [ -d assets ]; then cp -R assets android-apps/app/src/main/assets/site/; fi
           test -s android-apps/app/src/main/assets/site/index.html
           du -sh android-apps/app/src/main/assets/site
@@ -69,7 +69,7 @@ jobs:
       - name: Upload verified APKs
         uses: actions/upload-artifact@v4
         with:
-          name: 传讯-已验证安装包
+          name: 传讯-字体诊断版-安装包
           path: release-apks/*
           if-no-files-found: error
           retention-days: 30

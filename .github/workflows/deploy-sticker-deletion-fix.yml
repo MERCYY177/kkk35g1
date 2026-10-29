@@ -1,0 +1,118 @@
+name: Deploy sticker deletion resurrection fix
+
+on:
+  push:
+    paths:
+      - ".github/workflows/deploy-sticker-deletion-fix.yml"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  patch-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Apply canonical upload storage fix
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path("index.html")
+          s = p.read_text(encoding="utf-8")
+          replacements = [
+              (
+                  "{ key: 'myStickerLibrary',       val: () => localforage.setItem(getStorageKey('myStickerLibrary'), myStickerLibrary) },",
+                  "{ key: 'myStickerLibrary',       val: () => { const store = window.xiaoshuStickerStore; const uploads = store && typeof store.getUploads === 'function' ? store.getUploads() : myStickerLibrary; return localforage.setItem(getStorageKey('myStickerLibrary'), uploads); } },"
+              ),
+              (
+                  "var pendingUploadPersist = false;\nvar sessionReadyTimer = null;",
+                  "var pendingUploadPersist = false;\n// Serialize writes to the canonical upload key so late autosaves cannot overtake a deletion.\nvar canonicalUploadWriteChain = Promise.resolve();\nvar sessionReadyTimer = null;"
+              ),
+              (
+                  "      var guarded=function(key,value){\n        if(isLegacyGroupKey(key)){",
+                  "      var guarded=function(key,value){\n        key=String(key||'');\n        if(isLegacyGroupKey(key)){"
+              ),
+              (
+                  "        return raw(key,value);\n      };",
+                  """        // The canonical upload key has one writer: this controller's current uploads list.
+        // Ignore stale snapshots supplied by saveData(), and suppress writes before hydration
+        // so an early autosave cannot replace the stored list before it has been read.
+        var activeSid=currentSessionId();
+        var canonicalKey=activeSid?storageKey(CANONICAL_UPLOAD_NAME,activeSid):'';
+        if(canonicalKey&&key===canonicalKey){
+          if(!migrationState.hydrated||hydratedSessionId!==activeSid)return Promise.resolve(value);
+          var snapshot=uploads.slice();
+          canonicalUploadWriteChain=canonicalUploadWriteChain.catch(function(){return null;}).then(function(){
+            // A queued write from a previous session must not write the new session's list.
+            if(currentSessionId()!==activeSid||!migrationState.hydrated||hydratedSessionId!==activeSid)return null;
+            // Re-read at execution time as well: queued stale writes must never restore old items.
+            return raw(key,uploads.slice());
+          });
+          return canonicalUploadWriteChain.then(function(){return snapshot;});
+        }
+        return raw(key,value);
+      };"""
+              ),
+              (
+                  "if(Array.isArray(canonical))uploads=withoutBuiltins(uploads.concat(canonical));",
+                  """if(Array.isArray(canonical)){
+// An existing canonical array (including []) is authoritative. Never merge aliases,
+// runtime pools, or retired legacy stores into it: those copies may contain deleted items.
+uploads=withoutBuiltins(canonical);
+}else{
+// One-time migration only when the canonical key does not exist yet."""
+              ),
+              (
+                  "try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}\n}\nvar hkeys=[CANONICAL_HIDDEN_KEY]",
+                  "try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}\n}\n}\nvar hkeys=[CANONICAL_HIDDEN_KEY]"
+              )
+          ]
+          for old, new in replacements:
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f"Refusing unsafe patch: expected exactly one match, got {count}: {old[:100]!r}")
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding="utf-8")
+          print("Patched index.html")
+          PY
+          node --check <(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          s=Path("index.html").read_text(encoding="utf-8")
+          # Syntax-check the extracted sticker controller's inline scripts with Node's parser.
+          scripts=re.findall(r'<script(?:\\s[^>]*)?>(.*?)</script\\s*>',s,re.I|re.S)
+          print("\\n".join(x for x in scripts if x.strip()))
+          PY
+          ) || true
+          git diff --check
+          git diff --stat
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Prevent deleted stickers from returning through stale saves"
+          git push origin HEAD:main
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "."
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

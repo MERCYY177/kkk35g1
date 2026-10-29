@@ -4392,9 +4392,13 @@ let messageHTML = '';
 if (msg.replyTo && !xsIsNonQuotableCardMessage(msg.replyTo)) {
 messageHTML += xsRenderCustomQuote(msg.replyTo);
 }
+// Resolve through the live resource table first. stickerPreview is retained only as a fallback
+// for older messages whose resource mapping has not yet been migrated.
+const __xsStickerResolvedSrc = msg.stickerId && window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.resolve === 'function'
+    ? window.xiaoshuStickerStore.resolve(msg.stickerId) : '';
 const __xsStickerSrc = msg.stickerId
-? String((msg.stickerPreview || (window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.resolve === 'function' ? window.xiaoshuStickerStore.resolve(msg.stickerId) : '') || ''))
-: '';
+    ? String((__xsStickerResolvedSrc || msg.stickerPreview || '') || '')
+    : '';
 const isStickerMessage = !!msg.stickerId;
 const isImageOnly = !msg.replyTo && !msg.text && (!!msg.image || isStickerMessage);
 const isVideoOnly = !msg.replyTo && !msg.text && (!!msg.video || !!msg.videoBlobKey || !!msg.videoExpired || !!msg.videoTempOnly);
@@ -4426,7 +4430,8 @@ content = `<div class="voice-message-bubble" data-voice-url="${xsQuoteEscape(voi
 } else if (isStickerMessage || msg.image) {
 const __xsImageSrc = xsSafeResourceUrl(isStickerMessage ? __xsStickerSrc : msg.image, 'image');
 if (isStickerMessage) {
-content += `<div class="xs-chat-sticker-frame ${__xsImageSrc ? 'is-loading' : 'is-pending'}" data-sticker-id="${xsQuoteEscape(msg.stickerId)}" data-sticker-src="${xsQuoteEscape(__xsImageSrc)}" data-partner-priority="${msg.sender === 'user' ? '0' : '1'}" role="button" tabindex="0" aria-label="表情包加载中"><span class="xs-chat-sticker-status">表情加载中</span><img class="message-image message-image-only xs-chat-sticker-image" alt="表情包" width="100" height="100" decoding="async"${msg.sender === 'user' ? '' : ' fetchpriority="high"'}></div>`;
+const __xsStickerFallbackSrc = xsSafeResourceUrl(msg.stickerPreview || '', 'image');
+content += `<div class="xs-chat-sticker-frame ${__xsImageSrc ? 'is-loading' : 'is-pending'}" data-sticker-id="${xsQuoteEscape(msg.stickerId)}" data-sticker-src="${xsQuoteEscape(__xsImageSrc)}" data-sticker-preview="${xsQuoteEscape(__xsStickerFallbackSrc)}" data-partner-priority="${msg.sender === 'user' ? '0' : '1'}" role="button" tabindex="0" aria-label="表情包加载中"><span class="xs-chat-sticker-status">表情加载中</span><img class="message-image message-image-only xs-chat-sticker-image" alt="表情包" width="100" height="100" decoding="async"${msg.sender === 'user' ? '' : ' fetchpriority="high"'}></div>`;
 } else if (__xsImageSrc) {
 content += `<img src="${xsQuoteEscape(__xsImageSrc)}" data-view-src="${xsQuoteEscape(__xsImageSrc)}" class="message-image${isImageOnly ? ' message-image-only' : ''}" alt="图片" decoding="async" style="max-width:100px; border-radius: 12px;${!isImageOnly ? ' margin-top: 6px;' : ''} cursor: pointer;">`;
 }
@@ -18073,36 +18078,73 @@ window.XiaoshuSystemTheme = {sync:function(){ return sync(true); }, current:func
 <style id="xiaoshu-chat1-sticker-loader-v1-css">.xs-chat-sticker-frame{position:relative!important;width:100px!important;height:100px!important;min-width:100px!important;min-height:100px!important;max-width:100px!important;max-height:100px!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important;border-radius:12px!important;background:rgba(var(--accent-color-rgb,127,166,205),.08)!important;color:var(--text-secondary,#888)!important;cursor:pointer!important;box-sizing:border-box!important;}.xs-chat-sticker-frame::before{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 20%,rgba(255,255,255,.3) 45%,transparent 70%);transform:translateX(-100%);animation:xsStickerLoading 1.4s ease-in-out infinite;opacity:.55;pointer-events:none;}.xs-chat-sticker-frame.is-loaded{background:transparent!important;}.xs-chat-sticker-frame.is-loaded::before,.xs-chat-sticker-frame.load-failed::before,.xs-chat-sticker-frame.timeout::before,.xs-chat-sticker-frame.resource-missing::before{display:none!important;}.xs-chat-sticker-image{position:absolute!important;inset:0!important;width:100px!important;height:100px!important;max-width:100px!important;max-height:100px!important;object-fit:contain!important;display:block!important;opacity:0!important;color:transparent!important;transition:opacity .16s ease!important;}.xs-chat-sticker-frame.is-loaded .xs-chat-sticker-image{opacity:1!important;}.xs-chat-sticker-status{position:relative;z-index:2;max-width:88px;padding:5px 7px;border-radius:9px;font-size:11px;line-height:1.35;text-align:center;background:var(--secondary-bg,rgba(255,255,255,.82));color:var(--text-secondary,#777);pointer-events:none;}.xs-chat-sticker-frame.is-loaded .xs-chat-sticker-status{display:none!important;}.xs-chat-sticker-frame.load-failed .xs-chat-sticker-status,.xs-chat-sticker-frame.timeout .xs-chat-sticker-status,.xs-chat-sticker-frame.resource-missing .xs-chat-sticker-status,.xs-chat-sticker-frame.pending-resource .xs-chat-sticker-status{pointer-events:auto;font-weight:700;}@keyframes xsStickerLoading{to{transform:translateX(100%);}}</style>
 <script id="xiaoshu-chat1-sticker-loader-v1-js">(function(){
 'use strict';
-if(window.__xiaoshuChat1StickerLoaderV1)return;window.__xiaoshuChat1StickerLoaderV1=true;
-function resolve(id){try{return window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.resolve==='function'?window.xiaoshuStickerStore.resolve(id):''}catch(e){return''}}
-function retryUrl(src,attempt){try{return window.XiaoshuStickerCore&&typeof window.XiaoshuStickerCore.withRetryToken==='function'?window.XiaoshuStickerCore.withRetryToken(src,attempt):src}catch(e){return src}}
+if(window.__xiaoshuChat1StickerLoaderV2)return;
+window.__xiaoshuChat1StickerLoaderV2=true;
+window.__xiaoshuChat1StickerLoaderV1=true;
+function resolve(id){try{return window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.resolve==='function'?String(window.xiaoshuStickerStore.resolve(id)||'').trim():''}catch(e){return''}}
+function safeSrc(value){
+  var raw=String(value||'').trim();if(!raw)return'';
+  try{if(typeof window.xsSafeResourceUrl==='function')return window.xsSafeResourceUrl(raw,'image')||''}catch(e){}
+  try{if(window.XiaoshuStickerCore&&typeof window.XiaoshuStickerCore.safeResourceUrl==='function')return window.XiaoshuStickerCore.safeResourceUrl(raw,'image')||''}catch(e){}
+  return /^(?:https?:\/\/|blob:|data:image\/|file:|content:|(?:\.\/)?assets\/stickers\/)/i.test(raw)?raw:'';
+}
+function retryUrl(src,attempt){
+  src=String(src||'').trim();if(!src||/^(?:data:|blob:|file:|content:)/i.test(src))return src;
+  try{
+    var hashAt=src.indexOf('#'),hash=hashAt>=0?src.slice(hashAt):'',base=hashAt>=0?src.slice(0,hashAt):src;
+    base=base.replace(/([?&])__xs_sticker_retry=[^&]*/g,'$1').replace(/[?&]+$/,'');
+    var sep=base.indexOf('?')>=0?'&':'?';return base+sep+'__xs_sticker_retry='+encodeURIComponent(String(attempt))+hash;
+  }catch(e){try{return window.XiaoshuStickerCore&&window.XiaoshuStickerCore.withRetryToken?window.XiaoshuStickerCore.withRetryToken(src,attempt):src}catch(_){return src}}
+}
 function setState(frame,state){var labels={'pending-resource':'表情资源查找中，点击重新查找','loading':'表情加载中','loaded':'表情包','load-failed':'表情加载失败，点击重试','resource-missing':'表情资源缺失，点击重新查找'};frame.classList.remove('is-pending','pending-resource','is-loading','loading','is-loaded','loaded','timeout','load-failed','resource-missing');frame.classList.add(state);if(state==='loading')frame.classList.add('is-loading');else if(state==='loaded')frame.classList.add('is-loaded');else if(state==='pending-resource')frame.classList.add('is-pending');frame.dataset.stickerState=state;var text=labels[state]||'表情包',status=frame.querySelector('.xs-chat-sticker-status');if(status)status.textContent=text;frame.setAttribute('aria-label',text)}
 function bind(frame){
-if(!frame||frame.__xsStickerBound)return;frame.__xsStickerBound=true;
-var img=frame.querySelector('img'),resolveTimer=null,resolveAttempts=0,retryCount=0,generation=0;
-function clearResolve(){if(resolveTimer){clearTimeout(resolveTimer);resolveTimer=null}}
-function start(forceBust){
-if(!frame.isConnected){requestAnimationFrame(function(){if(frame.isConnected)start(!!forceBust)});return}
-clearResolve();
-var id=frame.getAttribute('data-sticker-id')||'';
-var src=frame.getAttribute('data-sticker-src')||resolve(id);
-if(!src){
-setState(frame,'pending-resource');
-if(resolveAttempts<4){resolveAttempts+=1;resolveTimer=setTimeout(function(){start(false)},500)}else setState(frame,'resource-missing');
-return;
-}
-resolveAttempts=0;frame.setAttribute('data-sticker-src',src);if(!img)return;
-var mine=++generation,url=forceBust?retryUrl(src,++retryCount):src;
-setState(frame,'loading');
-img.onload=function(){if(mine!==generation||!frame.isConnected)return;img.onload=img.onerror=null;img.setAttribute('data-view-src',src);setState(frame,'loaded')};
-img.onerror=function(){if(mine!==generation||!frame.isConnected)return;img.onload=img.onerror=null;if(retryCount<1){start(true);return}setState(frame,'load-failed')};
-if(img.getAttribute('src')===url){img.removeAttribute('src')}
-requestAnimationFrame(function(){if(mine!==generation||!frame.isConnected)return;img.src=url;if(img.complete&&img.naturalWidth>0&&typeof img.onload==='function')img.onload()});
-}
-function activate(e){var state=frame.dataset.stickerState;if(state==='loaded'){var src=img&&(img.getAttribute('data-view-src')||frame.getAttribute('data-sticker-src'));if(src&&typeof window.viewImage==='function')window.viewImage(src)}else{if(e)e.preventDefault();retryCount=0;resolveAttempts=0;start(state==='load-failed')}}
-frame.addEventListener('click',activate);frame.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();activate(e)}});
-frame.__xsStickerStart=start;frame.__xsStickerRefresh=function(){var state=frame.dataset.stickerState;if(state==='loading'||state==='loaded')return;if(state==='pending-resource'||state==='resource-missing')start(false)};
-if(frame.isConnected)start(false);else requestAnimationFrame(function(){start(false)});
+  if(!frame||frame.__xsStickerBound)return;frame.__xsStickerBound=true;
+  var img=frame.querySelector('img'),resolveTimer=null,resolveAttempts=0,retryCount=0,generation=0,attemptSeq=0;
+  function clearResolve(){if(resolveTimer){clearTimeout(resolveTimer);resolveTimer=null}}
+  function candidates(){
+    var id=frame.getAttribute('data-sticker-id')||'',out=[],seen=Object.create(null);
+    // Always ask the live store again. The DOM source and legacy preview are only fallbacks.
+    [resolve(id),frame.getAttribute('data-sticker-preview'),frame.getAttribute('data-sticker-original-src'),frame.getAttribute('data-sticker-src')].forEach(function(value){
+      var src=safeSrc(value);if(src&&!seen[src]){seen[src]=true;out.push(src)}
+    });
+    return out;
+  }
+  function start(forceBust){
+    if(!frame.isConnected){requestAnimationFrame(function(){if(frame.isConnected)start(!!forceBust)});return}
+    clearResolve();var list=candidates();
+    if(!list.length){
+      setState(frame,'pending-resource');
+      if(resolveAttempts<8){resolveAttempts+=1;resolveTimer=setTimeout(function(){start(false)},500)}else setState(frame,'resource-missing');
+      return;
+    }
+    resolveAttempts=0;var run=++generation,index=0,cacheRetryUsed=!!forceBust;
+    setState(frame,'loading');
+    function attempt(){
+      if(run!==generation||!frame.isConnected)return;
+      if(index>=list.length){setState(frame,'load-failed');return}
+      var src=list[index],thisSeq=++attemptSeq;
+      frame.setAttribute('data-sticker-src',src);
+      var url=(forceBust||cacheRetryUsed)?retryUrl(src,++retryCount):src;
+      img.onload=function(){if(run!==generation||thisSeq!==attemptSeq||!frame.isConnected)return;img.onload=img.onerror=null;img.setAttribute('data-view-src',src);frame.setAttribute('data-sticker-src',src);setState(frame,'loaded')};
+      img.onerror=function(){
+        if(run!==generation||thisSeq!==attemptSeq||!frame.isConnected)return;
+        img.onload=img.onerror=null;
+        // Try every distinct current/legacy source before declaring the sticker broken.
+        if(index+1<list.length){index+=1;attempt();return}
+        // For ordinary URLs, make one cache-busted request even during the initial load.
+        if(!cacheRetryUsed){cacheRetryUsed=true;url=retryUrl(src,++retryCount);var retrySeq=++attemptSeq;img.onload=function(){if(run!==generation||retrySeq!==attemptSeq||!frame.isConnected)return;img.onload=img.onerror=null;img.setAttribute('data-view-src',src);frame.setAttribute('data-sticker-src',src);setState(frame,'loaded')};img.onerror=function(){if(run!==generation||retrySeq!==attemptSeq||!frame.isConnected)return;img.onload=img.onerror=null;setState(frame,'load-failed')};img.src=url;return}
+        setState(frame,'load-failed');
+      };
+      img.removeAttribute('src');
+      requestAnimationFrame(function(){if(run!==generation||thisSeq!==attemptSeq||!frame.isConnected)return;img.src=url;if(img.complete&&img.naturalWidth>0&&typeof img.onload==='function')img.onload()});
+    }
+    attempt();
+  }
+  function activate(e){var state=frame.dataset.stickerState;if(state==='loaded'){var src=img&&(img.getAttribute('data-view-src')||frame.getAttribute('data-sticker-src'));if(src&&typeof window.viewImage==='function')window.viewImage(src)}else{if(e)e.preventDefault();resolveAttempts=0;start(true)}}
+  frame.addEventListener('click',activate);frame.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();activate(e)}});
+  frame.__xsStickerStart=start;
+  frame.__xsStickerRefresh=function(){var state=frame.dataset.stickerState;if(state==='loading'||state==='loaded')return;resolveAttempts=0;start(state==='load-failed')};
+  if(frame.isConnected)start(false);else requestAnimationFrame(function(){start(false)});
 }
 var refreshRAF=null;function refresh(){if(refreshRAF)return;refreshRAF=requestAnimationFrame(function(){refreshRAF=null;document.querySelectorAll('.xs-chat-sticker-frame[data-sticker-id]').forEach(function(frame){if(!frame.__xsStickerBound)bind(frame);else if(typeof frame.__xsStickerRefresh==='function')frame.__xsStickerRefresh()})})}
 window.xiaoshuBindChatStickerFrame=bind;

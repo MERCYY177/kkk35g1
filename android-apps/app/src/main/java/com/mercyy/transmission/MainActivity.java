@@ -48,11 +48,9 @@ public class MainActivity extends ComponentActivity {
         settings.setDefaultTextEncodingName("UTF-8");
         settings.setTextZoom(getSystemTextZoom());
 
-        // Use Android's generic system sans-serif family for WebView fallback fonts.
-        // The page's CSS prefers "system-ui" and writes its own font stack at runtime,
-        // so the app also enforces the system family after each page load below.
-        settings.setStandardFontFamily("sans-serif");
-        settings.setSansSerifFontFamily("sans-serif");
+        // Leave WebView's font-family defaults untouched. The HTML page uses a
+        // system UI font stack; forcing "sans-serif" here and injecting CSS below
+        // prevents the page/WebView from resolving fonts through its native defaults.
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                 WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
@@ -63,7 +61,6 @@ public class MainActivity extends ComponentActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                applySystemFontOverride();
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
@@ -94,27 +91,6 @@ public class MainActivity extends ComponentActivity {
         });
     }
 
-    /**
-     * The site defines system-ui first and re-applies its stored font stack after startup.
-     * Force normal UI text to Android's sans-serif family, but preserve Font Awesome icon
-     * classes so their glyphs do not turn into missing-character squares.
-     */
-    private void applySystemFontOverride() {
-        if (webView == null) return;
-        String js = "(function(){try{"
-                + "var id='android-system-font-follow-v1';"
-                + "var css=':root{--font-family:sans-serif!important;--message-font-family:sans-serif!important;}"
-                + "html body,html body *:not(.fa):not(.fas):not(.far):not(.fab):not(.fa-solid):not(.fa-regular):not(.fa-brands):not(.fa-classic):not([class^='fa-']):not([class*=' fa-']){font-family:sans-serif!important;}';"
-                + "var style=document.getElementById(id);"
-                + "if(!style){style=document.createElement('style');style.id=id;}"
-                + "style.textContent=css;"
-                + "(document.head||document.documentElement).appendChild(style);"
-                + "document.documentElement.style.setProperty('--font-family','sans-serif','important');"
-                + "document.documentElement.style.setProperty('--message-font-family','sans-serif','important');"
-                + "}catch(e){}})();";
-        webView.evaluateJavascript(js, null);
-    }
-
     /** Mirrors Android's font-size/accessibility scaling in the embedded WebView. */
     private int getSystemTextZoom() {
         float scale = getResources().getConfiguration().fontScale;
@@ -127,7 +103,6 @@ public class MainActivity extends ComponentActivity {
         super.onResume();
         if (webView != null) {
             webView.getSettings().setTextZoom(getSystemTextZoom());
-            applySystemFontOverride();
         }
     }
 

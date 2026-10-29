@@ -126,7 +126,7 @@ public class MainActivity extends ComponentActivity {
         Typeface defaultTypeface = Typeface.DEFAULT;
         Typeface sansTypeface = Typeface.create("sans-serif", Typeface.NORMAL);
         String nativeInfo = String.format(Locale.US,
-                "Android SDK=%d；fontScale=%.2f；WebView textZoom=%d%%；AppTheme fontFamily=%s\\nWebSettings standard=%s；sans-serif=%s；serif=%s；monospace=%s\\nTypeface.DEFAULT=%s；DEFAULT_BOLD=%s；sans-serif Typeface=%s",
+                "Android SDK=%d；fontScale=%.2f；WebView textZoom=%d%%；AppTheme fontFamily=%s\nWebSettings standard=%s；sans-serif=%s；serif=%s；monospace=%s\nTypeface.DEFAULT=%s；DEFAULT_BOLD=%s；sans-serif Typeface=%s",
                 Build.VERSION.SDK_INT, getResources().getConfiguration().fontScale,
                 ws.getTextZoom(), getThemeFontFamily(),
                 safeFontName(ws.getStandardFontFamily()), safeFontName(ws.getSansSerifFontFamily()),
@@ -141,7 +141,7 @@ public class MainActivity extends ComponentActivity {
           + "var c=document.createElement('button');c.textContent='关闭诊断';c.style.cssText='float:right;padding:7px 10px';c.onclick=function(){p.remove()};p.appendChild(c);"
           + "var h=document.createElement('h3');h.textContent='字体诊断（不修改字体）';h.style.cssText='margin:0 0 10px;font:bold 18px sans-serif';p.appendChild(h);"
           + "var info=document.createElement('pre');info.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;background:#f2f2f2;padding:9px;font:12px/1.5 monospace';"
-          + "info.textContent='原生信息：'+'" + escaped + "'+'\\n页面 URL：'+location.href+'\\nUser agent：'+navigator.userAgent+'\\nCSS --font-family：'+getComputedStyle(document.documentElement).getPropertyValue('--font-family')+'\\nCSS --message-font-family：'+getComputedStyle(document.documentElement).getPropertyValue('--message-font-family')+'\\nbody computed font-family：'+getComputedStyle(document.body).fontFamily+'\\nbody font-size：'+getComputedStyle(document.body).fontSize;p.appendChild(info);"
+          + "info.textContent='原生信息：'+'" + escaped + "'+'\n页面 URL：'+location.href+'\nUser agent：'+navigator.userAgent+'\nCSS --font-family：'+getComputedStyle(document.documentElement).getPropertyValue('--font-family')+'\nCSS --message-font-family：'+getComputedStyle(document.documentElement).getPropertyValue('--message-font-family')+'\nbody computed font-family：'+getComputedStyle(document.body).fontFamily+'\nbody font-size：'+getComputedStyle(document.body).fontSize;p.appendChild(info);"
           + "var d=document.createElement('p');d.textContent='各行尝试不同 CSS 字体族。请比较字形，并截图整个面板。';p.appendChild(d);"
           + "var ss=[['system-ui','system-ui'],['sans-serif','sans-serif'],['ui-sans-serif','ui-sans-serif'],['serif','serif'],['monospace','monospace'],['页面变量','var(--font-family)']];"
           + "ss.forEach(function(s){var b=document.createElement('div');b.style.cssText='border-top:1px solid #ddd;padding:8px 0';var l=document.createElement('div');l.textContent=s[0]+'；computed='+s[1];l.style.cssText='font:12px monospace;color:#555;margin-bottom:4px';var x=document.createElement('div');x.textContent='字体样本：传讯 你好世界 中文 ABC abc 0123 鬼龙红郎';x.style.cssText='font-family:'+s[1]+' !important;font-size:20px;line-height:1.5';b.appendChild(l);b.appendChild(x);p.appendChild(b)});document.body.appendChild(p)})();";

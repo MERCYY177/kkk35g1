@@ -1,0 +1,10 @@
+传讯：信件字卡计入“最近抽过”
+
+改动说明：
+1. 自动回信、定时来信在生成时会保存实际使用的字卡片段 cardFragments。
+2. 信件成功保存且当前会话仍然有效后，将信件 cardFragments 逐条登记到现有“最近抽过”记录。
+3. 复用 window.xiaoshuRecordRecentDrawnReply，因此与普通聊天实际发出的字卡共用相同的去重、计数、时间戳、编辑/删除/不处理和持久化行为。
+4. 手动写出的信件 cardFragments 为空，不会把信件正文误当作抽中的字卡；候选池中未被选中的字卡也不会被记录。
+5. 不改变信箱自身的 recentCardKeys（该字段仍用于减少信件之间的重复选卡）。
+
+回归检查：tests/mailbox-recent-drawn-regression.test.js

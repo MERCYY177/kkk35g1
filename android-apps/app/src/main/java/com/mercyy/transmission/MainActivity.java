@@ -163,8 +163,8 @@ public class MainActivity extends ComponentActivity {
         nativeDiagnosticPanel.setPadding(dp(12), dp(8), dp(12), dp(8));
         nativeDiagnosticPanel.setBackgroundColor(Color.rgb(255, 249, 220));
         nativeDiagnosticPanel.setElevation(dp(18));
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
-        lp.setMargins(dp(8), dp(8), dp(8), 0);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        lp.setMargins(dp(8), 0, dp(8), dp(8));
 
         TextView heading = new TextView(this);
         heading.setText("原生 Android 字体对照（此区不是网页）");

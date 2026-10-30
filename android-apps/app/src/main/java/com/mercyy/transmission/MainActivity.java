@@ -48,9 +48,14 @@ public class MainActivity extends ComponentActivity {
         settings.setDefaultTextEncodingName("UTF-8");
         settings.setTextZoom(getSystemTextZoom());
 
-        // Leave WebView's font-family defaults untouched. The HTML page uses a
-        // system UI font stack; forcing "sans-serif" here and injecting CSS below
-        // prevents the page/WebView from resolving fonts through its native defaults.
+        // Resolve generic web font families through Android's system font aliases.
+        // On Android/HarmonyOS builds that expose the selected system font through
+        // the Android font configuration, WebView can then use that same family.
+        // Keep the web page's own font-size and weight styling unchanged.
+        settings.setStandardFontFamily("sans-serif");
+        settings.setSansSerifFontFamily("sans-serif");
+        settings.setSerifFontFamily("serif");
+        settings.setFixedFontFamily("monospace");
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                 WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {

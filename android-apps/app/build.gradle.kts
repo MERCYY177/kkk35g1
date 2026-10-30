@@ -18,12 +18,17 @@ android {
     productFlavors {
         create("standard") {
             dimension = "edition"
-            resValue("string", "app_name", "传讯")
+            resValue("string", "app_name", "传讯1")
         }
         create("darkfix") {
             dimension = "edition"
             applicationIdSuffix = ".new"
-            resValue("string", "app_name", "传讯新版")
+            resValue("string", "app_name", "传讯2")
+        }
+        create("third") {
+            dimension = "edition"
+            applicationIdSuffix = ".third"
+            resValue("string", "app_name", "传讯3")
         }
     }
 

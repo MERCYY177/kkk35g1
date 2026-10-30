@@ -17265,7 +17265,7 @@ const maxHeight=Math.max(24,canvasH-margin*2);
 let best=null;
 // 从较大的字号往下试，找到完整文字能放进画布的最大字号。
 for(let fontSize=24;fontSize>=8;fontSize--){
-ctx.font=`${fontSize}px -apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Noto Sans JP",sans-serif`;
+ctx.font=`${fontSize}px sans-serif`;
 const lines=wrapCanvasText(ctx,text,maxWidth);
 const lineHeight=Math.ceil(fontSize*1.28);
 const totalHeight=lines.length*lineHeight;
@@ -17278,7 +17278,7 @@ break;
 // 极端超长文本：使用最小字号继续完整换行；若高度仍不够，再均匀压缩行高。
 if(!best){
 const fontSize=8;
-ctx.font=`${fontSize}px -apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Noto Sans JP",sans-serif`;
+ctx.font=`${fontSize}px sans-serif`;
 const lines=wrapCanvasText(ctx,text,maxWidth);
 let lineHeight=Math.ceil(fontSize*1.18);
 if(lines.length*lineHeight>maxHeight){
@@ -17303,7 +17303,7 @@ ctx.save();
 ctx.textBaseline='top';
 ctx.textAlign='left';
 const layout=calculateSafeTextLayout(ctx,t,canvasW,canvasH,margin);
-ctx.font=`${layout.fontSize}px -apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Noto Sans JP",sans-serif`;
+ctx.font=`${layout.fontSize}px sans-serif`;
 const blockW=Math.min(layout.maxWidth,Math.max(1,layout.widest));
 const blockH=Math.min(layout.maxHeight,Math.max(layout.lineHeight,layout.totalHeight));
 // 把整个文字块限制在画布内，而不是只限制第一个字符。
@@ -17488,7 +17488,7 @@ ctx.fillStyle=color;
 ctx.textAlign='center';
 ctx.textBaseline='middle';
 while(fontSize>=12){
-ctx.font=`700 ${fontSize}px -apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Noto Sans JP",sans-serif`;
+ctx.font=`700 ${fontSize}px sans-serif`;
 if(ctx.measureText(value).width<=maxWidth)break;
 fontSize-=1;
 }
@@ -22355,7 +22355,7 @@ setTimeout(function(){try{ensureRegistryForKeys();}catch(e){}},700);
 
 
 <style id="kkk35g-v104-chat1-interaction-performance-css">
-#xiaoshu-chat1-new-message-indicator{position:fixed;right:16px;bottom:calc(78px + env(safe-area-inset-bottom,0px));z-index:2400;display:none;align-items:center;justify-content:center;min-height:40px;padding:8px 14px;border:0;border-radius:999px;background:rgba(30,34,40,.92);color:#fff;font:700 13px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.2);-webkit-tap-highlight-color:transparent}
+#xiaoshu-chat1-new-message-indicator{position:fixed;right:16px;bottom:calc(78px + env(safe-area-inset-bottom,0px));z-index:2400;display:none;align-items:center;justify-content:center;min-height:40px;padding:8px 14px;border:0;border-radius:999px;background:rgba(30,34,40,.92);color:#fff;font:700 13px/1.2 sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.2);-webkit-tap-highlight-color:transparent}
 #xiaoshu-chat1-new-message-indicator.show{display:flex}
 .home-notification{touch-action:none!important}
 .notification{pointer-events:auto!important;touch-action:none!important;cursor:pointer}

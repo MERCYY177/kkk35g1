@@ -7,6 +7,7 @@ import android.provider.OpenableColumns;
 import android.os.Build;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.view.View;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
@@ -193,15 +194,29 @@ public class MainActivity extends ComponentActivity {
                 output.write(buffer, 0, count);
             }
             output.flush();
-            File old = new File(getFilesDir(), "custom-font." + ("ttf".equals(extension) ? "otf" : "ttf"));
-            if (old.exists()) old.delete();
-            if (target.exists() && !target.delete()) throw new IllegalStateException("无法替换旧字体");
-            if (!temp.renameTo(target)) throw new IllegalStateException("无法保存字体文件");
+            Typeface.createFromFile(temp);
+            File backup = new File(getFilesDir(), "custom-font.previous");
+            if (backup.exists() && !backup.delete()) throw new IllegalStateException("无法清理旧字体备份");
+            boolean hadTarget = target.exists();
+            if (hadTarget && !target.renameTo(backup)) throw new IllegalStateException("无法暂存当前字体，原字体未更改");
+            if (!temp.renameTo(target)) {
+                if (hadTarget && backup.exists()) backup.renameTo(target);
+                throw new IllegalStateException("无法保存新字体，已尝试恢复原字体");
+            }
+            File otherExtension = new File(getFilesDir(), "custom-font." + ("ttf".equals(extension) ? "otf" : "ttf"));
+            if (otherExtension.exists()) otherExtension.delete();
+            if (backup.exists()) backup.delete();
             getSharedPreferences(FONT_PREFS, MODE_PRIVATE).edit()
                     .putString("extension", extension).putString("name", displayName).apply();
             notifyFontChanged(true, displayName);
         } catch (Exception e) {
             if (temp.exists()) temp.delete();
+            File backup = new File(getFilesDir(), "custom-font.previous");
+            if (backup.exists()) {
+                File active = getCustomFontFile();
+                if (!active.exists()) backup.renameTo(active);
+                else backup.delete();
+            }
             Toast.makeText(this, "字体导入失败：" + (e.getMessage() == null ? "文件无法读取" : e.getMessage()),
                     Toast.LENGTH_LONG).show();
         }
@@ -241,12 +256,12 @@ public class MainActivity extends ComponentActivity {
             + "var style=document.createElement('style');style.id='transmission-user-font-style';document.head.appendChild(style);"
             + "function applyFont(on){style.textContent=on?\"@font-face{font-family:'TransmissionUserFont';src:url('https://app-fonts.local/fonts/current');font-display:swap;}html.transmission-custom-font body,html.transmission-custom-font body :not(i):not(svg):not(path):not(.fa):not(.fas):not(.far):not(.fab):not([class*='fa-']):not([class*='icon']){font-family:'TransmissionUserFont',sans-serif!important;}\":'';document.documentElement.classList.toggle('transmission-custom-font',!!on);}"
             + "function bridge(){return window.TransmissionNative||null;}"
-            + "function refresh(){var b=bridge(),name='';try{if(b&&b.hasCustomFont())name=b.getSavedFontName()||'已导入字体';}catch(e){}var label=document.getElementById('transmission-font-current');if(label)label.textContent=name||'系统默认字体';var remove=document.getElementById('transmission-font-remove');if(remove)remove.style.display=name?'':'none';applyFont(!!name);}"
-            + "window.__transmissionFontChanged=function(on,name){applyFont(on);refresh();var label=document.getElementById('transmission-font-current');if(label)label.textContent=on?(name||'已导入字体'):'系统默认字体';};"
+            + "function refresh(){var b=bridge(),name='';try{if(b&&b.hasCustomFont())name=b.getSavedFontName()||'已导入字体';}catch(e){}var entryLabel=document.getElementById('transmission-font-entry-current');if(entryLabel)entryLabel.textContent=name||'系统默认字体';var modalLabel=document.getElementById('transmission-font-modal-current');if(modalLabel)modalLabel.textContent=name||'系统默认字体';var remove=document.getElementById('transmission-font-remove');if(remove)remove.style.display=name?'':'none';applyFont(!!name);}"
+            + "window.__transmissionFontChanged=function(on,name){applyFont(on);refresh();var value=on?(name||'已导入字体'):'系统默认字体';var entryLabel=document.getElementById('transmission-font-entry-current');if(entryLabel)entryLabel.textContent=value;var modalLabel=document.getElementById('transmission-font-modal-current');if(modalLabel)modalLabel.textContent=value;};"
             + "function panel(){var old=document.getElementById('transmission-font-modal');if(old){old.style.display='flex';refresh();return;}var o=document.createElement('div');o.id='transmission-font-modal';o.style.cssText='position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.48);display:flex;align-items:center;justify-content:center;padding:18px;';"
-            + "o.innerHTML='<div style=\"width:min(100%,440px);max-height:85dvh;overflow:auto;border-radius:20px;background:var(--primary-bg,#fff);color:var(--text-primary,#111);padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.22);\"><div style=\"display:flex;justify-content:space-between;font-size:18px;font-weight:750;margin-bottom:16px;\"><span>字体设置</span><button id=\"transmission-font-close\" style=\"border:0;background:transparent;color:inherit;font-size:22px;\">×</button></div><div style=\"padding:14px;border-radius:14px;background:var(--secondary-bg,#f5f5f5);margin-bottom:14px;\"><div style=\"font-size:12px;color:var(--text-secondary,#777);margin-bottom:6px;\">当前字体</div><div id=\"transmission-font-current\" style=\"font-weight:700;overflow-wrap:anywhere;\">系统默认字体</div><div style=\"font-size:15px;line-height:1.8;margin-top:12px;\">你好，今天想和你聊些什么？<br>字体预览：Aa 你好 123</div></div><button id=\"transmission-font-import\" style=\"width:100%;padding:13px;border:0;border-radius:12px;background:var(--accent-color,#5f8ff7);color:white;font-size:15px;font-weight:700;\">＋ 导入 TTF / OTF 字体</button><button id=\"transmission-font-remove\" style=\"display:none;width:100%;padding:12px;margin-top:9px;border:1px solid var(--border-color,#ddd);border-radius:12px;background:transparent;color:var(--text-primary,#111);font-size:14px;\">恢复系统默认字体</button><div style=\"font-size:11px;color:var(--text-secondary,#777);line-height:1.6;margin-top:12px;\">字体仅保存在本应用内，不会上传网络。支持 .ttf 和 .otf，单个文件最大 50 MB。</div></div>';"
+            + "o.innerHTML='<div style=\"width:min(100%,440px);max-height:85dvh;overflow:auto;border-radius:20px;background:var(--primary-bg,#fff);color:var(--text-primary,#111);padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.22);\"><div style=\"display:flex;justify-content:space-between;font-size:18px;font-weight:750;margin-bottom:16px;\"><span>字体设置</span><button id=\"transmission-font-close\" style=\"border:0;background:transparent;color:inherit;font-size:22px;\">×</button></div><div style=\"padding:14px;border-radius:14px;background:var(--secondary-bg,#f5f5f5);margin-bottom:14px;\"><div style=\"font-size:12px;color:var(--text-secondary,#777);margin-bottom:6px;\">当前字体</div><div id=\"transmission-font-modal-current\" style=\"font-weight:700;overflow-wrap:anywhere;\">系统默认字体</div><div style=\"font-size:15px;line-height:1.8;margin-top:12px;\">你好，今天想和你聊些什么？<br>字体预览：Aa 你好 123</div></div><button id=\"transmission-font-import\" style=\"width:100%;padding:13px;border:0;border-radius:12px;background:var(--accent-color,#5f8ff7);color:white;font-size:15px;font-weight:700;\">＋ 导入 TTF / OTF 字体</button><button id=\"transmission-font-remove\" style=\"display:none;width:100%;padding:12px;margin-top:9px;border:1px solid var(--border-color,#ddd);border-radius:12px;background:transparent;color:var(--text-primary,#111);font-size:14px;\">恢复系统默认字体</button><div style=\"font-size:11px;color:var(--text-secondary,#777);line-height:1.6;margin-top:12px;\">字体仅保存在本应用内，不会上传网络。支持 .ttf 和 .otf，单个文件最大 50 MB。</div></div>';"
             + "document.body.appendChild(o);o.addEventListener('click',function(e){if(e.target===o)o.remove();});document.getElementById('transmission-font-close').onclick=function(){o.remove();};document.getElementById('transmission-font-import').onclick=function(){var b=bridge();if(b)b.chooseFont();};document.getElementById('transmission-font-remove').onclick=function(){var b=bridge();if(b)b.removeFont();};refresh();}"
-            + "function addEntry(){var body=document.querySelector('#xiaoshu-settings-hub-modal .xs-settings-body');if(!body||document.getElementById('transmission-font-section'))return;var section=document.createElement('section');section.id='transmission-font-section';section.className='xs-settings-section';section.innerHTML='<div class=\"xs-settings-section-title\">显示与字体</div><div class=\"xs-settings-list\"><button type=\"button\" class=\"xs-settings-row\" id=\"transmission-font-open\"><span class=\"xs-settings-icon\"><i class=\"fas fa-font\"></i></span><span style=\"min-width:0\"><span style=\"display:block;font-weight:700\">自定义字体</span><span id=\"transmission-font-current\" style=\"display:block;font-size:12px;color:var(--text-secondary,#777);margin-top:3px\">系统默认字体</span></span><span>›</span></button></div>';body.appendChild(section);document.getElementById('transmission-font-open').onclick=panel;refresh();}"
+            + "function addEntry(){var body=document.querySelector('#xiaoshu-settings-hub-modal .xs-settings-body');if(!body||document.getElementById('transmission-font-section'))return;var section=document.createElement('section');section.id='transmission-font-section';section.className='xs-settings-section';section.innerHTML='<div class=\"xs-settings-section-title\">显示与字体</div><div class=\"xs-settings-list\"><button type=\"button\" class=\"xs-settings-row\" id=\"transmission-font-open\"><span class=\"xs-settings-icon\"><i class=\"fas fa-font\"></i></span><span style=\"min-width:0\"><span style=\"display:block;font-weight:700\">自定义字体</span><span id=\"transmission-font-entry-current\" style=\"display:block;font-size:12px;color:var(--text-secondary,#777);margin-top:3px\">系统默认字体</span></span><span>›</span></button></div>';body.appendChild(section);document.getElementById('transmission-font-open').onclick=panel;refresh();}"
             + "new MutationObserver(addEntry).observe(document.documentElement,{childList:true,subtree:true});addEntry();try{var b=bridge();if(b&&b.hasCustomFont())applyFont(true);}catch(e){}"
             + "})();";
 

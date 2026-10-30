@@ -3,6 +3,9 @@ package com.mercyy.transmission;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.content.res.Configuration;
+import android.graphics.Color;
+import android.view.View;
 import android.os.Bundle;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -25,8 +28,7 @@ public class MainActivity extends ComponentActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(getColor(android.R.color.black));
-        getWindow().setNavigationBarColor(getColor(android.R.color.black));
+        applySystemBars();
 
         FrameLayout root = new FrameLayout(this);
         webView = new WebView(this);
@@ -52,10 +54,7 @@ public class MainActivity extends ComponentActivity {
         // On Android/HarmonyOS builds that expose the selected system font through
         // the Android font configuration, WebView can then use that same family.
         // Keep the web page's own font-size and weight styling unchanged.
-        settings.setStandardFontFamily("sans-serif");
-        settings.setSansSerifFontFamily("sans-serif");
-        settings.setSerifFontFamily("serif");
-        settings.setFixedFontFamily("monospace");
+        applySystemFontFamilies(settings);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                 WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
@@ -96,6 +95,36 @@ public class MainActivity extends ComponentActivity {
         });
     }
 
+    /** Use Android generic aliases so WebView resolves the active system font configuration. */
+    private void applySystemFontFamilies(WebSettings settings) {
+        settings.setStandardFontFamily("sans-serif");
+        settings.setSansSerifFontFamily("sans-serif");
+        settings.setSerifFontFamily("serif");
+        settings.setFixedFontFamily("monospace");
+    }
+
+    /** Keep native system bars in step with the current Android light/dark appearance. */
+    private void applySystemBars() {
+        boolean dark = (getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        int barColor = Color.parseColor(dark ? "#121212" : "#f9f9f9");
+        getWindow().setStatusBarColor(barColor);
+        getWindow().setNavigationBarColor(barColor);
+        View decor = getWindow().getDecorView();
+        int flags = decor.getSystemUiVisibility();
+        int lightFlags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            lightFlags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        if (dark) flags &= ~lightFlags;
+        else flags |= lightFlags;
+        decor.setSystemUiVisibility(flags);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            getWindow().setStatusBarContrastEnforced(false);
+            getWindow().setNavigationBarContrastEnforced(false);
+        }
+    }
+
     /** Mirrors Android's font-size/accessibility scaling in the embedded WebView. */
     private int getSystemTextZoom() {
         float scale = getResources().getConfiguration().fontScale;
@@ -106,8 +135,11 @@ public class MainActivity extends ComponentActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        applySystemBars();
         if (webView != null) {
-            webView.getSettings().setTextZoom(getSystemTextZoom());
+            WebSettings settings = webView.getSettings();
+            applySystemFontFamilies(settings);
+            settings.setTextZoom(getSystemTextZoom());
         }
     }
 

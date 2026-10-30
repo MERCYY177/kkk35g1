@@ -1,4 +1,4 @@
-name: Build Transmission Android Apps
+name: Build Three Transmission Android Apps
 
 on:
   push:
@@ -48,28 +48,31 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Build both APKs
+      - name: Build all three APKs
         working-directory: android-apps
-        run: gradle --no-daemon :app:assembleStandardDebug :app:assembleDarkfixDebug
+        run: gradle --no-daemon :app:assembleStandardDebug :app:assembleDarkfixDebug :app:assembleThirdDebug
 
       - name: Prepare and verify APK files
         run: |
           set -eux
           mkdir -p release-apks
-          cp android-apps/app/build/outputs/apk/standard/debug/app-standard-debug.apk release-apks/传讯.apk
-          cp android-apps/app/build/outputs/apk/darkfix/debug/app-darkfix-debug.apk release-apks/传讯新版.apk
-          test -s release-apks/传讯.apk
-          test -s release-apks/传讯新版.apk
+          cp android-apps/app/build/outputs/apk/standard/debug/app-standard-debug.apk release-apks/传讯1.apk
+          cp android-apps/app/build/outputs/apk/darkfix/debug/app-darkfix-debug.apk release-apks/传讯2.apk
+          cp android-apps/app/build/outputs/apk/third/debug/app-third-debug.apk release-apks/传讯3.apk
+          test -s release-apks/传讯1.apk
+          test -s release-apks/传讯2.apk
+          test -s release-apks/传讯3.apk
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          "$APKSIGNER" verify --verbose --print-certs release-apks/传讯.apk
-          "$APKSIGNER" verify --verbose --print-certs release-apks/传讯新版.apk
+          "$APKSIGNER" verify --verbose --print-certs release-apks/传讯1.apk
+          "$APKSIGNER" verify --verbose --print-certs release-apks/传讯2.apk
+          "$APKSIGNER" verify --verbose --print-certs release-apks/传讯3.apk
           sha256sum release-apks/*.apk | tee release-apks/SHA256SUMS.txt
           ls -lh release-apks
 
       - name: Upload verified APKs
         uses: actions/upload-artifact@v4
         with:
-          name: 传讯-已验证安装包
+          name: 传讯1-2-3-已验证安装包
           path: release-apks/*
           if-no-files-found: error
           retention-days: 30

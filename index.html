@@ -5572,9 +5572,41 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                     playSound('message');
 
                     if (shouldSendSticker) {
-                        const randomSticker = enabledStickerPool[Math.floor(Math.random() * enabledStickerPool.length)];
-                        const randomStickerId = window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.register === 'function' ? window.xiaoshuStickerStore.register(randomSticker) : '';
+                        // 表情只在真正发送时从权威共享池重新抽取。
+                        // 回复延迟期间可能发生删除/隐藏，不能沿用本轮开始时的旧快照或预先登记的 stickerId。
                         xsScheduleConversationTask(__xsReplyConversation, () => {
+                            let liveStickerPool = [];
+                            try {
+                                if (window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.getPool === 'function') {
+                                    liveStickerPool = window.xiaoshuStickerStore.getPool() || [];
+                                } else if (typeof window.xiaoshuGetSharedStickerPool === 'function') {
+                                    liveStickerPool = window.xiaoshuGetSharedStickerPool() || [];
+                                } else {
+                                    liveStickerPool = Array.isArray(window._stickerLibrary) ? window._stickerLibrary.slice() : [];
+                                }
+                            } catch (_liveStickerPoolError) {
+                                liveStickerPool = [];
+                            }
+                            liveStickerPool = Array.from(new Set((Array.isArray(liveStickerPool) ? liveStickerPool : []).filter(Boolean)));
+                            if (!liveStickerPool.length) return;
+
+                            const randomSticker = liveStickerPool[Math.floor(Math.random() * liveStickerPool.length)];
+                            // 最终登记前再确认资源仍属于当前共享池，避免删除与发送交错时发出失效表情。
+                            let finalStickerPool = [];
+                            try {
+                                finalStickerPool = window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.getPool === 'function'
+                                    ? window.xiaoshuStickerStore.getPool() || []
+                                    : (typeof window.xiaoshuGetSharedStickerPool === 'function'
+                                        ? window.xiaoshuGetSharedStickerPool() || []
+                                        : liveStickerPool);
+                            } catch (_finalStickerPoolError) {
+                                finalStickerPool = [];
+                            }
+                            if (!Array.isArray(finalStickerPool) || !finalStickerPool.includes(randomSticker)) return;
+
+                            const randomStickerId = window.xiaoshuStickerStore && typeof window.xiaoshuStickerStore.register === 'function'
+                                ? window.xiaoshuStickerStore.register(randomSticker) : '';
+                            if (!randomStickerId) return;
                             addMessage({
                                 id: Date.now() + i + 2000,
                                 sender: settings.partnerName || '对方',

@@ -9,6 +9,8 @@ permissions:
   id-token: write
 jobs:
   deploy:
+    # Safety guard: this Pages deployment must never run from review/feature branches.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

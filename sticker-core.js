@@ -81,6 +81,7 @@
   root.__xiaoshuStickerDeleteGuardV1 = true;
 
   var STORE_KEY_PREFIX = 'xiaoshu_deleted_upload_hashes_v1_';
+  var HIDDEN_KEY = 'disabledStickerItems';
   var deleted = new Set();
   var loadedKey = '';
   var norm = function (value) { return String(value == null ? '' : value).trim(); };
@@ -95,9 +96,33 @@
     sid = sid.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120) || 'unscoped';
     return STORE_KEY_PREFIX + sid;
   }
-  function loadDeleted() {
+  function addValidDeletedValues(values) {
+    if (!Array.isArray(values)) return;
+    values.forEach(function (value) {
+      if (typeof value === 'string' && /^stk_[a-z0-9_]+$/i.test(value)) deleted.add(value);
+    });
+  }
+  function loadDeleted(forceRefresh) {
     var key = sessionKey();
-    if (key === loadedKey) return;
+    if (key === loadedKey) {
+      // A second browser tab has its own in-memory Set. Critical operations refresh
+      // from localStorage so a deletion in the other tab takes effect immediately.
+      if (forceRefresh) {
+        try {
+          var currentRaw = root.localStorage && root.localStorage.getItem(key);
+          // A missing key can also mean storage is unavailable; preserve the in-memory
+          // fail-closed tombstones in that case. An explicit [] is authoritative.
+          if (currentRaw != null) {
+            var currentValues = JSON.parse(currentRaw);
+            if (Array.isArray(currentValues)) {
+              deleted.clear();
+              addValidDeletedValues(currentValues);
+            }
+          }
+        } catch (_) {}
+      }
+      return;
+    }
 
     // Keep tombstones created before the session ID finished initializing.
     // Otherwise a switch from the temporary "_unscoped" key clears those
@@ -109,9 +134,7 @@
     try {
       var raw = root.localStorage && root.localStorage.getItem(key);
       var values = raw ? JSON.parse(raw) : [];
-      if (Array.isArray(values)) values.forEach(function (value) {
-        if (typeof value === 'string' && /^stk_[a-z0-9_]+$/i.test(value)) deleted.add(value);
-      });
+      addValidDeletedValues(values);
     } catch (_) {}
 
     // Migrate only from the temporary unscoped key to the resolved key.
@@ -126,27 +149,55 @@
   function hash(src) {
     try { return root.XiaoshuStickerCore && root.XiaoshuStickerCore.stickerId(norm(src)); } catch (_) { return ''; }
   }
-  function isDeleted(src) {
-    loadDeleted();
+  function isDeletedLoaded(src) {
     var id = hash(src);
     return !!id && deleted.has(id);
   }
+  function isDeleted(src) {
+    loadDeleted(true);
+    return isDeletedLoaded(src);
+  }
+  function hiddenSourcesFromStorage() {
+    var result = new Set();
+    try {
+      var raw = root.localStorage && root.localStorage.getItem(HIDDEN_KEY);
+      var values = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(values)) values.forEach(function (value) {
+        value = norm(value);
+        if (value) result.add(value);
+      });
+    } catch (_) {}
+    return result;
+  }
   function saveDeleted() {
-    try { if (root.localStorage) root.localStorage.setItem(loadedKey || sessionKey(), JSON.stringify(Array.from(deleted))); } catch (error) {
-      try { if (root.console && root.console.warn) root.console.warn('[表情删除保护] 删除标记保存失败，当前页面内仍会阻止恢复', error); } catch (_) {}
+    try {
+      if (!root.localStorage || typeof root.localStorage.setItem !== 'function' || typeof root.localStorage.getItem !== 'function') return false;
+      var key = loadedKey || sessionKey();
+      var payload = JSON.stringify(Array.from(deleted));
+      root.localStorage.setItem(key, payload);
+      return root.localStorage.getItem(key) === payload;
+    } catch (error) {
+      try { if (root.console && root.console.warn) root.console.warn('[表情删除保护] 删除标记保存失败；为避免另一标签页仍可发送，本次删除将被取消', error); } catch (_) {}
+      return false;
     }
   }
   function markDeleted(src) {
-    loadDeleted();
+    loadDeleted(true);
     var id = hash(src);
-    if (!id) return;
+    if (!id) return false;
+    var existed = deleted.has(id);
     deleted.add(id);
-    saveDeleted();
+    if (saveDeleted()) return true;
+    if (!existed) deleted.delete(id);
+    return false;
   }
   function unmarkDeleted(src) {
-    loadDeleted();
+    loadDeleted(true);
     var id = hash(src);
-    if (id && deleted.delete(id)) saveDeleted();
+    if (!id || !deleted.delete(id)) return false;
+    if (saveDeleted()) return true;
+    deleted.add(id);
+    return false;
   }
   function matches(list, src) {
     src = norm(src);
@@ -170,29 +221,67 @@
     var rawSync = api.sync.bind(api);
     var rawOpenAdmin = api.openAdmin.bind(api);
     var rawAddFiles = api.addFiles.bind(api);
+    var rawRegister = typeof api.register === 'function' ? api.register.bind(api) : null;
 
     function purgeDeletedUploads() {
-      loadDeleted();
+      loadDeleted(true);
       // Do not erase legacy IndexedDB keys before the controller has finished its first migration read.
       try {
         if (api.getMigrationState && !api.getMigrationState().hydrated) return 0;
       } catch (_) { return 0; }
-      var stale = rawGetUploads().filter(function (src) { return isDeleted(src); });
+      var stale = rawGetUploads().filter(function (src) { return isDeletedLoaded(src); });
       stale.forEach(function (src) { rawRemoveUpload(src, false); });
       return stale.length;
     }
 
     api.getUploads = function () {
-      loadDeleted();
-      return rawGetUploads().filter(function (src) { return !isDeleted(src); });
+      loadDeleted(true);
+      return rawGetUploads().filter(function (src) { return !isDeletedLoaded(src); });
     };
     api.getPool = function () {
-      loadDeleted();
-      return rawGetPool().filter(function (src) { return !isDeleted(src); });
+      loadDeleted(true);
+      var hiddenSources = hiddenSourcesFromStorage();
+      return rawGetPool().filter(function (src) {
+        src = norm(src);
+        return !!src && !isDeletedLoaded(src) && !hiddenSources.has(src);
+      });
+    };
+    if (rawRegister) {
+      // Registration creates the message-resource mapping used by all send paths.
+      // Only allow sources that are still in the live shared pool. Internal history
+      // migration keeps using the controller's private registerMessageResource(), so
+      // old messages can still be migrated without re-enabling a deleted sticker.
+      api.register = function (src) {
+        src = norm(src);
+        loadDeleted(true);
+        if (!src || isDeletedLoaded(src)) return '';
+        try {
+          if (api.getMigrationState && !api.getMigrationState().hydrated) return '';
+        } catch (_) { return ''; }
+        if (!matches(api.getPool(), src)) return '';
+        return rawRegister(src);
+      };
+    }
+    api.markUploadsDeleted = function (sources) {
+      loadDeleted(true);
+      var available = new Set(rawGetUploads().map(norm));
+      var requested = new Set();
+      (Array.isArray(sources) ? sources : []).forEach(function (src) {
+        src = norm(src);
+        var id = src && available.has(src) ? hash(src) : '';
+        if (id) requested.add(id);
+      });
+      if (!requested.size) return true;
+      var before = new Set(deleted);
+      requested.forEach(function (id) { deleted.add(id); });
+      if (saveDeleted()) return true;
+      deleted.clear();
+      before.forEach(function (id) { deleted.add(id); });
+      return false;
     };
     api.removeUpload = function (src, ask) {
       src = norm(src);
-      loadDeleted();
+      loadDeleted(true);
       var exists = matches(rawGetUploads(), src);
       if (!exists) return rawRemoveUpload(src, ask);
       if (ask !== false) {
@@ -200,32 +289,38 @@
         try { ok = root.confirm('删除这张上传表情？'); } catch (_) {}
         if (!ok) return false;
       }
-      markDeleted(src);
+      if (!markDeleted(src)) {
+        try { if (typeof root.showNotification === 'function') root.showNotification('无法保存表情删除保护，已取消本次删除；请检查浏览器存储权限后重试', 'warning', 2600); } catch (_) {}
+        return false;
+      }
       var removed = rawRemoveUpload(src, false);
       if (!removed) unmarkDeleted(src);
       return removed;
     };
     api.clearUploads = function (ask) {
-      loadDeleted();
+      loadDeleted(true);
       var list = rawGetUploads();
       if (ask !== false) {
         var ok = false;
         try { ok = root.confirm('清空全部上传表情包？内置表情不会受影响。'); } catch (_) {}
         if (!ok) return false;
       }
-      list.forEach(markDeleted);
+      if (!api.markUploadsDeleted(list)) {
+        try { if (typeof root.showNotification === 'function') root.showNotification('无法保存表情删除保护，已取消清空；请检查浏览器存储权限后重试', 'warning', 2600); } catch (_) {}
+        return false;
+      }
       return rawClearUploads(false);
     };
     api.hide = function (src, silent) {
       src = norm(src);
-      loadDeleted();
+      loadDeleted(true);
       if (matches(rawGetUploads(), src)) return api.removeUpload(src, false);
       return rawHide(src, silent);
     };
     api.send = function (src) {
       src = norm(src);
-      loadDeleted();
-      if (isDeleted(src) || !matches(api.getPool(), src)) {
+      loadDeleted(true);
+      if (isDeletedLoaded(src) || !matches(api.getPool(), src)) {
         try {
           if (typeof root.showNotification === 'function') root.showNotification('这张表情已删除或隐藏，请重新打开表情面板再选择', 'info', 1800);
         } catch (_) {}
@@ -238,7 +333,7 @@
       return rawSync.apply(api, arguments);
     };
     api.hydrate = function () {
-      loadDeleted();
+      loadDeleted(true);
       return Promise.resolve(rawHydrate.apply(api, arguments)).then(function (result) {
         var removed = purgeDeletedUploads();
         if (removed) rawSync();
@@ -253,7 +348,12 @@
       purgeDeletedUploads();
       var before = new Set(rawGetUploads().map(norm));
       return Promise.resolve(rawAddFiles.apply(api, arguments)).then(function (result) {
-        rawGetUploads().forEach(function (src) { if (!before.has(norm(src))) unmarkDeleted(src); });
+        var restoredDeletedSource = false;
+        rawGetUploads().forEach(function (src) {
+          if (!before.has(norm(src)) && unmarkDeleted(src)) restoredDeletedSource = true;
+        });
+        // Re-publish only when a byte-identical image was intentionally uploaded again.
+        if (restoredDeletedSource) rawSync();
         return result;
       });
     };
@@ -375,6 +475,25 @@
           root.xiaoshuGetSharedStickerPool = api.getPool;
           root.xiaoshuSendSharedSticker = api.send;
           root.xiaoshuHideStickerNow = api.hide;
+        });
+      }
+      if (root.addEventListener && !root.__xsDeleteGuardStorageBound) {
+        root.__xsDeleteGuardStorageBound = true;
+        root.addEventListener('storage', function (event) {
+          if (!event) return;
+          var key = sessionKey();
+          if (event.key !== key && event.key !== HIDDEN_KEY) return;
+          if (event.key === key) {
+            loadDeleted(true);
+            // Remove the stale upload from this tab's in-memory controller as well.
+            // The guarded pool/register checks below remain authoritative even before
+            // this asynchronous storage event is delivered.
+            purgeDeletedUploads();
+          }
+          try {
+            var changedEvent = typeof root.Event === 'function' ? new root.Event('stickerLibraryUpdated') : null;
+            if (changedEvent) root.dispatchEvent(changedEvent);
+          } catch (_) {}
         });
       }
     } catch (_) {}

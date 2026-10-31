@@ -1,0 +1,55 @@
+name: Repair branch read-only validation
+
+on:
+  push:
+    branches:
+      - repair/backup-export-readonly
+  pull_request:
+    branches:
+      - repair/backup-export-readonly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-readonly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/repair/backup-export-readonly' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Run JavaScript regression tests
+        shell: bash
+        run: |
+          shopt -s nullglob
+          tests=(tests/*.test.js)
+          if (("${#tests[@]}" > 0)); then
+            node --test "${tests[@]}"
+          else
+            echo "No JavaScript tests found"
+          fi
+
+      - name: Check embedded HTML scripts
+        run: python tests/check_html_scripts.py
+
+      - name: Audit local Android project packaging
+        run: python tests/audit_local_android_project.py
+
+      - name: Check patch whitespace
+        run: git diff --check

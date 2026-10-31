@@ -1,69 +1,37 @@
-name: Deploy sticker deletion fix
+name: Deploy GitHub Pages (deployment only)
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout reviewed main source
+        uses: actions/checkout@v4
         with:
           ref: main
-      - name: Patch index
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path("index.html")
-          s=p.read_text(encoding="utf-8")
-          pairs=[
-          ("{ key: 'myStickerLibrary',       val: () => localforage.setItem(getStorageKey('myStickerLibrary'), myStickerLibrary) },",
-           "{ key: 'myStickerLibrary',       val: () => { const store = window.xiaoshuStickerStore; const uploads = store && typeof store.getUploads === 'function' ? store.getUploads() : myStickerLibrary; return localforage.setItem(getStorageKey('myStickerLibrary'), uploads); } },"),
-          ("var pendingUploadPersist = false;\nvar sessionReadyTimer = null;",
-           "var pendingUploadPersist = false;\nvar canonicalUploadWriteChain = Promise.resolve();\nvar sessionReadyTimer = null;"),
-          ("      var guarded=function(key,value){\n        if(isLegacyGroupKey(key)){",
-           "      var guarded=function(key,value){\n        key=String(key||'');\n        if(isLegacyGroupKey(key)){"),
-          ("        return raw(key,value);\n      };",
-           """        var activeSid=currentSessionId();
-        var canonicalKey=activeSid?storageKey(CANONICAL_UPLOAD_NAME,activeSid):'';
-        if(canonicalKey&&key===canonicalKey){
-          if(!migrationState.hydrated||hydratedSessionId!==activeSid)return Promise.resolve(value);
-          canonicalUploadWriteChain=canonicalUploadWriteChain.catch(function(){return null;}).then(function(){
-            if(currentSessionId()!==activeSid||!migrationState.hydrated||hydratedSessionId!==activeSid)return null;
-            return raw(key,uploads.slice());
-          });
-          return canonicalUploadWriteChain.then(function(){return uploads.slice();});
-        }
-        return raw(key,value);
-      };"""),
-          ("if(Array.isArray(canonical))uploads=withoutBuiltins(uploads.concat(canonical));",
-           "if(Array.isArray(canonical)){\nuploads=withoutBuiltins(canonical);\n}else{\n// One-time migration only when canonical key is absent."),
-          ("try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}\n}\nvar hkeys=[CANONICAL_HIDDEN_KEY]",
-           "try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}\n}\n}\nvar hkeys=[CANONICAL_HIDDEN_KEY]")
-          ]
-          for old,new in pairs:
-            n=s.count(old)
-            if n != 1:
-              raise SystemExit("Unsafe patch: expected one match, got %s for %r"%(n,old[:80]))
-            s=s.replace(old,new,1)
-          p.write_text(s,encoding="utf-8")
-          print("Patch applied")
-          PY
-          git diff --check
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html
-          git commit -m "Prevent deleted stickers from returning through stale saves"
-          git push origin HEAD:main
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload website artifact (no source edits)
+        uses: actions/upload-pages-artifact@v3
         with:
           path: .
-      - uses: actions/deploy-pages@v4
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

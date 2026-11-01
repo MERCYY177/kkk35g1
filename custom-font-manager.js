@@ -75,11 +75,23 @@
     return dbPromise;
   }
 
-  function transactionDone(tx) {
+  function transactionDone(tx, timeoutMs) {
     return new Promise(function (resolve, reject) {
-      tx.oncomplete = function () { resolve(true); };
-      tx.onerror = function () { reject(tx.error || error('字体数据写入失败')); };
-      tx.onabort = function () { reject(tx.error || error('字体数据写入已取消')); };
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        try { tx.abort(); } catch (_) {}
+        finish(reject, error('字体数据库事务超时，已请求整体中止'));
+      }, Number(timeoutMs) > 0 ? Number(timeoutMs) : 60000);
+      function finish(callback, value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        callback(value);
+      }
+      tx.oncomplete = function () { finish(resolve, true); };
+      tx.onerror = function () { finish(reject, tx.error || error('字体数据事务失败')); };
+      tx.onabort = function () { finish(reject, tx.error || error('字体数据事务已中止')); };
     });
   }
 

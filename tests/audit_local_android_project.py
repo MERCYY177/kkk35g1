@@ -7,6 +7,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = (ROOT / "index.html").read_text(encoding="utf-8")
 FONT = (ROOT / "custom-font-manager.js").read_text(encoding="utf-8")
+CODEC = (ROOT / "font-backup-codec.js").read_text(encoding="utf-8")
 ACTIVITY = (ROOT / "android-apps/app/src/main/java/com/mercyy/transmission/MainActivity.java").read_text(encoding="utf-8")
 GRADLE = (ROOT / "android-apps/app/build.gradle.kts").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github/workflows/build-transmission-apps.yml").read_text(encoding="utf-8")
@@ -19,6 +20,12 @@ checks = {
     "font manager uses IndexedDB": 'indexedDB.open(DB_NAME, DB_VERSION)' in FONT,
     "font manager stores Blob data and metadata": 'blob: blob' in FONT and 'mimeType: MIME_BY_FORMAT[format]' in FONT and "key: CURRENT_KEY" in FONT,
     "font manager validates all four formats": all(x in FONT for x in ["'ttf'", "'otf'", "'woff'", "'woff2'"]),
+    "font backup codec is loaded and provides JSON/ZIP binary round trips": '<script src="font-backup-codec.js"></script>' in INDEX and all(x in CODEC for x in ["toJsonSnapshot", "fromJsonSnapshot", "toZipSnapshot", "fromZipSnapshot"]),
+    "V99 formal backup captures and preflights font snapshots": "payload.fontBackup=await timeoutPromise(global.ChuanXunFontManager.exportBackupSnapshot()" in INDEX and "validateBackupSnapshot(data.fontBackup)" in INDEX,
+    "V99 cross-database restore has font rollback": "fontManager.restoreBackupSnapshot(clean.fontBackup)" in INDEX and "fontManager.rollbackBackupRestore(fontBefore,fontRestore.addedIds)" in INDEX,
+    "emergency core explicitly excludes independent font library": "fontBackupStatus:'not-included-core-stage'" in INDEX,
+    "emergency full rescue requires validated font snapshot": "full.complete=errors.length===0&&!missing&&!!parts[1]" in INDEX,
+    "rescue core/full save use shared native bridge with isolated panel ID": "v99-emergency-rescue-panel" in INDEX and INDEX.count("global.xiaoshuOfferBlobDownload(") >= 2,
     "font manager re-applies and broadcasts changes": 'BroadcastChannel' in FONT and 'restoreCurrent' in FONT,
     "packaged app skips legacy remote font URLs": "location.hostname !== 'appassets.androidplatform.net'" in INDEX,
     "Android entry uses WebViewAssetLoader": 'WebViewAssetLoader.Builder()' in ACTIVITY and 'HOME_URL = "https://" + APP_HOST' in ACTIVITY,

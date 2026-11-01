@@ -80,11 +80,12 @@
   }
 
   function getMeta(key) {
-    return openDatabase().then(function (db) {
+    return openDatabase().then(async function (db) {
       var tx = db.transaction(META_STORE, 'readonly');
-      return requestValue(tx.objectStore(META_STORE).get(key)).then(function (record) {
-        return record ? record.value : null;
-      });
+      var done = transactionDone(tx);
+      var record = await requestValue(tx.objectStore(META_STORE).get(key));
+      await done;
+      return record ? record.value : null;
     });
   }
 
@@ -98,18 +99,22 @@
   }
 
   function getFont(id) {
-    return openDatabase().then(function (db) {
+    return openDatabase().then(async function (db) {
       var tx = db.transaction(FONT_STORE, 'readonly');
-      return requestValue(tx.objectStore(FONT_STORE).get(id));
+      var done = transactionDone(tx);
+      var record = await requestValue(tx.objectStore(FONT_STORE).get(id));
+      await done;
+      return record;
     });
   }
 
   function listFonts() {
-    return openDatabase().then(function (db) {
+    return openDatabase().then(async function (db) {
       var tx = db.transaction(FONT_STORE, 'readonly');
-      return requestValue(tx.objectStore(FONT_STORE).getAll()).then(function (items) {
-        return (items || []).sort(function (a, b) { return Number(b.createdAt || 0) - Number(a.createdAt || 0); });
-      });
+      var done = transactionDone(tx);
+      var items = await requestValue(tx.objectStore(FONT_STORE).getAll());
+      await done;
+      return (items || []).sort(function (a, b) { return Number(b.createdAt || 0) - Number(a.createdAt || 0); });
     });
   }
 

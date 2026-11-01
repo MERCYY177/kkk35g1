@@ -31,7 +31,7 @@ test('formal JSON and ZIP exporters and import parsers preserve font binaries sy
   assert.match(index, /fromZipSnapshot\(data\.fontBackup,zip\)/);
   assert.match(codec, /zip\.file\(path, bytes, \{ binary: true, createFolders: false \}\)/);
   assert.match(codec, /verifyBytes\(bytes, meta\)/);
-  assert.match(codec, /fonts\/font-\[0-9\]\{5\}/);
+  assert.ok(codec.includes("fonts\\/font-[0-9]{5}"));
 });
 
 test('V99 restore snapshots both databases and compensates both after failure', () => {

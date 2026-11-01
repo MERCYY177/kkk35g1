@@ -41,6 +41,9 @@ jobs:
       - name: Check embedded JavaScript syntax
         run: python3 tests/check_html_scripts.py
 
+      - name: Install isolated IndexedDB test adapter
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund fake-indexeddb@6.2.4
+
       - name: Run all Node regression tests
         run: node --test tests/*.test.js
 

@@ -629,7 +629,7 @@
       schema: 'chuanxun-font-library-backup',
       formatVersion: 1,
       currentFontId: values[1] && values[1].value != null ? String(values[1].value) : null,
-      fonts: (values[0] || []).map(function (record) {
+      fonts: await Promise.all((values[0] || []).map(async function (record) {
         return {
           id: record.id,
           name: record.name,
@@ -638,9 +638,10 @@
           mimeType: record.mimeType,
           size: record.size,
           blob: record.blob,
-          createdAt: record.createdAt
+          createdAt: record.createdAt,
+          checksum: await checksumBlob(record.blob)
         };
-      })
+      }))
     };
     return validateBackupSnapshot(snapshot);
   }

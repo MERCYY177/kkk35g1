@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
-const { IDBFactory } = require('fake-indexeddb');
+const { IDBFactory, IDBObjectStore } = require('fake-indexeddb');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'custom-font-manager.js'), 'utf8');
 
@@ -175,6 +175,33 @@ test('font rollback removes only this restore operation additions and restores p
   const after = await targetContext.exportBackupSnapshot();
   assert.deepEqual(after.fonts.map(x => x.id), ['font-old']);
   assert.equal(after.currentFontId, 'font-old');
+});
+
+
+test('a synchronous IndexedDB add failure aborts the entire font restore transaction', async () => {
+  const sourceContext = loadManager();
+  const targetContext = loadManager();
+  const records = [
+    makeFontRecord('font-ttf', 'ttf'),
+    makeFontRecord('font-otf', 'otf', 'OTTO'),
+    makeFontRecord('font-woff', 'woff', 'wOFF'),
+    makeFontRecord('font-woff2', 'woff2', 'wOF2')
+  ];
+  await seedFonts(sourceContext.__testIndexedDB, records, 'font-woff2');
+  const snapshot = await sourceContext.exportBackupSnapshot();
+  const originalAdd = IDBObjectStore.prototype.add;
+  IDBObjectStore.prototype.add = function (record) {
+    if (this.name === 'fonts' && record && record.id === 'font-woff') throw new Error('injected synchronous add failure');
+    return originalAdd.apply(this, arguments);
+  };
+  try {
+    await assert.rejects(targetContext.restoreBackupSnapshot(snapshot), /字体库事务写入失败/);
+  } finally {
+    IDBObjectStore.prototype.add = originalAdd;
+  }
+  const after = await targetContext.exportBackupSnapshot();
+  assert.equal(after.fonts.length, 0);
+  assert.equal(after.currentFontId, null);
 });
 
 test('font snapshot validation rejects duplicate IDs, invalid formats and damaged bytes', async () => {

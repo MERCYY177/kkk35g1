@@ -1,0 +1,56 @@
+name: Phase 1 backup repair validation
+
+on:
+  push:
+    branches:
+      - repair/phase1-backup-font-rescue-20261101
+    paths:
+      - ".github/workflows/phase1-validation.yml"
+      - "index.html"
+      - "custom-font-manager.js"
+      - "tests/**"
+      - "android-apps/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout phase 1 repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: repair/phase1-backup-font-rescue-20261101
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check embedded JavaScript syntax
+        run: python3 tests/check_html_scripts.py
+
+      - name: Run all Node regression tests
+        run: node --test tests/*.test.js
+
+      - name: Audit Android packaging and font integration
+        run: python3 tests/audit_local_android_project.py
+
+      - name: Report validation scope
+        if: always()
+        run: |
+          echo "This workflow is validation-only."
+          echo "It does not build or deploy a web release."
+          echo "It does not access or modify a user's browser databases."
+          echo "Android device file-picker behavior still requires device verification."

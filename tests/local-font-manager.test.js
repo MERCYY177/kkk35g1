@@ -171,6 +171,7 @@ test('font rollback removes only this restore operation additions and restores p
   const restored = await targetContext.restoreBackupSnapshot(incoming);
   assert.deepEqual(Array.from(restored.addedIds), ['font-new']);
   await targetContext.rollbackBackupRestore(before, restored.addedIds);
+  await assert.rejects(targetContext.rollbackBackupRestore(before, ['font-old']), /拒绝回滚删除恢复前已存在的字体/);
   const after = await targetContext.exportBackupSnapshot();
   assert.deepEqual(after.fonts.map(x => x.id), ['font-old']);
   assert.equal(after.currentFontId, 'font-old');
@@ -179,7 +180,8 @@ test('font rollback removes only this restore operation additions and restores p
 test('font snapshot validation rejects duplicate IDs, invalid formats and damaged bytes', async () => {
   const context = loadManager();
   const record = makeFontRecord('font-one', 'ttf');
-  const good = { schema: 'chuanxun-font-library-backup', formatVersion: 1, currentFontId: 'font-one', fonts: [record] };
+  await seedFonts(context.__testIndexedDB, [record], 'font-one');
+  const good = await context.exportBackupSnapshot();
   assert.equal((await context.validateBackupSnapshot(good)).fonts.length, 1);
   await assert.rejects(
     context.validateBackupSnapshot({ ...good, fonts: [record, record] }),

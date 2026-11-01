@@ -141,7 +141,10 @@ test('font restore is idempotent and refuses to overwrite a conflicting existing
   await seedFonts(sourceContext.__testIndexedDB, [incoming], 'font-shared');
   const snapshot = await sourceContext.exportBackupSnapshot();
   assert.equal((await targetContext.restoreBackupSnapshot(snapshot)).added, 1);
-  const second = await targetContext.restoreBackupSnapshot(snapshot);
+  const repeatedSnapshot = structuredClone(snapshot);
+  repeatedSnapshot.fonts[0].name = 'Different display label';
+  repeatedSnapshot.fonts[0].fileName = 'renamed-shared.ttf';
+  const second = await targetContext.restoreBackupSnapshot(repeatedSnapshot);
   assert.equal(second.added, 0);
   assert.equal(second.skipped, 1);
 

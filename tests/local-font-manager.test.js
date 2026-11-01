@@ -147,7 +147,9 @@ test('font restore is idempotent and refuses to overwrite a conflicting existing
 
   const conflictContext = loadManager();
   const conflict = makeFontRecord('font-shared', 'ttf');
-  conflict.blob = new Blob([new Uint8Array(32).fill(9)], { type: 'font/ttf' });
+  const conflictingBytes = new Uint8Array(32).fill(9);
+  conflictingBytes.set([0, 1, 0, 0], 0);
+  conflict.blob = new Blob([conflictingBytes], { type: 'font/ttf' });
   await seedFonts(conflictContext.__testIndexedDB, [conflict], 'font-shared');
   await assert.rejects(
     conflictContext.restoreBackupSnapshot(snapshot),
@@ -167,7 +169,7 @@ test('font rollback removes only this restore operation additions and restores p
   const before = await targetContext.exportBackupSnapshot();
   const incoming = await sourceContext.exportBackupSnapshot();
   const restored = await targetContext.restoreBackupSnapshot(incoming);
-  assert.deepEqual(restored.addedIds, ['font-new']);
+  assert.deepEqual(Array.from(restored.addedIds), ['font-new']);
   await targetContext.rollbackBackupRestore(before, restored.addedIds);
   const after = await targetContext.exportBackupSnapshot();
   assert.deepEqual(after.fonts.map(x => x.id), ['font-old']);

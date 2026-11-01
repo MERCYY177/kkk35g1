@@ -668,9 +668,15 @@
     var tx = db.transaction([FONT_STORE, META_STORE], 'readwrite');
     var done = transactionDone(tx);
     var store = tx.objectStore(FONT_STORE);
-    removeIds.forEach(function (id) { store.delete(id); });
-    tx.objectStore(META_STORE).put({ key: CURRENT_KEY, value: currentFontId, updatedAt: Date.now() });
-    await done;
+    try {
+      removeIds.forEach(function (id) { store.delete(id); });
+      tx.objectStore(META_STORE).put({ key: CURRENT_KEY, value: currentFontId, updatedAt: Date.now() });
+      await done;
+    } catch (rollbackError) {
+      try { tx.abort(); } catch (_) {}
+      try { await done; } catch (_) {}
+      throw error('字体库回滚事务失败，整笔回滚已中止：' + (rollbackError && rollbackError.message ? rollbackError.message : String(rollbackError)));
+    }
     return { ok: true, removed: removeIds.length, currentFontId: currentFontId };
   }
 
@@ -717,7 +723,9 @@
       tx.objectStore(META_STORE).put({ key: CURRENT_KEY, value: currentFontId, updatedAt: Date.now() });
       await done;
     } catch (writeError) {
-      throw error('字体库事务写入失败，未确认恢复：' + (writeError && writeError.message ? writeError.message : String(writeError)));
+      try { tx.abort(); } catch (_) {}
+      try { await done; } catch (_) {}
+      throw error('字体库事务写入失败，已中止整笔事务：' + (writeError && writeError.message ? writeError.message : String(writeError)));
     }
     try {
       for (var j = 0; j < clean.fonts.length; j++) {

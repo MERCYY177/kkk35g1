@@ -18,7 +18,9 @@ function loadManager() {
   const window = { document, indexedDB, addEventListener() {} };
   const context = { window, console, Uint8Array, ArrayBuffer, Promise, Error, Math, Date, Blob, setTimeout, clearTimeout };
   vm.runInNewContext(source, context, { filename: 'custom-font-manager.js' });
-  return window.ChuanXunFontManager;
+  const manager = window.ChuanXunFontManager;
+  Object.defineProperty(manager, '__testIndexedDB', { value: indexedDB, enumerable: false });
+  return manager;
 }
 
 function signature(text) {
@@ -73,8 +75,8 @@ function openFontDb(indexedDB) {
   });
 }
 
-async function seedFonts(managerContext, records, currentFontId) {
-  const db = await openFontDb(managerContext.indexedDB);
+async function seedFonts(indexedDB, records, currentFontId) {
+  const db = await openFontDb(indexedDB);
   await new Promise((resolve, reject) => {
     const tx = db.transaction(['fonts', 'meta'], 'readwrite');
     records.forEach(record => tx.objectStore('fonts').put(record));
@@ -112,14 +114,14 @@ test('exports and restores all four font formats with exact binary data and curr
     makeFontRecord('font-woff', 'woff', 'wOFF'),
     makeFontRecord('font-woff2', 'woff2', 'wOF2')
   ];
-  await seedFonts(sourceContext, records, 'font-woff2');
-  const snapshot = await sourceContext.manager.exportBackupSnapshot();
+  await seedFonts(sourceContext.__testIndexedDB, records, 'font-woff2');
+  const snapshot = await sourceContext.exportBackupSnapshot();
   assert.equal(snapshot.fonts.length, 4);
   assert.equal(snapshot.currentFontId, 'font-woff2');
-  const restored = await targetContext.manager.restoreBackupSnapshot(snapshot);
+  const restored = await targetContext.restoreBackupSnapshot(snapshot);
   assert.equal(restored.added, 4);
   assert.equal(restored.skipped, 0);
-  const targetSnapshot = await targetContext.manager.exportBackupSnapshot();
+  const targetSnapshot = await targetContext.exportBackupSnapshot();
   assert.equal(targetSnapshot.currentFontId, 'font-woff2');
   assert.deepEqual(targetSnapshot.fonts.map(x => x.id).sort(), ['font-otf', 'font-ttf', 'font-woff', 'font-woff2']);
   for (const expected of snapshot.fonts) {
@@ -136,22 +138,22 @@ test('font restore is idempotent and refuses to overwrite a conflicting existing
   const sourceContext = loadManager();
   const targetContext = loadManager();
   const incoming = makeFontRecord('font-shared', 'ttf');
-  await seedFonts(sourceContext, [incoming], 'font-shared');
-  const snapshot = await sourceContext.manager.exportBackupSnapshot();
-  assert.equal((await targetContext.manager.restoreBackupSnapshot(snapshot)).added, 1);
-  const second = await targetContext.manager.restoreBackupSnapshot(snapshot);
+  await seedFonts(sourceContext.__testIndexedDB, [incoming], 'font-shared');
+  const snapshot = await sourceContext.exportBackupSnapshot();
+  assert.equal((await targetContext.restoreBackupSnapshot(snapshot)).added, 1);
+  const second = await targetContext.restoreBackupSnapshot(snapshot);
   assert.equal(second.added, 0);
   assert.equal(second.skipped, 1);
 
   const conflictContext = loadManager();
   const conflict = makeFontRecord('font-shared', 'ttf');
   conflict.blob = new Blob([new Uint8Array(32).fill(9)], { type: 'font/ttf' });
-  await seedFonts(conflictContext, [conflict], 'font-shared');
+  await seedFonts(conflictContext.__testIndexedDB, [conflict], 'font-shared');
   await assert.rejects(
-    conflictContext.manager.restoreBackupSnapshot(snapshot),
+    conflictContext.restoreBackupSnapshot(snapshot),
     /ID 冲突，拒绝覆盖/
   );
-  const after = await conflictContext.manager.exportBackupSnapshot();
+  const after = await conflictContext.exportBackupSnapshot();
   assert.equal(after.fonts.length, 1);
   assert.notEqual(after.fonts[0].checksum, snapshot.fonts[0].checksum);
 });
@@ -160,14 +162,14 @@ test('font rollback removes only this restore operation additions and restores p
   const sourceContext = loadManager();
   const targetContext = loadManager();
   const oldRecord = makeFontRecord('font-old', 'ttf');
-  await seedFonts(sourceContext, [oldRecord, makeFontRecord('font-new', 'otf', 'OTTO')], 'font-new');
-  await seedFonts(targetContext, [oldRecord], 'font-old');
-  const before = await targetContext.manager.exportBackupSnapshot();
-  const incoming = await sourceContext.manager.exportBackupSnapshot();
-  const restored = await targetContext.manager.restoreBackupSnapshot(incoming);
+  await seedFonts(sourceContext.__testIndexedDB, [oldRecord, makeFontRecord('font-new', 'otf', 'OTTO')], 'font-new');
+  await seedFonts(targetContext.__testIndexedDB, [oldRecord], 'font-old');
+  const before = await targetContext.exportBackupSnapshot();
+  const incoming = await sourceContext.exportBackupSnapshot();
+  const restored = await targetContext.restoreBackupSnapshot(incoming);
   assert.deepEqual(restored.addedIds, ['font-new']);
-  await targetContext.manager.rollbackBackupRestore(before, restored.addedIds);
-  const after = await targetContext.manager.exportBackupSnapshot();
+  await targetContext.rollbackBackupRestore(before, restored.addedIds);
+  const after = await targetContext.exportBackupSnapshot();
   assert.deepEqual(after.fonts.map(x => x.id), ['font-old']);
   assert.equal(after.currentFontId, 'font-old');
 });
@@ -176,17 +178,17 @@ test('font snapshot validation rejects duplicate IDs, invalid formats and damage
   const context = loadManager();
   const record = makeFontRecord('font-one', 'ttf');
   const good = { schema: 'chuanxun-font-library-backup', formatVersion: 1, currentFontId: 'font-one', fonts: [record] };
-  assert.equal((await context.manager.validateBackupSnapshot(good)).fonts.length, 1);
+  assert.equal((await context.validateBackupSnapshot(good)).fonts.length, 1);
   await assert.rejects(
-    context.manager.validateBackupSnapshot({ ...good, fonts: [record, record] }),
+    context.validateBackupSnapshot({ ...good, fonts: [record, record] }),
     /重复字体 ID/
   );
   await assert.rejects(
-    context.manager.validateBackupSnapshot({ ...good, fonts: [{ ...record, format: 'woff' }] }),
+    context.validateBackupSnapshot({ ...good, fonts: [{ ...record, format: 'woff' }] }),
     /格式声明与文件内容不一致/
   );
   await assert.rejects(
-    context.manager.validateBackupSnapshot({ ...good, fonts: [{ ...record, size: 99 }] }),
+    context.validateBackupSnapshot({ ...good, fonts: [{ ...record, size: 99 }] }),
     /文件大小与记录不一致/
   );
 });

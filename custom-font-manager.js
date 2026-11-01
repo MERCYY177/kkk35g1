@@ -300,7 +300,7 @@
     return openDatabase().then(function (db) {
       var tx = db.transaction([FONT_STORE, META_STORE], 'readwrite');
       var done = transactionDone(tx);
-      tx.objectStore(FONT_STORE).put(record);
+      tx.objectStore(FONT_STORE).add(record);
       tx.objectStore(META_STORE).put({ key: CURRENT_KEY, value: record.id, updatedAt: Date.now() });
       return done;
     });

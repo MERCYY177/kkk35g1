@@ -90,7 +90,7 @@
         callback(value);
       }
       tx.oncomplete = function () { finish(resolve, true); };
-      tx.onerror = function () { finish(reject, tx.error || error('字体数据事务失败')); };
+      tx.onerror = function () { var failure = tx.error || error('字体数据事务失败'); try { tx.abort(); } catch (_) {} finish(reject, failure); };
       tx.onabort = function () { finish(reject, tx.error || error('字体数据事务已中止')); };
     });
   }

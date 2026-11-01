@@ -45,6 +45,7 @@
       var request;
       try { request = global.indexedDB.open(DB_NAME, DB_VERSION); }
       catch (e) { reject(e); return; }
+      var settled = false;
       request.onupgradeneeded = function () {
         var db = request.result;
         if (!db.objectStoreNames.contains(FONT_STORE)) db.createObjectStore(FONT_STORE, { keyPath: 'id' });
@@ -52,11 +53,21 @@
       };
       request.onsuccess = function () {
         var db = request.result;
+        if (settled) { try { db.close(); } catch (_) {} return; }
+        settled = true;
         db.onversionchange = function () { try { db.close(); } catch (_) {} dbPromise = null; };
         resolve(db);
       };
-      request.onerror = function () { reject(request.error || error('打开本地字体库失败')); };
-      request.onblocked = function () { reject(error('字体库正在被其他页面升级，请关闭其他传讯页面后重试')); };
+      request.onerror = function () {
+        if (settled) return;
+        settled = true;
+        reject(request.error || error('打开本地字体库失败'));
+      };
+      request.onblocked = function () {
+        if (settled) return;
+        settled = true;
+        reject(error('字体库正在被其他页面升级，请关闭其他传讯页面后重试'));
+      };
     }).catch(function (e) {
       dbPromise = null;
       throw e;
@@ -297,12 +308,19 @@
   }
 
   function saveFontRecord(record) {
-    return openDatabase().then(function (db) {
+    return openDatabase().then(async function (db) {
       var tx = db.transaction([FONT_STORE, META_STORE], 'readwrite');
       var done = transactionDone(tx);
-      tx.objectStore(FONT_STORE).add(record);
-      tx.objectStore(META_STORE).put({ key: CURRENT_KEY, value: record.id, updatedAt: Date.now() });
-      return done;
+      try {
+        tx.objectStore(FONT_STORE).add(record);
+        tx.objectStore(META_STORE).put({ key: CURRENT_KEY, value: record.id, updatedAt: Date.now() });
+        await done;
+      } catch (writeError) {
+        try { tx.abort(); } catch (_) {}
+        try { await done; } catch (_) {}
+        throw writeError;
+      }
+      return true;
     });
   }
 

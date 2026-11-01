@@ -588,13 +588,14 @@
         var blob = record.blob;
         if (!blob || typeof blob.arrayBuffer !== 'function' || !Number(blob.size)) throw error('字体 ' + fileName + ' 缺少有效二进制文件');
         if (Number(record.size) !== Number(blob.size)) throw error('字体 ' + fileName + ' 的文件大小与记录不一致');
+        if (Number(blob.size) > MAX_FILE_SIZE) throw error('字体 ' + fileName + ' 超过 50 MB 安全限制');
         var actualFormat = detectFormat(await blob.arrayBuffer(), fileName);
         var format = String(record.format || '').toLowerCase();
         if (format !== actualFormat) throw error('字体 ' + fileName + ' 的格式声明与文件内容不一致');
         var mimeType = MIME_BY_FORMAT[actualFormat];
-        if (String(record.mimeType || blob.type || mimeType).toLowerCase() !== mimeType) throw error('字体 ' + fileName + ' 的 MIME 类型与格式不一致');
+        if (String(record.mimeType || '').toLowerCase() !== mimeType || String(blob.type || '').toLowerCase() !== mimeType) throw error('字体 ' + fileName + ' 的 MIME 类型与格式不一致');
         var checksum = await checksumBlob(blob);
-        if (record.checksum && String(record.checksum).toLowerCase() !== checksum) throw error('字体 ' + fileName + ' 的二进制校验失败');
+        if (!record.checksum || String(record.checksum).toLowerCase() !== checksum) throw error('字体 ' + fileName + ' 缺少有效二进制校验值或校验失败');
         return {
           id: id,
           name: String(record.name || fileName.replace(/\\.[^.]+$/, '') || '自定义字体'),
@@ -649,7 +650,12 @@
       throw error('字体恢复回滚快照无效');
     }
     var currentFontId = snapshot.currentFontId == null || snapshot.currentFontId === '' ? null : String(snapshot.currentFontId);
-    var removeIds = Array.isArray(addedIds) ? addedIds.map(String).filter(Boolean) : [];
+    if (!Array.isArray(snapshot.fonts)) throw error('字体恢复回滚快照缺少原字体清单');
+    var originalIds = Object.create(null);
+    snapshot.fonts.forEach(function (record) { if (record && record.id != null) originalIds[String(record.id)] = true; });
+    if (currentFontId && !originalIds[currentFontId]) throw error('字体恢复回滚快照的当前字体不在原字体清单中');
+    var removeIds = Array.isArray(addedIds) ? Array.from(new Set(addedIds.map(String).filter(Boolean))) : [];
+    removeIds.forEach(function (id) { if (originalIds[id]) throw error('拒绝回滚删除恢复前已存在的字体：' + id); });
     if (currentFontId && removeIds.indexOf(currentFontId) !== -1) throw error('字体恢复回滚快照与新增字体列表冲突');
     if (currentFontId && !(await getFont(currentFontId))) throw error('字体恢复回滚找不到原当前字体：' + currentFontId);
     var db = await openDatabase();
@@ -683,7 +689,7 @@
     }
     var currentFontId = clean.currentFontId;
     var previousCurrentId = await getMeta(CURRENT_KEY);
-    var rollbackState = { schema: 'chuanxun-font-library-backup', formatVersion: 1, currentFontId: previousCurrentId == null ? null : String(previousCurrentId), fonts: [] };
+    var rollbackState = { schema: 'chuanxun-font-library-backup', formatVersion: 1, currentFontId: previousCurrentId == null ? null : String(previousCurrentId), fonts: existing.map(function (record) { return { id: String(record.id) }; }) };
     var addedIds = toAdd.map(function (x) { return x.id; });
     var db = await openDatabase();
     var tx = db.transaction([FONT_STORE, META_STORE], 'readwrite');

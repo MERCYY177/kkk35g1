@@ -22332,13 +22332,16 @@ async function v99ApplyBackup(data,opt){
    if(!Array.isArray(expectedMsgs))throw new Error('聊天恢复校验失败：备份当前会话 '+restoreSid+' 缺少 chatMessages');
    restoreMeta={restoreSessionId:restoreSid,sessionListKey:slKey,lastSessionKey:lastKey,messageKey:msgKey,messageCount:expectedMsgs.length,messageChecksum:checksum(expectedMsgs),sessionListChecksum:checksum(sl)};
  }
- var snap=await snapshotSelected(ids),writtenLf=[],writtenLs=[];
+ var snap=await snapshotSelected(ids),writtenLf=[],writtenLs=[],fontManager=global.ChuanXunFontManager,fontBefore=null,fontRestore=null;
+ if(clean.fontBackup){if(!fontManager)throw new Error('本地字体管理器不可用，拒绝开始跨数据库恢复');fontBefore=await timeoutPromise(fontManager.exportBackupSnapshot(),V99.writeTimeout,'字体库恢复前回滚快照');}
  try{
    try{global.__xiaoshuRestoreInProgress=true;}catch(_e){}
    // 先写全部目标数据，不先删除旧数据；任何写失败都会回滚。
    var orderedLfKeys=Object.keys(desiredLf).sort(function(a,b){var am=/^(?:kkk35g_interaction_leaf_media_v1_|kkk35g_mail_media_v1_)/.test(a)?0:1,bm=/^(?:kkk35g_interaction_leaf_media_v1_|kkk35g_mail_media_v1_)/.test(b)?0:1;return am-bm||a.localeCompare(b)});
    for(var oi=0;oi<orderedLfKeys.length;oi++){let k=orderedLfKeys[oi],original=own(snap.lf,k)?snap.lf[k]:undefined;await lfSetStrict(k,desiredLf[k],async function(){try{if(original===undefined)await strictLfApi().removeItem(k);else await strictLfApi().setItem(k,original);}catch(e){}});writtenLf.push(k);if(/^(?:kkk35g_interaction_leaf_media_v1_|kkk35g_mail_media_v1_)/.test(k)){var mediaCheck=await lfGetStrict(k);if(checksum(mediaCheck)!==checksum(desiredLf[k]))throw new Error('媒体写后校验不一致 '+k);}}
    Object.keys(desiredLs).forEach(function(k){lsSetStrict(k,desiredLs[k]);writtenLs.push(k);});
+   // 主存储目标写入后再恢复独立字体库；两边任一失败都进入同一补偿回滚。
+   if(clean.fontBackup){fontRestore=await timeoutPromise(fontManager.restoreBackupSnapshot(clean.fontBackup),V99.writeTimeout,'字体库恢复写入');var fontReadback=await timeoutPromise(fontManager.exportBackupSnapshot(),V99.writeTimeout,'字体库恢复后回读');if(String(fontReadback.currentFontId||'')!==String(clean.fontBackup.currentFontId||''))throw new Error('字体恢复后当前字体选择校验失败');for(var fi=0;fi<clean.fontBackup.fonts.length;fi++){var expectedFont=clean.fontBackup.fonts[fi],actualFont=fontReadback.fonts.find(function(x){return String(x.id)===String(expectedFont.id);});if(!actualFont||actualFont.size!==expectedFont.size||actualFont.checksum!==expectedFont.checksum)throw new Error('字体恢复后回读校验失败：'+expectedFont.fileName);}}
    // 第一层：逐键写后复读。
    for(var r=0;r<writtenLf.length;r++){var g=await lfGetStrict(writtenLf[r]);if(checksum(g)!==checksum(desiredLf[writtenLf[r]]))throw new Error('IndexedDB写后校验不一致 '+writtenLf[r]);}
    for(var q=0;q<writtenLs.length;q++){if(localStorage.getItem(writtenLs[q])!==String(desiredLs[writtenLs[q]]))throw new Error('localStorage写后校验不一致 '+writtenLs[q]);}
@@ -22358,11 +22361,14 @@ async function v99ApplyBackup(data,opt){
      var finalSl=await lfGetStrict(restoreMeta.sessionListKey),finalLast=await lfGetStrict(restoreMeta.lastSessionKey),finalMsgs=await lfGetStrict(restoreMeta.messageKey);
      if(checksum(finalSl)!==restoreMeta.sessionListChecksum||String(finalLast||'')!==restoreMeta.restoreSessionId||!Array.isArray(finalMsgs)||finalMsgs.length!==restoreMeta.messageCount||checksum(finalMsgs)!==restoreMeta.messageChecksum)throw new Error('聊天恢复最终校验失败：清理旧键后状态发生变化');
    }
-   return {ok:true,selectedCategoryIds:ids,writtenLocalforage:writtenLf.length,writtenLocalStorage:writtenLs.length,warnings:pre.warnings||[],restoreSessionId:restoreMeta&&restoreMeta.restoreSessionId||null,restoredChatMessages:restoreMeta&&restoreMeta.messageCount||0,chatVerified:!!restoreMeta};
+   return {ok:true,selectedCategoryIds:ids,writtenLocalforage:writtenLf.length,writtenLocalStorage:writtenLs.length,restoredFonts:fontRestore?fontRestore.added+fontRestore.skipped:0,warnings:pre.warnings||[],restoreSessionId:restoreMeta&&restoreMeta.restoreSessionId||null,restoredChatMessages:restoreMeta&&restoreMeta.messageCount||0,chatVerified:!!restoreMeta};
  }catch(e){
-   try{await rollbackSnapshot(snap,ids);}catch(rb){try{global.__xiaoshuRestoreInProgress=false;}catch(_e){}throw new Error('恢复失败，而且自动回滚也失败。恢复错误：'+errText(e)+'；回滚错误：'+errText(rb));}
+   var rollbackErrors=[];
+   if(fontRestore&&fontBefore){try{await timeoutPromise(fontManager.rollbackBackupRestore(fontBefore,fontRestore.addedIds),V99.writeTimeout,'字体库跨数据库回滚');}catch(fontRollbackError){rollbackErrors.push('字体库回滚失败：'+errText(fontRollbackError));}}
+   try{await rollbackSnapshot(snap,ids);}catch(mainRollbackError){rollbackErrors.push('主存储回滚失败：'+errText(mainRollbackError));}
    try{global.__xiaoshuRestoreInProgress=false;}catch(_e){}
-   throw new Error('恢复失败，已自动回滚到导入前状态：'+errText(e));
+   if(rollbackErrors.length)throw new Error('恢复失败，至少一个数据库自动回滚失败。恢复错误：'+errText(e)+'；'+rollbackErrors.join('；'));
+   throw new Error('恢复失败，主存储与字体库均已回滚到导入前状态：'+errText(e));
  }
 }
 if(global.ChatBackup)global.ChatBackup.applyBackupToStorage=v99ApplyBackup;

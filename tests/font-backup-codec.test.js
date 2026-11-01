@@ -19,7 +19,7 @@ function loadManager() {
 }
 async function seedManager(manager, records, currentFontId) {
   const request = manager.__testIndexedDB.open('chuanxun-local-font-library', 1);
-  const db = await new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+  const db = await new Promise((resolve, reject) => { request.onupgradeneeded = () => { request.result.createObjectStore('fonts', { keyPath: 'id' }); request.result.createObjectStore('meta', { keyPath: 'key' }); }; request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
   await new Promise((resolve, reject) => {
     const tx = db.transaction(['fonts', 'meta'], 'readwrite');
     records.forEach(record => tx.objectStore('fonts').put(record));

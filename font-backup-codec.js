@@ -26,6 +26,14 @@
       checksum: String(record.checksum).toLowerCase()
     };
   }
+  function checksumBytes(bytes) {
+    var hash = 2166136261;
+    for (var i = 0; i < bytes.length; i++) { hash ^= bytes[i]; hash = Math.imul(hash, 16777619); }
+    return ('00000000' + (hash >>> 0).toString(16)).slice(-8);
+  }
+  function verifyBytes(bytes, meta) {
+    if (checksumBytes(bytes) !== meta.checksum) fail('字体二进制校验失败：' + meta.fileName);
+  }
   function bytesToBase64(bytes) {
     var binary = '', chunk = 0x8000;
     for (var i = 0; i < bytes.length; i += chunk) {
@@ -46,7 +54,9 @@
     var fonts = await Promise.all(snapshot.fonts.map(async function (record) {
       var meta = cleanMeta(record), blob = record.blob;
       if (!blob || typeof blob.arrayBuffer !== 'function' || blob.size !== meta.size) fail('字体二进制与元数据大小不一致：' + meta.fileName);
-      meta.dataBase64 = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+      var bytes = new Uint8Array(await blob.arrayBuffer());
+      verifyBytes(bytes, meta);
+      meta.dataBase64 = bytesToBase64(bytes);
       return meta;
     }));
     return { schema: SCHEMA, formatVersion: VERSION, currentFontId: snapshot.currentFontId == null ? null : String(snapshot.currentFontId), fonts: fonts };
@@ -60,6 +70,7 @@
       seen[meta.id] = true;
       var bytes = base64ToBytes(record.dataBase64);
       if (bytes.byteLength !== meta.size) fail('字体 Base64 解码后大小不一致：' + meta.fileName);
+      verifyBytes(bytes, meta);
       delete meta.dataBase64;
       meta.blob = new Blob([bytes], { type: meta.mimeType });
       return meta;
@@ -74,7 +85,9 @@
       var record = snapshot.fonts[i], meta = cleanMeta(record), blob = record.blob;
       if (!blob || typeof blob.arrayBuffer !== 'function' || blob.size !== meta.size) fail('字体二进制与元数据大小不一致：' + meta.fileName);
       var path = 'fonts/font-' + String(i + 1).padStart(5, '0') + '.' + meta.format;
-      zip.file(path, await blob.arrayBuffer(), { binary: true, createFolders: false });
+      var bytes = new Uint8Array(await blob.arrayBuffer());
+      verifyBytes(bytes, meta);
+      zip.file(path, bytes, { binary: true, createFolders: false });
       meta.zipPath = path;
       fonts.push(meta);
     }
@@ -95,6 +108,7 @@
       if (!entry || entry.dir) fail('ZIP 缺少字体二进制文件：' + path);
       var bytes = new Uint8Array(await entry.async('arraybuffer'));
       if (bytes.byteLength !== meta.size) fail('ZIP 字体大小校验失败：' + meta.fileName);
+      verifyBytes(bytes, meta);
       delete meta.zipPath;
       meta.blob = new Blob([bytes], { type: meta.mimeType });
       fonts.push(meta);

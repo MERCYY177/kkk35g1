@@ -720,9 +720,7 @@
       var incoming = clean.fonts[i], old = existingById[incoming.id];
       if (!old) { toAdd.push(incoming); continue; }
       var oldChecksum = await checksumBlob(old.blob);
-      var same = String(old.name || '') === incoming.name &&
-        String(old.fileName || '') === incoming.fileName &&
-        String(old.format || '').toLowerCase() === incoming.format &&
+      var same = String(old.format || '').toLowerCase() === incoming.format &&
         String(old.mimeType || '').toLowerCase() === incoming.mimeType &&
         Number(old.size) === incoming.size &&
         oldChecksum === incoming.checksum;

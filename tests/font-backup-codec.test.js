@@ -4,8 +4,29 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const JSZip = require('jszip');
+const { IDBFactory } = require('fake-indexeddb');
+const managerSource = fs.readFileSync(path.join(__dirname, '..', 'custom-font-manager.js'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'font-backup-codec.js'), 'utf8');
+
+function loadManager() {
+  const document = { readyState: 'loading', addEventListener() {}, documentElement: { classList: { contains() { return false; } } } };
+  const indexedDB = new IDBFactory();
+  const window = { document, indexedDB, addEventListener() {} };
+  vm.runInNewContext(managerSource, { window, console, Uint8Array, ArrayBuffer, Promise, Error, Math, Date, Blob, setTimeout, clearTimeout }, { filename: 'custom-font-manager.js' });
+  Object.defineProperty(window.ChuanXunFontManager, '__testIndexedDB', { value: indexedDB });
+  return window.ChuanXunFontManager;
+}
+async function seedManager(manager, records, currentFontId) {
+  const request = manager.__testIndexedDB.open('chuanxun-local-font-library', 1);
+  const db = await new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(['fonts', 'meta'], 'readwrite');
+    records.forEach(record => tx.objectStore('fonts').put(record));
+    tx.objectStore('meta').put({ key: 'currentFontId', value: currentFontId });
+    tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+  });
+}
 function loadCodec() {
   const window = { btoa, atob };
   vm.runInNewContext(source, { window, Blob, Uint8Array, ArrayBuffer, Promise, Math, Error, String, Number, Object, RegExp }, { filename: 'font-backup-codec.js' });
@@ -72,4 +93,38 @@ test('JSON and ZIP codecs reject damaged bytes and unsafe ZIP paths', async () =
   const zip = new JSZip(), manifest = await codec.toZipSnapshot(original, zip);
   manifest.fonts[0].zipPath = 'fonts/../../escape.ttf';
   await assert.rejects(codec.fromZipSnapshot(manifest, zip), /路径不安全/);
+});
+
+
+test('font manager to JSON/ZIP codec to font manager restores four real IndexedDB font records', async () => {
+  const codec = loadCodec(), sourceManager = loadManager();
+  const records = snapshot().fonts;
+  await seedManager(sourceManager, records, 'woff2-id');
+  const sourceSnapshot = await sourceManager.exportBackupSnapshot();
+
+  const jsonSnapshot = await codec.toJsonSnapshot(sourceSnapshot);
+  const jsonRestored = await codec.fromJsonSnapshot(JSON.parse(JSON.stringify(jsonSnapshot)));
+  const jsonTarget = loadManager();
+  await jsonTarget.restoreBackupSnapshot(jsonRestored);
+  const afterJson = await jsonTarget.exportBackupSnapshot();
+  assert.equal(afterJson.currentFontId, 'woff2-id');
+  for (let i = 0; i < records.length; i++) {
+    const restored = afterJson.fonts.find(x => x.id === records[i].id);
+    assert.ok(restored);
+    assert.deepEqual(await bytes(restored.blob), await bytes(records[i].blob));
+  }
+
+  const zip = new JSZip();
+  const zipManifest = await codec.toZipSnapshot(sourceSnapshot, zip);
+  const loadedZip = await JSZip.loadAsync(await zip.generateAsync({ type: 'arraybuffer' }));
+  const zipRestored = await codec.fromZipSnapshot(zipManifest, loadedZip);
+  const zipTarget = loadManager();
+  await zipTarget.restoreBackupSnapshot(zipRestored);
+  const afterZip = await zipTarget.exportBackupSnapshot();
+  assert.equal(afterZip.currentFontId, 'woff2-id');
+  for (let i = 0; i < records.length; i++) {
+    const restored = afterZip.fonts.find(x => x.id === records[i].id);
+    assert.ok(restored);
+    assert.deepEqual(await bytes(restored.blob), await bytes(records[i].blob));
+  }
 });

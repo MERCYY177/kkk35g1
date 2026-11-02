@@ -53,6 +53,7 @@ final class BackupSaveSession {
             writtenBytes += bytes.length;
             return true;
         } catch (IOException error) {
+            LOGGER.log(Level.WARNING, "Failed to write backup chunk", error);
             abortLocked();
             return false;
         }
@@ -70,6 +71,7 @@ final class BackupSaveSession {
             resetLocked();
             return true;
         } catch (IOException error) {
+            LOGGER.log(Level.WARNING, "Failed to finish backup output", error);
             abortLocked();
             return false;
         }

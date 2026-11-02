@@ -144,8 +144,9 @@ test('actual V99 preflight rejects corrupted font bytes before any target Indexe
   damaged[10]^=0xff;
   parsed.fontBackup.fonts[0].blob=new Blob([damaged],{type:'font/ttf'});
   await assert.rejects(harness.window.ChuanXunFontManager.validateBackupSnapshot(parsed.fontBackup), /校验失败/);
+  assert.match(String(harness.ChatBackup.preflightBackup), /validateBackupSnapshot/);
   const pre=await harness.ChatBackup.preflightBackup(parsed);
-  assert.equal(pre.ok,false);
+  assert.equal(pre.ok,false, JSON.stringify(pre));
   assert.ok(pre.errors.some(x=>/字体备份预检失败/.test(x)));
   const target=makeManager();
   assert.equal((await target.ChuanXunFontManager.listFonts()).length,0);

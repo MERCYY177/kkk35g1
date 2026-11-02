@@ -42,9 +42,10 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileChooserCallback;
     private WebViewAssetLoader assetLoader;
     private final Object backupSaveLock = new Object();
-    private OutputStream backupOutputStream;
-    private long backupExpectedBytes;
-    private long backupWrittenBytes;
+    private final BackupSaveSession backupSaveSession = new BackupSaveSession();
+    private String backupSaveRequestId;
+    private String backupSavePanelId;
+    private Uri backupDocumentUri;
 
     private static final String INSTALL_BACKUP_DOWNLOAD_BRIDGE_JS = """
             (function () {
@@ -66,9 +67,18 @@ public class MainActivity extends Activity {
                     link.onclick = function (event) {
                       if (event) { event.preventDefault(); event.stopPropagation(); }
                       if (link.dataset.saving === '1') return false;
+                      var panelId = String((opt && (opt.panelId || opt.panel_id))
+                        || link.getAttribute('data-panel-id') || link.id || 'backup-panel');
+                      panelId = panelId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 128) || 'backup-panel';
+                      var counter = (Number(window.__chuanxunBackupRequestCounter) || 0) + 1;
+                      window.__chuanxunBackupRequestCounter = counter;
+                      var requestId = 'backup-' + Date.now().toString(36) + '-' + counter.toString(36);
                       link.dataset.saving = '1';
                       link.textContent = '请选择保存位置…';
-                      window.__chuanxunBackupPickerResult = function (ok, message) {
+                      var callbacks = window.__chuanxunBackupPickerResults
+                        || (window.__chuanxunBackupPickerResults = Object.create(null));
+                      callbacks[requestId] = function (ok, message) {
+                        delete callbacks[requestId];
                         if (!ok) {
                           delete link.dataset.saving;
                           link.textContent = '重新保存文件';
@@ -82,23 +92,26 @@ public class MainActivity extends Activity {
                             var bytes = new Uint8Array(await blob.slice(offset, Math.min(offset + chunkSize, blob.size)).arrayBuffer());
                             var binary = '';
                             for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-                            if (!bridge.writeChunk(btoa(binary))) throw new Error('文件数据写入手机失败');
+                            if (!bridge.writeChunk(requestId, panelId, btoa(binary))) throw new Error('文件数据写入手机失败');
                             offset += bytes.length;
                           }
-                          if (!bridge.finishSave()) throw new Error('文件长度校验或最终保存失败');
+                          if (!bridge.finishSave(requestId, panelId)) throw new Error('文件长度校验或最终保存失败');
                           delete link.dataset.saving;
                           link.textContent = '已保存到手机文件';
                           if (typeof window.showNotification === 'function') window.showNotification('备份文件已保存到你选择的位置', 'success', 6000);
                         })().catch(function (error) {
-                          try { bridge.cancelSave(); } catch (_) {}
+                          try { bridge.cancelSave(requestId, panelId); } catch (_) {}
                           delete link.dataset.saving;
                           link.textContent = '重新保存文件';
                           alert('备份文件保存失败：' + (error && error.message ? error.message : String(error)));
                         });
                       };
                       try {
-                        bridge.requestSave(String(name || '传讯备份.bin'), String(blob.type || 'application/octet-stream'), Number(blob.size));
+                        bridge.requestSave(requestId, panelId, String(name || '传讯备份.bin'),
+                          String(blob.type || 'application/octet-stream'), Number(blob.size));
                       } catch (error) {
+                        delete callbacks[requestId];
+                        try { bridge.cancelSave(requestId, panelId); } catch (_) {}
                         delete link.dataset.saving;
                         link.textContent = '重新保存文件';
                         alert('无法打开系统保存窗口：' + (error && error.message ? error.message : String(error)));
@@ -218,15 +231,21 @@ public class MainActivity extends Activity {
 
     private final class BackupDownloadBridge {
         @JavascriptInterface
-        public void requestSave(String name, String mimeType, long expectedBytes) {
-            if (expectedBytes <= 0 || expectedBytes > MAX_BACKUP_BYTES) {
-                notifyBackupPicker(false, "备份文件为空或超过 1 GB 的单文件保存上限");
+        public void requestSave(String requestId, String panelId, String name,
+                                String mimeType, long expectedBytes) {
+            if (!isSafeBackupId(requestId) || !isSafeBackupId(panelId)
+                    || expectedBytes <= 0 || expectedBytes > 1024L * 1024L * 1024L) {
+                notifyBackupPicker(requestId, false, "备份文件为空、标识无效或超过 1 GB 的单文件保存上限");
                 return;
             }
             synchronized (backupSaveLock) {
-                closeBackupOutputLocked();
-                backupExpectedBytes = expectedBytes;
-                backupWrittenBytes = 0;
+                if (!backupSaveSession.begin(requestId, panelId, expectedBytes)) {
+                    notifyBackupPicker(requestId, false, "已有保存任务正在进行，请完成或取消后再试");
+                    return;
+                }
+                backupSaveRequestId = requestId;
+                backupSavePanelId = panelId;
+                backupDocumentUri = null;
             }
             runOnUiThread(() -> {
                 try {
@@ -236,74 +255,100 @@ public class MainActivity extends Activity {
                     intent.putExtra(Intent.EXTRA_TITLE, safeBackupFileName(name));
                     startActivityForResult(intent, BACKUP_SAVE_REQUEST);
                 } catch (Exception e) {
-                    cancelBackupSave();
-                    notifyBackupPicker(false, "系统文件保存窗口无法打开");
+                    cancelBackupSave(requestId, panelId);
+                    notifyBackupPicker(requestId, false, "系统文件保存窗口无法打开");
                 }
             });
         }
 
         @JavascriptInterface
-        public boolean writeChunk(String base64) {
-            if (base64 == null || base64.length() > 100000) return false;
-            synchronized (backupSaveLock) {
-                if (backupOutputStream == null) return false;
-                try {
-                    byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
-                    if (backupWrittenBytes + bytes.length > backupExpectedBytes) return false;
-                    backupOutputStream.write(bytes);
-                    backupWrittenBytes += bytes.length;
-                    return true;
-                } catch (Exception e) {
+        public boolean writeChunk(String requestId, String panelId, String base64) {
+            if (!isActiveBackupRequest(requestId, panelId)) return false;
+            if (base64 == null || base64.isEmpty() || base64.length() > 43692
+                    || base64.length() % 4 != 0
+                    || !base64.matches("[A-Za-z0-9+/]*={0,2}")) {
+                cancelBackupSave(requestId, panelId);
+                return false;
+            }
+            try {
+                byte[] bytes = Base64.decode(base64, Base64.NO_WRAP);
+                if (bytes.length == 0 || bytes.length > BackupSaveSession.MAX_CHUNK_BYTES) {
+                    cancelBackupSave(requestId, panelId);
                     return false;
                 }
+                boolean written = backupSaveSession.writeChunk(requestId, panelId, bytes);
+                if (!written) cancelBackupSave(requestId, panelId);
+                return written;
+            } catch (IllegalArgumentException error) {
+                cancelBackupSave(requestId, panelId);
+                return false;
             }
         }
 
         @JavascriptInterface
-        public boolean finishSave() {
-            synchronized (backupSaveLock) {
-                if (backupOutputStream == null || backupWrittenBytes != backupExpectedBytes) return false;
-                try {
-                    backupOutputStream.flush();
-                    backupOutputStream.close();
-                    backupOutputStream = null;
-                    backupExpectedBytes = 0;
-                    backupWrittenBytes = 0;
-                    return true;
-                } catch (IOException e) {
-                    closeBackupOutputLocked();
-                    return false;
-                }
-            }
+        public boolean finishSave(String requestId, String panelId) {
+            if (!isActiveBackupRequest(requestId, panelId)) return false;
+            boolean finished = backupSaveSession.finish(requestId, panelId);
+            if (finished) completeBackupSave(requestId, panelId);
+            else cancelBackupSave(requestId, panelId);
+            return finished;
         }
 
         @JavascriptInterface
-        public void cancelSave() {
-            cancelBackupSave();
+        public void cancelSave(String requestId, String panelId) {
+            cancelBackupSave(requestId, panelId);
         }
     }
 
-    private void cancelBackupSave() {
+    private boolean isSafeBackupId(String value) {
+        return value != null && !value.isEmpty() && value.length() <= 128
+                && value.matches("[A-Za-z0-9_-]+");
+    }
+
+    private boolean isActiveBackupRequest(String requestId, String panelId) {
         synchronized (backupSaveLock) {
-            closeBackupOutputLocked();
-            backupExpectedBytes = 0;
-            backupWrittenBytes = 0;
+            return requestId != null && panelId != null
+                    && requestId.equals(backupSaveRequestId)
+                    && panelId.equals(backupSavePanelId)
+                    && backupSaveSession.isActive(requestId, panelId);
         }
     }
 
-    private void closeBackupOutputLocked() {
-        if (backupOutputStream != null) {
-            try { backupOutputStream.close(); } catch (IOException ignored) {}
-            backupOutputStream = null;
+    private void completeBackupSave(String requestId, String panelId) {
+        synchronized (backupSaveLock) {
+            if (!requestId.equals(backupSaveRequestId) || !panelId.equals(backupSavePanelId)) return;
+            backupSaveRequestId = null;
+            backupSavePanelId = null;
+            backupDocumentUri = null;
         }
     }
 
-    private void notifyBackupPicker(boolean ok, String message) {
-        if (webView == null) return;
+    private void cancelBackupSave(String requestId, String panelId) {
+        Uri partialDocument = null;
+        synchronized (backupSaveLock) {
+            if (requestId == null || panelId == null
+                    || !requestId.equals(backupSaveRequestId)
+                    || !panelId.equals(backupSavePanelId)) return;
+            backupSaveSession.cancel(requestId, panelId);
+            partialDocument = backupDocumentUri;
+            backupDocumentUri = null;
+            backupSaveRequestId = null;
+            backupSavePanelId = null;
+        }
+        deletePartialBackupDocument(partialDocument);
+    }
+
+    private void deletePartialBackupDocument(Uri uri) {
+        if (uri == null) return;
+        try { getContentResolver().delete(uri, null, null); } catch (Exception ignored) {}
+    }
+
+    private void notifyBackupPicker(String requestId, boolean ok, String message) {
+        if (!isSafeBackupId(requestId) || webView == null) return;
         String safe = message == null ? "" : message.replace("\\", "\\\\")
                 .replace("'", "\\'").replace("\r", "\\r").replace("\n", "\\n");
-        String js = "if(window.__chuanxunBackupPickerResult){window.__chuanxunBackupPickerResult(" + ok
-                + ", '" + safe + "');}";
+        String js = "var m=window.__chuanxunBackupPickerResults; if(m&&m['" + requestId
+                + "']) m['" + requestId + "'](" + ok + ", '" + safe + "');";
         runOnUiThread(() -> { if (webView != null) webView.evaluateJavascript(js, null); });
     }
 
@@ -375,23 +420,38 @@ public class MainActivity extends Activity {
             return;
         }
         if (requestCode == BACKUP_SAVE_REQUEST) {
+            String requestId;
+            String panelId;
+            synchronized (backupSaveLock) {
+                requestId = backupSaveRequestId;
+                panelId = backupSavePanelId;
+            }
+            if (requestId == null || panelId == null) return;
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-                cancelBackupSave();
-                notifyBackupPicker(false, "已取消保存");
+                cancelBackupSave(requestId, panelId);
+                notifyBackupPicker(requestId, false, "已取消保存");
                 return;
             }
+            Uri target = data.getData();
             try {
-                OutputStream stream = getContentResolver().openOutputStream(data.getData(), "w");
+                OutputStream stream = getContentResolver().openOutputStream(target, "w");
                 if (stream == null) throw new IOException("无法打开目标文件");
+                boolean attached;
                 synchronized (backupSaveLock) {
-                    closeBackupOutputLocked();
-                    backupOutputStream = stream;
-                    backupWrittenBytes = 0;
+                    attached = requestId.equals(backupSaveRequestId)
+                            && panelId.equals(backupSavePanelId)
+                            && backupSaveSession.attachOutput(requestId, panelId, stream);
+                    if (attached) backupDocumentUri = target;
                 }
-                notifyBackupPicker(true, "");
+                if (!attached) {
+                    try { stream.close(); } catch (IOException ignored) {}
+                    deletePartialBackupDocument(target);
+                    return;
+                }
+                notifyBackupPicker(requestId, true, "");
             } catch (Exception e) {
-                cancelBackupSave();
-                notifyBackupPicker(false, "无法写入所选文件");
+                cancelBackupSave(requestId, panelId);
+                notifyBackupPicker(requestId, false, "无法写入所选文件");
             }
         }
     }
@@ -414,7 +474,13 @@ public class MainActivity extends Activity {
             fileChooserCallback.onReceiveValue(null);
             fileChooserCallback = null;
         }
-        cancelBackupSave();
+        String requestId;
+        String panelId;
+        synchronized (backupSaveLock) {
+            requestId = backupSaveRequestId;
+            panelId = backupSavePanelId;
+        }
+        if (requestId != null && panelId != null) cancelBackupSave(requestId, panelId);
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();

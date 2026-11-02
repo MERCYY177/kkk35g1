@@ -98,12 +98,23 @@ async function roundTrip(zipEnabled) {
   const source=sourceWindow.ChuanXunFontManager;
   const fonts=[record('font-ttf','ttf',1),record('font-otf','otf',2),record('font-woff','woff',3),record('font-woff2','woff2',4)];
   await seed(source,fonts,'font-woff2');
+  const sourceSnapshot=await source.exportBackupSnapshot();
   const harness=makeProductionHarness({managerWindow:sourceWindow,zipEnabled});
   const exported=await harness.window.__v99ExportBackupToFile();
   assert.equal(exported.ok,true);
   assert.equal(exported.format,zipEnabled?'zip':'json');
   assert.equal(harness.offered.length,1);
   const ab=await harness.offered[0].blob.arrayBuffer();
+  if(zipEnabled){
+    const archive=await JSZip.loadAsync(ab);
+    const paths=Object.keys(archive.files).filter(p=>/^fonts\/font-[0-9]{5}\.(?:ttf|otf|woff|woff2)$/.test(p)).sort();
+    assert.equal(paths.length,4,'ZIP must contain four independent binary font files');
+    for(const expected of sourceSnapshot.fonts){
+      const entry=archive.file(paths.find(p=>p.endsWith('.'+expected.format)));
+      assert.ok(entry,'ZIP must contain the declared '+expected.format+' binary');
+      assert.deepEqual(Array.from(await entry.async('uint8array')),Array.from(new Uint8Array(await expected.blob.arrayBuffer())));
+    }
+  }
   const parsed=await harness.window.__v99LoadBackupFromArrayBuffer(ab);
   assert.equal(parsed.fontBackup.fonts.length,4);
   const pre=await harness.ChatBackup.preflightBackup(parsed);
@@ -118,7 +129,12 @@ async function roundTrip(zipEnabled) {
     assert.deepEqual(Array.from(new Uint8Array(await actual.blob.arrayBuffer())),
       Array.from(new Uint8Array(await expected.blob.arrayBuffer())));
   }
-  return {exported,parsed,after};
+  for(const expected of sourceSnapshot.fonts){
+    const actual=after.fonts.find(x=>x.id===expected.id);
+    for(const key of ['id','name','fileName','format','mimeType','size','createdAt','checksum'])
+      assert.equal(actual[key],expected[key],'restored font metadata must preserve '+key+' for '+expected.id);
+  }
+  return {exported,parsed,after,sourceSnapshot};
 }
 
 test('actual V99 JSON build/export/load/preflight/restore preserves all four font binaries', async()=>{
@@ -154,6 +170,21 @@ test('actual V99 preflight rejects corrupted font bytes before any target Indexe
   assert.ok(pre.errors.some(x=>/字体备份预检失败/.test(x)));
   const target=makeManager();
   assert.equal((await target.ChuanXunFontManager.listFonts()).length,0);
+});
+
+
+test('actual V99 preflight rejects a mismatched font format declaration before target writes',async()=>{
+  const sourceWindow=makeManager(),source=sourceWindow.ChuanXunFontManager;
+  await seed(source,[record('wrong-format','ttf',7)],'wrong-format');
+  const harness=makeProductionHarness({managerWindow:sourceWindow,zipEnabled:false});
+  await harness.window.__v99ExportBackupToFile();
+  const parsed=await harness.window.__v99LoadBackupFromArrayBuffer(await harness.offered[0].blob.arrayBuffer());
+  parsed.fontBackup.fonts[0].format='woff';
+  const pre=await harness.ChatBackup.preflightBackup(parsed);
+  assert.equal(pre.ok,false);
+  assert.ok(pre.errors.some(x=>/格式声明与文件内容不一致/.test(x)),pre.errors&&pre.errors.join(';'));
+  const target=makeManager();
+  assert.equal((await target.ChuanXunFontManager.listFonts()).length,0,'format preflight failure must happen before persistent font writes');
 });
 
 test('actual V99 preflight remains compatible with legacy backups that omit fontBackup', async()=>{

@@ -83,7 +83,7 @@ function makeProductionHarness({managerWindow, zipEnabled}) {
   };
   const build = between('ChatBackup.buildBackupPayload=async function(flags){','function validateAppMediaReferences(payload,errors){');
   const mediaValidator = between('function validateAppMediaReferences(payload,errors){','ChatBackup.preflightBackup=async function(data){');
-  const preflight = between('ChatBackup.preflightBackup=async function(data){','// ---------- 正式导出：只使用v99 build').replace(/\\n}\\s*$/, '');
+  const preflight = between('ChatBackup.preflightBackup=async function(data){','// ---------- 正式导出：只使用v99 build').replace(/\n}\s*$/, '');
   const exporter = between('async function v99ExportBackupToFile(flags){','if(global.ChatBackup)global.ChatBackup.exportBackupToFile=v99ExportBackupToFile;')+
     '\nglobal.__v99ExportBackupToFile=v99ExportBackupToFile;';
   const parser = between('async function parseZipBackup(ab){','async function loadBackupFromArrayBuffer(ab){')+

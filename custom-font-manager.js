@@ -16,6 +16,8 @@
   var META_STORE = 'meta';
   var CURRENT_KEY = 'currentFontId';
   var MAX_FILE_SIZE = 50 * 1024 * 1024;
+  var MAX_FONT_COUNT = 100;
+  var MAX_TOTAL_FONT_SIZE = 200 * 1024 * 1024;
   var CHANNEL_NAME = 'chuanxun-local-font-library-v1';
   var MIME_BY_FORMAT = {
     ttf: 'font/ttf',
@@ -595,22 +597,23 @@
   }
 
 
-  function checksumBlob(blob) {
+  function checksumBlob(blob, version) {
     if (!blob || typeof blob.arrayBuffer !== 'function') return Promise.reject(error('字体二进制数据不可读取'));
+    if (!global.ChuanXunFontIntegrity || typeof global.ChuanXunFontIntegrity.checksum !== 'function') {
+      return Promise.reject(error('字体 SHA-256 完整性模块未加载，已阻止弱校验降级'));
+    }
     return blob.arrayBuffer().then(function (buffer) {
-      var bytes = new Uint8Array(buffer), hash = 2166136261;
-      for (var i = 0; i < bytes.length; i++) {
-        hash ^= bytes[i];
-        hash = Math.imul(hash, 16777619);
-      }
-      return ('00000000' + (hash >>> 0).toString(16)).slice(-8);
+      return global.ChuanXunFontIntegrity.checksum(new Uint8Array(buffer), Number(version) || 2);
     });
   }
 
   function validateBackupSnapshot(snapshot) {
-    if (!snapshot || snapshot.schema !== 'chuanxun-font-library-backup' || Number(snapshot.formatVersion) !== 1 || !Array.isArray(snapshot.fonts)) {
+    if (!snapshot || snapshot.schema !== 'chuanxun-font-library-backup' || ![1, 2].includes(Number(snapshot.formatVersion)) || !Array.isArray(snapshot.fonts)) {
       return Promise.reject(error('字体备份格式或版本不受支持'));
     }
+    if (snapshot.fonts.length > MAX_FONT_COUNT) return Promise.reject(error('字体记录数量超过 100 项安全上限'));
+    var declaredTotal = snapshot.fonts.reduce(function (sum, record) { return sum + (Number(record && record.size) || 0); }, 0);
+    if (!Number.isSafeInteger(declaredTotal) || declaredTotal > MAX_TOTAL_FONT_SIZE) return Promise.reject(error('字体备份总大小超过 200 MB 安全上限'));
     var seen = Object.create(null);
     var fontsPromise = Promise.all(snapshot.fonts.map(function (record) {
       return Promise.resolve().then(async function () {
@@ -629,7 +632,7 @@
         if (format !== actualFormat) throw error('字体 ' + fileName + ' 的格式声明与文件内容不一致');
         var mimeType = MIME_BY_FORMAT[actualFormat];
         if (String(record.mimeType || '').toLowerCase() !== mimeType || String(blob.type || '').toLowerCase() !== mimeType) throw error('字体 ' + fileName + ' 的 MIME 类型与格式不一致');
-        var checksum = await checksumBlob(blob);
+        var checksum = await checksumBlob(blob, snapshot.formatVersion);
         if (!record.checksum || String(record.checksum).toLowerCase() !== checksum) throw error('字体 ' + fileName + ' 缺少有效二进制校验值或校验失败');
         return {
           id: id,
@@ -647,7 +650,7 @@
     return fontsPromise.then(function (fonts) {
       var currentFontId = snapshot.currentFontId == null || snapshot.currentFontId === '' ? null : String(snapshot.currentFontId);
       if (currentFontId && !seen[currentFontId]) throw error('字体备份的当前字体 ID 不在字体清单中');
-      return { schema: 'chuanxun-font-library-backup', formatVersion: 1, currentFontId: currentFontId, fonts: fonts };
+      return { schema: 'chuanxun-font-library-backup', formatVersion: Number(snapshot.formatVersion), currentFontId: currentFontId, fonts: fonts };
     });
   }
 
@@ -662,7 +665,7 @@
     await done;
     var snapshot = {
       schema: 'chuanxun-font-library-backup',
-      formatVersion: 1,
+      formatVersion: 2,
       currentFontId: values[1] && values[1].value != null ? String(values[1].value) : null,
       fonts: await Promise.all((values[0] || []).map(async function (record) {
         return {
@@ -674,7 +677,7 @@
           size: record.size,
           blob: record.blob,
           createdAt: record.createdAt,
-          checksum: await checksumBlob(record.blob)
+          checksum: await checksumBlob(record.blob, 2)
         };
       }))
     };
@@ -682,7 +685,7 @@
   }
 
   async function rollbackBackupRestore(snapshot, addedIds) {
-    if (!snapshot || snapshot.schema !== 'chuanxun-font-library-backup' || Number(snapshot.formatVersion) !== 1) {
+    if (!snapshot || snapshot.schema !== 'chuanxun-font-library-backup' || ![1, 2].includes(Number(snapshot.formatVersion))) {
       throw error('字体恢复回滚快照无效');
     }
     var currentFontId = snapshot.currentFontId == null || snapshot.currentFontId === '' ? null : String(snapshot.currentFontId);
@@ -719,7 +722,7 @@
     for (var i = 0; i < clean.fonts.length; i++) {
       var incoming = clean.fonts[i], old = existingById[incoming.id];
       if (!old) { toAdd.push(incoming); continue; }
-      var oldChecksum = await checksumBlob(old.blob);
+      var oldChecksum = await checksumBlob(old.blob, clean.formatVersion);
       var same = String(old.format || '').toLowerCase() === incoming.format &&
         String(old.mimeType || '').toLowerCase() === incoming.mimeType &&
         Number(old.size) === incoming.size &&
@@ -729,7 +732,7 @@
     }
     var currentFontId = clean.currentFontId;
     var previousCurrentId = await getMeta(CURRENT_KEY);
-    var rollbackState = { schema: 'chuanxun-font-library-backup', formatVersion: 1, currentFontId: previousCurrentId == null ? null : String(previousCurrentId), fonts: existing.map(function (record) { return { id: String(record.id) }; }) };
+    var rollbackState = { schema: 'chuanxun-font-library-backup', formatVersion: 2, currentFontId: previousCurrentId == null ? null : String(previousCurrentId), fonts: existing.map(function (record) { return { id: String(record.id) }; }) };
     var addedIds = toAdd.map(function (x) { return x.id; });
     var db = await openDatabase();
     var tx = db.transaction([FONT_STORE, META_STORE], 'readwrite');
@@ -758,7 +761,7 @@
     try {
       for (var j = 0; j < clean.fonts.length; j++) {
         var expected = clean.fonts[j], actual = await getFont(expected.id);
-        if (!actual || Number(actual.size) !== expected.size || await checksumBlob(actual.blob) !== expected.checksum) {
+        if (!actual || Number(actual.size) !== expected.size || await checksumBlob(actual.blob, clean.formatVersion) !== expected.checksum) {
           throw error('字体恢复后的回读校验失败：' + expected.fileName);
         }
       }

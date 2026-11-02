@@ -134,7 +134,20 @@ async function roundTrip(zipEnabled) {
     for(const key of ['id','name','fileName','format','mimeType','size','createdAt','checksum'])
       assert.equal(actual[key],expected[key],'restored font metadata must preserve '+key+' for '+expected.id);
   }
-  return {exported,parsed,after,sourceSnapshot};
+  const reexportHarness=makeProductionHarness({managerWindow:targetWindow,zipEnabled});
+  const reexport=await reexportHarness.window.__v99ExportBackupToFile();
+  assert.equal(reexport.ok,true,'restored fonts must be exportable again through V99');
+  const reParsed=await reexportHarness.window.__v99LoadBackupFromArrayBuffer(await reexportHarness.offered[0].blob.arrayBuffer());
+  assert.equal(reParsed.fontBackup.currentFontId,sourceSnapshot.currentFontId);
+  for(const expected of sourceSnapshot.fonts){
+    const actual=reParsed.fontBackup.fonts.find(x=>x.id===expected.id);
+    assert.ok(actual,'re-exported font manifest must retain '+expected.id);
+    for(const key of ['id','name','fileName','format','mimeType','size','createdAt','checksum'])
+      assert.equal(actual[key],expected[key],'re-exported font metadata must preserve '+key+' for '+expected.id);
+    assert.deepEqual(Array.from(new Uint8Array(await actual.blob.arrayBuffer())),
+      Array.from(new Uint8Array(await expected.blob.arrayBuffer())));
+  }
+  return {exported,parsed,after,sourceSnapshot,reexport,reParsed};
 }
 
 test('actual V99 JSON build/export/load/preflight/restore preserves all four font binaries', async()=>{

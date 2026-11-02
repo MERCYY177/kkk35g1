@@ -151,7 +151,7 @@ test('real Chromium: Chat 1, Chat 2 iframe, two tabs, IndexedDB reload and histo
       const runFactory = new Function(
         'window', 'batchMessages', 'showNotification', 'addMessage', 'playSound',
         'xsQueueChatMessagesSave', 'simulateReply', 'DOMElements',
-        'let isBatchMode = true;\\n' + senderSource + '\\nreturn sendBatchMessages;'
+        'let isBatchMode = true;\n' + senderSource + '\nreturn sendBatchMessages;'
       );
       const run = runFactory(
         window,

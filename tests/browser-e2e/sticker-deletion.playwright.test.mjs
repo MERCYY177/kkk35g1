@@ -8,7 +8,7 @@ const indexHtml = fs.readFileSync('index.html', 'utf8');
 const coreSource = fs.readFileSync('sticker-core.js', 'utf8');
 
 function scriptById(id) {
-  const match = indexHtml.match(new RegExp('<script[^>]+id=["\\\']' + id + '["\\\'][^>]*>([\\s\\S]*?)<\\\\/script>', 'i'));
+  const match = indexHtml.match(new RegExp("<script[^>]+id=['\\\"]" + id + "['\\\"][^>]*>([\\s\\S]*?)</script>", "i"));
   assert.ok(match, 'script tag not found: ' + id);
   return match[1];
 }
@@ -78,7 +78,7 @@ async function installChat2SendHarness(page, functions) {
       'function closeSharedStickers(){}',
       source,
       'window.__sendSharedSticker=sendSharedSticker;window.__chat2Sent=sent;',
-      '<\\/script>'
+      '</script>'
     ].join('');
     document.body.appendChild(frame);
   }, functions);

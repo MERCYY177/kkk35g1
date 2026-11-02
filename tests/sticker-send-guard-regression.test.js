@@ -431,7 +431,7 @@ test('failed deletion persistence preserves the still-valid sticker send authori
 
 test('each queued sticker is reauthorized independently during a repeated batch send', () => {
   const start = html.indexOf('function sendBatchMessages()');
-  const end = html.indexOf('\\n\\n        window.simulateReply =', start);
+  const end = html.indexOf('window.simulateReply =', start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const sender = html.slice(start, end);
@@ -466,7 +466,7 @@ test('each queued sticker is reauthorized independently during a repeated batch 
 
 test('a batch containing only rejected stickers does not save an empty message set or simulate a reply', () => {
   const start = html.indexOf('function sendBatchMessages()');
-  const end = html.indexOf('\\n\\n        window.simulateReply =', start);
+  const end = html.indexOf('window.simulateReply =', start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const sender = html.slice(start, end);
@@ -508,5 +508,5 @@ test('historical message resource mappings remain readable after upload deletion
   );
   assert.equal(store.removeUpload(deletedSource, false), true);
   assert.equal(historical.map[deletedId], deletedSource);
-  assert.deepEqual(historical.missing, []);
+  assert.equal(historical.missing.length, 0);
 });

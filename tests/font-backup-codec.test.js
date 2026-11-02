@@ -31,8 +31,8 @@ async function seedManager(manager, records, currentFontId) {
     tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
   });
 }
-function loadCodec() {
-  const window = { btoa, atob, crypto: webcrypto };
+function loadCodec(cryptoObject = webcrypto) {
+  const window = { btoa, atob, crypto: cryptoObject };
   const context = { window, Blob, Uint8Array, ArrayBuffer, Promise, Math, Error, String, Number, Object, RegExp };
   vm.runInNewContext(integritySource, context, { filename: 'font-integrity.js' });
   vm.runInNewContext(source, context, { filename: 'font-backup-codec.js' });
@@ -129,4 +129,47 @@ test('font manager to JSON/ZIP codec to font manager restores four real IndexedD
     assert.ok(restored);
     assert.deepEqual(await bytes(restored.blob), await bytes(records[i].blob));
   }
+});
+
+test('SHA-256 version 2 digest is 64 hex characters and corrupted JSON bytes are rejected', async () => {
+  const codec = loadCodec(), original = snapshot();
+  const safe = await codec.toJsonSnapshot(original);
+  assert.equal(safe.formatVersion, 2);
+  assert.ok(safe.fonts.every(x => /^[0-9a-f]{64}$/.test(x.checksum)));
+  safe.fonts[0].dataBase64 = safe.fonts[0].dataBase64.slice(0, -4) + 'AAAA';
+  await assert.rejects(codec.fromJsonSnapshot(safe), /大小校验失败|二进制校验失败/);
+});
+
+test('legacy version 1 FNV snapshots remain readable without reinterpreting their digest', async () => {
+  const codec = loadCodec(), original = snapshot();
+  original.formatVersion = 1;
+  for (const font of original.fonts) {
+    const data = new Uint8Array(await font.blob.arrayBuffer());
+    font.checksum = (function(bytes) { let h=2166136261; for(const b of bytes){h^=b;h=Math.imul(h,16777619);} return (h>>>0).toString(16).padStart(8,'0'); })(data);
+  }
+  const safe = await codec.toJsonSnapshot(original);
+  assert.ok(safe.fonts.every(x => /^[0-9a-f]{8}$/.test(x.checksum)));
+  const restored = await codec.fromJsonSnapshot(JSON.parse(JSON.stringify(safe)));
+  assert.equal(restored.formatVersion, 1);
+  assert.deepEqual(await bytes(restored.fonts[0].blob), await bytes(original.fonts[0].blob));
+});
+
+test('codec blocks version 2 integrity checks when WebCrypto SHA-256 is unavailable', async () => {
+  const codec = loadCodec(null);
+  await assert.rejects(codec.toJsonSnapshot(snapshot()), /不支持 WebCrypto SHA-256/);
+});
+
+test('font count and cumulative binary size limits are enforced before decode', async () => {
+  const codec = loadCodec(), base = snapshot();
+  await assert.rejects(codec.fromJsonSnapshot({ ...base, fonts: Array.from({length:101},(_,i)=>({...base.fonts[0],id:'x'+i})) }), /数量超过 100/);
+  await assert.rejects(codec.fromJsonSnapshot({ ...base, fonts: [ {...base.fonts[0],size: 150*1024*1024}, {...base.fonts[1],id:'second',size: 60*1024*1024} ] }), /总大小超过 200 MB/);
+});
+
+test('codec rejects a font whose actual signature conflicts with its declared format', async () => {
+  const codec = loadCodec(), bad = snapshot();
+  const rec = bad.fonts[0], bytesValue = new Uint8Array(await rec.blob.arrayBuffer());
+  bytesValue.set([0x4f,0x54,0x54,0x4f],0);
+  rec.blob = new Blob([bytesValue], {type:rec.mimeType});
+  rec.checksum = createHash('sha256').update(bytesValue).digest('hex');
+  await assert.rejects(codec.toJsonSnapshot(bad), /实际签名与格式声明不一致/);
 });

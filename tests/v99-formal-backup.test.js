@@ -98,12 +98,12 @@ async function roundTrip(zipEnabled) {
   const fonts=[record('font-ttf','ttf',1),record('font-otf','otf',2),record('font-woff','woff',3),record('font-woff2','woff2',4)];
   await seed(source,fonts,'font-woff2');
   const harness=makeProductionHarness({managerWindow:sourceWindow,zipEnabled});
-  const exported=await harness.context.__v99ExportBackupToFile();
+  const exported=await harness.window.__v99ExportBackupToFile();
   assert.equal(exported.ok,true);
   assert.equal(exported.format,zipEnabled?'zip':'json');
   assert.equal(harness.offered.length,1);
   const ab=await harness.offered[0].blob.arrayBuffer();
-  const parsed=await harness.context.__v99LoadBackupFromArrayBuffer(ab);
+  const parsed=await harness.window.__v99LoadBackupFromArrayBuffer(ab);
   assert.equal(parsed.fontBackup.fonts.length,4);
   const pre=await harness.ChatBackup.preflightBackup(parsed);
   assert.equal(pre.ok,true,pre.errors&&pre.errors.join(';'));
@@ -138,7 +138,7 @@ test('actual V99 preflight rejects corrupted font bytes before any target Indexe
   await seed(source,[record('bad-font','ttf',5)],'bad-font');
   const harness=makeProductionHarness({managerWindow:sourceWindow,zipEnabled:false});
   const exported=await harness.context.__v99ExportBackupToFile();
-  const parsed=await harness.context.__v99LoadBackupFromArrayBuffer(await harness.offered[0].blob.arrayBuffer());
+  const parsed=await harness.window.__v99LoadBackupFromArrayBuffer(await harness.offered[0].blob.arrayBuffer());
   const damaged=new Uint8Array(await parsed.fontBackup.fonts[0].blob.arrayBuffer());
   damaged[10]^=0xff;
   parsed.fontBackup.fonts[0].blob=new Blob([damaged],{type:'font/ttf'});

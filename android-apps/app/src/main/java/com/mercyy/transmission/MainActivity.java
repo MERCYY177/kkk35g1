@@ -270,6 +270,15 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> { if (webView != null) webView.evaluateJavascript(js, null); });
     }
 
+    private void deletePartialBackupDocument(Uri uri) {
+        if (uri == null) return;
+        try {
+            getContentResolver().delete(uri, null, null);
+        } catch (Exception error) {
+            Log.e("ChuanXunBackup", "Failed to delete an incomplete backup document", error);
+        }
+    }
+
     private String safeBackupMimeType(String mimeType) {
         if (mimeType != null && mimeType.toLowerCase().contains("zip")) return "application/zip";
         if (mimeType != null && mimeType.toLowerCase().contains("json")) return "application/json";

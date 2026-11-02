@@ -9,6 +9,8 @@ INDEX = (ROOT / "index.html").read_text(encoding="utf-8")
 FONT = (ROOT / "custom-font-manager.js").read_text(encoding="utf-8")
 CODEC = (ROOT / "font-backup-codec.js").read_text(encoding="utf-8")
 ACTIVITY = (ROOT / "android-apps/app/src/main/java/com/mercyy/transmission/MainActivity.java").read_text(encoding="utf-8")
+NATIVE_BRIDGE = (ROOT / "android-apps/app/src/main/java/com/mercyy/transmission/NativeBackupDownloadBridge.java").read_text(encoding="utf-8")
+NATIVE_BRIDGE_TEST = (ROOT / "android-apps/app/src/test/java/com/mercyy/transmission/NativeBackupDownloadBridgeTest.java").read_text(encoding="utf-8")
 GRADLE = (ROOT / "android-apps/app/build.gradle.kts").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github/workflows/build-transmission-apps.yml").read_text(encoding="utf-8")
 LEGACY_WORKFLOW = (ROOT / ".github/workflows/build-two-apps.yml").read_text(encoding="utf-8")
@@ -30,11 +32,12 @@ checks = {
     "emergency core explicitly excludes independent font library": "fontBackupStatus:'not-included-core-stage'" in INDEX,
     "emergency full rescue requires validated font snapshot": "full.complete=errors.length===0&&!missing&&!!parts[1]" in INDEX,
     "rescue core/full save use shared native bridge with isolated panel ID": "v99-emergency-rescue-panel" in INDEX and INDEX.count("global.xiaoshuOfferBlobDownload(") >= 2,
-    "native bridge scopes requests by request ID and panel ID": all(x in ACTIVITY for x in ["requestSave(String requestId, String panelId", "writeChunk(String requestId, String panelId", "finishSave(String requestId, String panelId", "cancelSave(String requestId, String panelId", "__chuanxunBackupPickerResults"]),
-    "native bridge rejects overlapping requests and enforces 32 KiB chunks": "backupSaveSession.begin(requestId, panelId, expectedBytes)" in ACTIVITY and "BackupSaveSession.MAX_CHUNK_BYTES" in ACTIVITY and "Base64.NO_WRAP" in ACTIVITY,
-    "native bridge removes partial documents after cancellation or failure": "deletePartialBackupDocument(partialDocument)" in ACTIVITY and "deletePartialBackupDocument(target)" in ACTIVITY,
+    "native bridge scopes requests by request ID and panel ID": all(x in NATIVE_BRIDGE for x in ["requestSave(String requestId, String panelId", "writeChunk(String requestId, String panelId", "finishSave(String requestId, String panelId", "cancelSave(String requestId, String panelId", "@JavascriptInterface"]),
+    "native bridge rejects overlapping requests and enforces 32 KiB chunks": "session.begin(requestId, panelId, expectedBytes)" in NATIVE_BRIDGE and "BackupSaveSession.MAX_CHUNK_BYTES" in NATIVE_BRIDGE and "Base64.NO_WRAP" in ACTIVITY,
+    "native bridge removes partial documents after cancellation or failure": "onCancelled(String requestId, String panelId)" in ACTIVITY and "deletePartialBackupDocument(partial)" in ACTIVITY and "deletePartialBackupDocument(target)" in ACTIVITY,
     "native save session enforces exact byte count and resets on failures": all(x in SAVE_SESSION for x in ["writtenBytes != expectedBytes", "writtenBytes + bytes.length > expectedBytes", "abortLocked()", "MAX_CHUNK_BYTES = 32 * 1024"]),
     "native save session has unit coverage for ordering, isolation, bounds and failures": all(x in SAVE_TEST for x in ["writesMultipleChunksInOrder", "panelAndRequestIdsAreBothRequired", "rejectsOversizedChunk", "byteOverrunAndShortFinish", "writeAndFlushFailures", "cancellationClosesAndResets"]),
+    "native JavaScript bridge entry points have direct unit coverage": all(x in NATIVE_BRIDGE_TEST for x in ["requestSaveInvokesPicker", "duplicateRequestDoesNotReplace", "writeChunkDecodesBase64", "wrongPanelCannotWriteFinishOrCancel", "malformedBase64Cancels", "cancelSaveClosesStream", "pickerLaunchFailureResetsSession", "shortWriteAndOverrun"]),
     "core/full rescue JavaScript save paths are exercised with panel IDs": all(x in BRIDGE_JS_TEST for x in ["core rescue package", "full rescue package", "repeated clicks", "failed chunk"]),
     "Android validation workflow runs native save unit tests": ":app:testChuanxun1DebugUnitTest" in (ROOT / ".github/workflows/phase1-validation.yml").read_text(encoding="utf-8") and 'testImplementation("junit:junit:4.13.2")' in APP_GRADLE,
     "font manager re-applies and broadcasts changes": 'BroadcastChannel' in FONT and 'restoreCurrent' in FONT,

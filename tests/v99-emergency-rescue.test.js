@@ -64,7 +64,7 @@ async function seedFont(manager) {
 function makeHarness(options = {}) {
   const indexedDB = new IDBFactory();
   const document = { readyState: 'loading', addEventListener() {}, documentElement: { classList: { contains() { return false; } } } };
-  const window = { document, indexedDB, crypto: webcrypto, addEventListener() {} };
+  const window = { document, indexedDB, crypto: webcrypto, btoa, atob, addEventListener() {} };
   const base = { window, console, Uint8Array, ArrayBuffer, Promise, Error, Math, Date, Blob, TextEncoder,
     setTimeout, clearTimeout, btoa, atob };
   vm.runInNewContext(integritySource, base, { filename: 'font-integrity.js' });

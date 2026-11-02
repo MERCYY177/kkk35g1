@@ -71,9 +71,18 @@ jobs:
       - name: Audit Android packaging and font integration
         run: python3 tests/audit_local_android_project.py
 
-      - name: Run Android native save session unit tests
+      - name: Run Android native save bridge unit tests
         working-directory: android-apps
         run: gradle --no-daemon :app:testChuanxun1DebugUnitTest
+
+      - name: Upload Android JUnit XML reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-native-save-junit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: android-apps/app/build/test-results/testChuanxun1DebugUnitTest/*.xml
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Report validation scope
         if: always()

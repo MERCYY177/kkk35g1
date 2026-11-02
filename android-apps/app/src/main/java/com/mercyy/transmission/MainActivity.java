@@ -67,7 +67,9 @@ public class MainActivity extends Activity {
                     link.onclick = function (event) {
                       if (event) { event.preventDefault(); event.stopPropagation(); }
                       if (link.dataset.saving === '1') return false;
+                      var panelNode = link.closest('#v99-emergency-rescue-panel') || link.closest('[data-panel-id]');
                       var panelId = String((opt && (opt.panelId || opt.panel_id))
+                        || (panelNode && (panelNode.getAttribute('data-panel-id') || panelNode.id))
                         || link.getAttribute('data-panel-id') || link.id || 'backup-panel');
                       panelId = panelId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 128) || 'backup-panel';
                       var counter = (Number(window.__chuanxunBackupRequestCounter) || 0) + 1;

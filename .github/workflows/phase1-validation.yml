@@ -8,6 +8,8 @@ on:
       - ".github/workflows/phase1-validation.yml"
       - "index.html"
       - "custom-font-manager.js"
+      - "font-integrity.js"
+      - "font-backup-codec.js"
       - "tests/**"
       - "android-apps/**"
 
@@ -26,7 +28,7 @@ jobs:
       - name: Checkout phase 1 repair branch
         uses: actions/checkout@v4
         with:
-          ref: repair/phase1-backup-font-rescue-20261101
+          ref: ${{ github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

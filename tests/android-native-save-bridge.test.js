@@ -91,6 +91,17 @@ test('full rescue package uses the same native bridge with its own panel identit
   assert.deepEqual(h.calls.chunks.map(chunk => chunk.bytes.length), [32768, 32768, 3]);
 });
 
+test('rescue panel DOM identity is used when export metadata omits a panel ID', async () => {
+  const h = makeHarness();
+  h.window.xiaoshuOfferBlobDownload(new Blob(['core']), 'core.json');
+  h.link.onclick({ preventDefault() {}, stopPropagation() {} });
+  const [requestId, panelId] = h.calls.requests[0];
+  assert.equal(panelId, 'v99-emergency-rescue-panel');
+  h.window.__chuanxunBackupPickerResults[requestId](true, '');
+  await h.finishObserved;
+  assert.deepEqual(h.calls.finishes, [{ requestId, panelId }]);
+});
+
 test('repeated clicks on one saving link do not start duplicate native requests', () => {
   const h = makeHarness();
   h.window.xiaoshuOfferBlobDownload(new Blob(['backup']), 'backup.json', { panelId: 'panel-a' });

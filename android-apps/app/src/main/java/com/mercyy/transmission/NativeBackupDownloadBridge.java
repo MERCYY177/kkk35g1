@@ -8,7 +8,7 @@ import java.io.OutputStream;
  * Testable JavaScript-facing backup bridge. Android picker, WebView callbacks,
  * Base64 decoding and partial-document cleanup are injected by the Activity.
  */
-final class NativeBackupDownloadBridge {
+public final class NativeBackupDownloadBridge {
     interface Decoder {
         byte[] decode(String encoded);
     }

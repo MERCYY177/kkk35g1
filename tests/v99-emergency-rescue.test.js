@@ -20,6 +20,10 @@ assert.ok(rescueStart >= 0 && panelStart > rescueStart && exportStart > panelSta
   'V99 emergency rescue production source must be present');
 const rescueSource = html.slice(rescueStart, panelStart);
 const rescueEntrypoints = html.slice(exportStart, chooseStart);
+const restoreStart = html.indexOf('function normalizeV99BackupKey(');
+const restoreEnd = html.indexOf('// ---------- 两级灾难抢救', restoreStart);
+assert.ok(restoreStart >= 0 && restoreEnd > restoreStart, 'V99 production restore source must be present');
+const restoreSource = html.slice(restoreStart, restoreEnd);
 
 function makeFontBytes() {
   const bytes = new Uint8Array(48);
@@ -177,7 +181,60 @@ test('successful emergency export produces a validated full extension with Base6
     tx.onabort = () => reject(tx.error);
   });
   db.close();
-  await h.manager.restoreBackupSnapshot(legacy.fontBackup);
+  const initialLf = new Map([['CHAT_APP_V3_s1_chatMessages', [{ id: 'old-message' }]]]);
+  const initialLs = new Map([['CHAT_APP_V3_profile', '{"old":true}']]);
+  const localforage = {
+    async keys() { return Array.from(initialLf.keys()); },
+    async getItem(key) { return initialLf.has(key) ? initialLf.get(key) : null; },
+    async setItem(key, value) { initialLf.set(key, value); return value; },
+    async removeItem(key) { initialLf.delete(key); }
+  };
+  const localStorage = {
+    get length() { return initialLs.size; },
+    key(i) { return Array.from(initialLs.keys())[i] ?? null; },
+    getItem(key) { return initialLs.has(String(key)) ? initialLs.get(String(key)) : null; },
+    setItem(key, value) { initialLs.set(String(key), String(value)); },
+    removeItem(key) { initialLs.delete(String(key)); }
+  };
+  const restoreSandbox = {
+    ChatBackup: {
+      classifyKey() { return 'chat'; },
+      inlineMediaTree(value) { return value; },
+      async preflightBackup(data) {
+        try {
+          if (data.fontBackup) await h.manager.validateBackupSnapshot(data.fontBackup);
+          return { ok: true, data, availableCategoryIds: ['chat'], errors: [], warnings: [] };
+        } catch (error) {
+          return { ok: false, data, availableCategoryIds: ['chat'], errors: [error.message], warnings: [] };
+        }
+      }
+    },
+    localforage, localStorage, V99: { readTimeout: 1000, writeTimeout: 1000 },
+    ChuanXunFontManager: h.manager, global: null,
+    currentPrefix() { return 'CHAT_APP_V3_'; }, currentSid() { return 's1'; },
+    ensureRegistryForData() {}, own: (o, k) => Object.prototype.hasOwnProperty.call(o, k),
+    clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); },
+    checksum(value) { return JSON.stringify(value); },
+    timeoutPromise(promise, ms, label) {
+      let timer;
+      return Promise.race([Promise.resolve(promise), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(label + '超时')), ms);
+      })]).finally(() => clearTimeout(timer));
+    },
+    errText(error) { return error && error.message ? error.message : String(error); },
+    setTimeout, clearTimeout, Promise, Error, String, Number, Object, Array, Math, Date, console
+  };
+  restoreSandbox.global = restoreSandbox;
+  vm.runInNewContext(restoreSource, restoreSandbox, { filename: 'V99-production-restore.js' });
+  const preflight = await restoreSandbox.ChatBackup.preflightBackup(legacy);
+  assert.equal(preflight.ok, true);
+  const report = await restoreSandbox.ChatBackup.applyBackupToStorage(legacy, {
+    preflight, selectedCategoryIds: ['chat'], restoreFonts: true
+  });
+  assert.equal(report.ok, true);
+  assert.deepEqual(initialLf.get('CHAT_APP_V3_s1_chatMessages'), [{ id: 'live' }]);
+  assert.deepEqual(initialLf.get('CHAT_APP_V3_sessionList'), [{ id: 's1' }]);
+  assert.equal(initialLs.get('CHAT_APP_V3_profile'), '{"live":true}');
   const readback = await h.manager.exportBackupSnapshot();
   assert.equal(readback.currentFontId, 'rescue-font');
   assert.equal(readback.fonts.some(font => font.id === 'rescue-font'), true);

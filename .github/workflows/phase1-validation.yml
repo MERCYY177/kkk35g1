@@ -23,7 +23,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout phase 1 repair branch
         uses: actions/checkout@v4

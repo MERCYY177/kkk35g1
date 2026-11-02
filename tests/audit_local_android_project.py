@@ -14,6 +14,7 @@ WORKFLOW = (ROOT / ".github/workflows/build-transmission-apps.yml").read_text(en
 LEGACY_WORKFLOW = (ROOT / ".github/workflows/build-two-apps.yml").read_text(encoding="utf-8")
 SAVE_SESSION = (ROOT / "android-apps/app/src/main/java/com/mercyy/transmission/BackupSaveSession.java").read_text(encoding="utf-8")
 SAVE_TEST = (ROOT / "android-apps/app/src/test/java/com/mercyy/transmission/BackupSaveSessionTest.java").read_text(encoding="utf-8")
+BRIDGE_JS_TEST = (ROOT / "tests/android-native-save-bridge.test.js").read_text(encoding="utf-8")
 APP_GRADLE = (ROOT / "android-apps/app/build.gradle.kts").read_text(encoding="utf-8")
 
 checks = {
@@ -34,6 +35,7 @@ checks = {
     "native bridge removes partial documents after cancellation or failure": "deletePartialBackupDocument(partialDocument)" in ACTIVITY and "deletePartialBackupDocument(target)" in ACTIVITY,
     "native save session enforces exact byte count and resets on failures": all(x in SAVE_SESSION for x in ["writtenBytes != expectedBytes", "writtenBytes + bytes.length > expectedBytes", "abortLocked()", "MAX_CHUNK_BYTES = 32 * 1024"]),
     "native save session has unit coverage for ordering, isolation, bounds and failures": all(x in SAVE_TEST for x in ["writesMultipleChunksInOrder", "panelAndRequestIdsAreBothRequired", "rejectsOversizedChunk", "byteOverrunAndShortFinish", "writeAndFlushFailures", "cancellationClosesAndResets"]),
+    "core/full rescue JavaScript save paths are exercised with panel IDs": all(x in BRIDGE_JS_TEST for x in ["core rescue package", "full rescue package", "repeated clicks", "failed chunk"]),
     "Android validation workflow runs native save unit tests": ":app:testChuanxun1DebugUnitTest" in (ROOT / ".github/workflows/phase1-validation.yml").read_text(encoding="utf-8") and 'testImplementation("junit:junit:4.13.2")' in APP_GRADLE,
     "font manager re-applies and broadcasts changes": 'BroadcastChannel' in FONT and 'restoreCurrent' in FONT,
     "packaged app skips legacy remote font URLs": "location.hostname !== 'appassets.androidplatform.net'" in INDEX,

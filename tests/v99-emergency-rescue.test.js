@@ -160,7 +160,8 @@ test('successful emergency export produces a validated full extension with Base6
   assert.equal(extended.payload.fontBackupComplete, true);
   assert.equal(extended.payload.fontBackupStatus, 'included-and-validated');
   assert.equal(typeof extended.payload.fontBackup.fonts[0].dataBase64, 'string');
-  const parsed = JSON.parse(extended.payloadText || JSON.stringify(extended.payload));
+  assert.ok(h.captured.full && h.captured.full.text, 'the generated extension JSON must be captured by the production panel callback');
+  const parsed = JSON.parse(h.captured.full.text.replace(/^\uFEFF/, ''));
   const legacy = await h.sandbox.buildRescueLegacyV99(parsed);
   assert.equal(legacy.fontBackup.fonts[0].blob.size, expectedBytes.length);
   assert.deepEqual(Array.from(new Uint8Array(await legacy.fontBackup.fonts[0].blob.arrayBuffer())), Array.from(expectedBytes));

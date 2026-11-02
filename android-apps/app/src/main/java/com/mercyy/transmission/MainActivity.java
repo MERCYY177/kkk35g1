@@ -258,6 +258,7 @@ public class MainActivity extends Activity {
                     intent.putExtra(Intent.EXTRA_TITLE, safeBackupFileName(name));
                     startActivityForResult(intent, BACKUP_SAVE_REQUEST);
                 } catch (Exception e) {
+                    Log.e("ChuanXunBackup", "Failed to open the system backup picker", e);
                     cancelBackupSave(requestId, panelId);
                     notifyBackupPicker(requestId, false, "系统文件保存窗口无法打开");
                 }
@@ -283,6 +284,7 @@ public class MainActivity extends Activity {
                 if (!written) cancelBackupSave(requestId, panelId);
                 return written;
             } catch (IllegalArgumentException error) {
+                Log.w("ChuanXunBackup", "Rejected invalid Base64 backup chunk", error);
                 cancelBackupSave(requestId, panelId);
                 return false;
             }
@@ -459,6 +461,7 @@ public class MainActivity extends Activity {
                 }
                 notifyBackupPicker(requestId, true, "");
             } catch (Exception e) {
+                Log.e("ChuanXunBackup", "Failed to open the selected backup document", e);
                 cancelBackupSave(requestId, panelId);
                 notifyBackupPicker(requestId, false, "无法写入所选文件");
             }

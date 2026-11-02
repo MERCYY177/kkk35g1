@@ -60,13 +60,19 @@ jobs:
         run: python3 tests/check_html_scripts.py
 
       - name: Install isolated IndexedDB test adapter
-        run: npm install --no-save --ignore-scripts --no-audit --no-fund fake-indexeddb@6.2.4 jszip@3.10.1
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund fake-indexeddb@6.2.4 jszip@3.10.1 playwright@1.56.1
 
       - name: Run V99 emergency rescue test independently
         run: node --test tests/v99-emergency-rescue.test.js
 
       - name: Run all Node regression tests
         run: node --test tests/*.test.js
+
+      - name: Install Chromium for real browser acceptance
+        run: npx playwright install --with-deps chromium
+
+      - name: Run real Chromium sticker deletion end-to-end test
+        run: node --test tests/browser-e2e/sticker-deletion.playwright.test.mjs
 
       - name: Audit Android packaging and font integration
         run: python3 tests/audit_local_android_project.py

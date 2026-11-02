@@ -137,7 +137,7 @@ test('actual V99 preflight rejects corrupted font bytes before any target Indexe
   const sourceWindow=makeManager(),source=sourceWindow.ChuanXunFontManager;
   await seed(source,[record('bad-font','ttf',5)],'bad-font');
   const harness=makeProductionHarness({managerWindow:sourceWindow,zipEnabled:false});
-  const exported=await harness.context.__v99ExportBackupToFile();
+  const exported=await harness.window.__v99ExportBackupToFile();
   const parsed=await harness.window.__v99LoadBackupFromArrayBuffer(await harness.offered[0].blob.arrayBuffer());
   const damaged=new Uint8Array(await parsed.fontBackup.fonts[0].blob.arrayBuffer());
   damaged[10]^=0xff;

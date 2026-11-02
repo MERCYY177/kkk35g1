@@ -42,10 +42,8 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> fileChooserCallback;
     private WebViewAssetLoader assetLoader;
-    private final Object backupSaveLock = new Object();
     private final BackupSaveSession backupSaveSession = new BackupSaveSession();
-    private String backupSaveRequestId;
-    private String backupSavePanelId;
+    private NativeBackupDownloadBridge backupDownloadBridge;
     private Uri backupDocumentUri;
 
     private static final String INSTALL_BACKUP_DOWNLOAD_BRIDGE_JS = """
@@ -144,7 +142,38 @@ public class MainActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
-        webView.addJavascriptInterface(new BackupDownloadBridge(), "ChuanXunBackupBridge");
+        backupDownloadBridge = new NativeBackupDownloadBridge(backupSaveSession,
+                encoded -> Base64.decode(encoded, Base64.NO_WRAP),
+                new NativeBackupDownloadBridge.Host() {
+                    @Override public void requestPicker(String requestId, String panelId, String name,
+                                                        String mimeType, long expectedBytes) {
+                        runOnUiThread(() -> {
+                            try {
+                                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                                intent.setType(safeBackupMimeType(mimeType));
+                                intent.putExtra(Intent.EXTRA_TITLE, safeBackupFileName(name));
+                                startActivityForResult(intent, BACKUP_SAVE_REQUEST);
+                            } catch (Exception error) {
+                                Log.e("ChuanXunBackup", "Failed to open the system backup picker", error);
+                                backupDownloadBridge.cancelSave(requestId, panelId);
+                                backupDownloadBridge.notifyPickerResult(requestId, false, "系统文件保存窗口无法打开");
+                            }
+                        });
+                    }
+                    @Override public void notifyPicker(String requestId, boolean ok, String message) {
+                        notifyBackupPicker(requestId, ok, message);
+                    }
+                    @Override public void onCompleted(String requestId, String panelId) {
+                        backupDocumentUri = null;
+                    }
+                    @Override public void onCancelled(String requestId, String panelId) {
+                        Uri partial = backupDocumentUri;
+                        backupDocumentUri = null;
+                        deletePartialBackupDocument(partial);
+                    }
+                });
+        webView.addJavascriptInterface(backupDownloadBridge, "ChuanXunBackupBridge");
 
         assetLoader = new WebViewAssetLoader.Builder()
                 .setDomain(APP_HOST)
@@ -232,128 +261,8 @@ public class MainActivity extends Activity {
         }
     }
 
-    private final class BackupDownloadBridge {
-        @JavascriptInterface
-        public void requestSave(String requestId, String panelId, String name,
-                                String mimeType, long expectedBytes) {
-            if (!isSafeBackupId(requestId) || !isSafeBackupId(panelId)
-                    || expectedBytes <= 0 || expectedBytes > 1024L * 1024L * 1024L) {
-                notifyBackupPicker(requestId, false, "备份文件为空、标识无效或超过 1 GB 的单文件保存上限");
-                return;
-            }
-            synchronized (backupSaveLock) {
-                if (!backupSaveSession.begin(requestId, panelId, expectedBytes)) {
-                    notifyBackupPicker(requestId, false, "已有保存任务正在进行，请完成或取消后再试");
-                    return;
-                }
-                backupSaveRequestId = requestId;
-                backupSavePanelId = panelId;
-                backupDocumentUri = null;
-            }
-            runOnUiThread(() -> {
-                try {
-                    Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-                    intent.addCategory(Intent.CATEGORY_OPENABLE);
-                    intent.setType(safeBackupMimeType(mimeType));
-                    intent.putExtra(Intent.EXTRA_TITLE, safeBackupFileName(name));
-                    startActivityForResult(intent, BACKUP_SAVE_REQUEST);
-                } catch (Exception e) {
-                    Log.e("ChuanXunBackup", "Failed to open the system backup picker", e);
-                    cancelBackupSave(requestId, panelId);
-                    notifyBackupPicker(requestId, false, "系统文件保存窗口无法打开");
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public boolean writeChunk(String requestId, String panelId, String base64) {
-            if (!isActiveBackupRequest(requestId, panelId)) return false;
-            if (base64 == null || base64.isEmpty() || base64.length() > 43692
-                    || base64.length() % 4 != 0
-                    || !base64.matches("[A-Za-z0-9+/]*={0,2}")) {
-                cancelBackupSave(requestId, panelId);
-                return false;
-            }
-            try {
-                byte[] bytes = Base64.decode(base64, Base64.NO_WRAP);
-                if (bytes.length == 0 || bytes.length > BackupSaveSession.MAX_CHUNK_BYTES) {
-                    cancelBackupSave(requestId, panelId);
-                    return false;
-                }
-                boolean written = backupSaveSession.writeChunk(requestId, panelId, bytes);
-                if (!written) cancelBackupSave(requestId, panelId);
-                return written;
-            } catch (IllegalArgumentException error) {
-                Log.w("ChuanXunBackup", "Rejected invalid Base64 backup chunk", error);
-                cancelBackupSave(requestId, panelId);
-                return false;
-            }
-        }
-
-        @JavascriptInterface
-        public boolean finishSave(String requestId, String panelId) {
-            if (!isActiveBackupRequest(requestId, panelId)) return false;
-            boolean finished = backupSaveSession.finish(requestId, panelId);
-            if (finished) completeBackupSave(requestId, panelId);
-            else cancelBackupSave(requestId, panelId);
-            return finished;
-        }
-
-        @JavascriptInterface
-        public void cancelSave(String requestId, String panelId) {
-            cancelBackupSave(requestId, panelId);
-        }
-    }
-
-    private boolean isSafeBackupId(String value) {
-        return value != null && !value.isEmpty() && value.length() <= 128
-                && value.matches("[A-Za-z0-9_-]+");
-    }
-
-    private boolean isActiveBackupRequest(String requestId, String panelId) {
-        synchronized (backupSaveLock) {
-            return requestId != null && panelId != null
-                    && requestId.equals(backupSaveRequestId)
-                    && panelId.equals(backupSavePanelId)
-                    && backupSaveSession.isActive(requestId, panelId);
-        }
-    }
-
-    private void completeBackupSave(String requestId, String panelId) {
-        synchronized (backupSaveLock) {
-            if (!requestId.equals(backupSaveRequestId) || !panelId.equals(backupSavePanelId)) return;
-            backupSaveRequestId = null;
-            backupSavePanelId = null;
-            backupDocumentUri = null;
-        }
-    }
-
-    private void cancelBackupSave(String requestId, String panelId) {
-        Uri partialDocument = null;
-        synchronized (backupSaveLock) {
-            if (requestId == null || panelId == null
-                    || !requestId.equals(backupSaveRequestId)
-                    || !panelId.equals(backupSavePanelId)) return;
-            backupSaveSession.cancel(requestId, panelId);
-            partialDocument = backupDocumentUri;
-            backupDocumentUri = null;
-            backupSaveRequestId = null;
-            backupSavePanelId = null;
-        }
-        deletePartialBackupDocument(partialDocument);
-    }
-
-    private void deletePartialBackupDocument(Uri uri) {
-        if (uri == null) return;
-        try {
-            getContentResolver().delete(uri, null, null);
-        } catch (Exception error) {
-            Log.e("ChuanXunBackup", "Failed to delete an incomplete backup document", error);
-        }
-    }
-
     private void notifyBackupPicker(String requestId, boolean ok, String message) {
-        if (!isSafeBackupId(requestId) || webView == null) return;
+        if (requestId == null || requestId.isEmpty() || requestId.length() > 128 || !requestId.matches("[A-Za-z0-9_-]+") || webView == null) return;
         String safe = message == null ? "" : message.replace("\\", "\\\\")
                 .replace("'", "\\'").replace("\r", "\\r").replace("\n", "\\n");
         String js = "var m=window.__chuanxunBackupPickerResults; if(m&&m['" + requestId
@@ -429,41 +338,29 @@ public class MainActivity extends Activity {
             return;
         }
         if (requestCode == BACKUP_SAVE_REQUEST) {
-            String requestId;
-            String panelId;
-            synchronized (backupSaveLock) {
-                requestId = backupSaveRequestId;
-                panelId = backupSavePanelId;
-            }
+            String requestId = backupDownloadBridge == null ? null : backupDownloadBridge.activeRequestId();
+            String panelId = backupDownloadBridge == null ? null : backupDownloadBridge.activePanelId();
             if (requestId == null || panelId == null) return;
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-                cancelBackupSave(requestId, panelId);
-                notifyBackupPicker(requestId, false, "已取消保存");
+                backupDownloadBridge.cancelSave(requestId, panelId);
+                backupDownloadBridge.notifyPickerResult(requestId, false, "已取消保存");
                 return;
             }
             Uri target = data.getData();
             try {
                 OutputStream stream = getContentResolver().openOutputStream(target, "w");
                 if (stream == null) throw new IOException("无法打开目标文件");
-                boolean attached;
-                synchronized (backupSaveLock) {
-                    attached = requestId.equals(backupSaveRequestId)
-                            && panelId.equals(backupSavePanelId)
-                            && backupSaveSession.attachOutput(requestId, panelId, stream);
-                    if (attached) backupDocumentUri = target;
-                }
-                if (!attached) {
-                    try { stream.close(); } catch (IOException error) {
-                        Log.e("ChuanXunBackup", "Failed to close an unattached backup stream", error);
-                    }
+                boolean attached = backupDownloadBridge.attachOutput(requestId, panelId, stream);
+                if (attached) {
+                    backupDocumentUri = target;
+                    backupDownloadBridge.notifyPickerResult(requestId, true, "");
+                } else {
                     deletePartialBackupDocument(target);
-                    return;
                 }
-                notifyBackupPicker(requestId, true, "");
-            } catch (Exception e) {
-                Log.e("ChuanXunBackup", "Failed to open the selected backup document", e);
-                cancelBackupSave(requestId, panelId);
-                notifyBackupPicker(requestId, false, "无法写入所选文件");
+            } catch (Exception error) {
+                Log.e("ChuanXunBackup", "Failed to open the selected backup document", error);
+                backupDownloadBridge.cancelSave(requestId, panelId);
+                backupDownloadBridge.notifyPickerResult(requestId, false, "无法写入所选文件");
             }
         }
     }
@@ -486,13 +383,11 @@ public class MainActivity extends Activity {
             fileChooserCallback.onReceiveValue(null);
             fileChooserCallback = null;
         }
-        String requestId;
-        String panelId;
-        synchronized (backupSaveLock) {
-            requestId = backupSaveRequestId;
-            panelId = backupSavePanelId;
+        if (backupDownloadBridge != null) {
+            String requestId = backupDownloadBridge.activeRequestId();
+            String panelId = backupDownloadBridge.activePanelId();
+            if (requestId != null && panelId != null) backupDownloadBridge.cancelSave(requestId, panelId);
         }
-        if (requestId != null && panelId != null) cancelBackupSave(requestId, panelId);
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();

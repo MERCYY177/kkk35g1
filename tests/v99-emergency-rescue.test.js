@@ -102,7 +102,7 @@ function makeHarness(options = {}) {
     currentSid() { return 's1'; },
     nowStamp() { return 'test-stamp'; },
     humanBytes(n) { return String(n) + ' B'; },
-    captureMain() { return { appPrefix: 'CHAT_APP_V3_', sessionId: 's1', sessionList: [{ id: 's1', name: 'Test session', createdAt: '2026-11-02T00:00:00.000Z' }], messages: [{ id: 'live' }] }; },
+    captureMain() { return { appPrefix: 'CHAT_APP_V3_', sessionId: 's1', sessionList: [{ id: 's1' }], messages: [{ id: 'live' }] }; },
     captureFrames() { return { moments: {}, chat2: {}, interaction: {}, interactionMedia: {} }; },
     captureModuleMemory() { return { mailMedia: {}, stickerMessageResources: {}, beautify: {}, callRecords: [] }; },
     captureCriticalLocalStorage() { return { CHAT_APP_V3_profile: '{"live":true}' }; },

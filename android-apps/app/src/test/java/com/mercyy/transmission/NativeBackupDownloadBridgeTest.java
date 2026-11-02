@@ -7,6 +7,9 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.Test;
 
 public class NativeBackupDownloadBridgeTest {
@@ -86,6 +89,45 @@ public class NativeBackupDownloadBridgeTest {
         assertEquals("req-1:false", h.notifications.get(0));
     }
 
+    @Test public void finishIsAtomicAgainstConcurrentLifecycleCancellation() throws Exception {
+        Harness h = new Harness();
+        BlockingFlushOutput output = new BlockingFlushOutput();
+        h.bridge.requestSave("req-1", "panel-a", "backup.zip", "application/zip", 1);
+        assertTrue(h.bridge.attachOutput("req-1", "panel-a", output));
+        assertTrue(h.bridge.writeChunk("req-1", "panel-a",
+                Base64.getEncoder().encodeToString(new byte[]{7})));
+
+        AtomicBoolean finishResult = new AtomicBoolean(false);
+        Thread finish = new Thread(() ->
+                finishResult.set(h.bridge.finishSave("req-1", "panel-a")));
+        finish.start();
+        assertTrue("finish did not reach flush", output.flushEntered.await(2, TimeUnit.SECONDS));
+
+        CountDownLatch cancelStarted = new CountDownLatch(1);
+        Thread cancel = new Thread(() -> {
+            cancelStarted.countDown();
+            h.bridge.cancelSave("req-1", "panel-a");
+        });
+        cancel.start();
+        assertTrue(cancelStarted.await(2, TimeUnit.SECONDS));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (cancel.getState() != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+            Thread.yield();
+        }
+        assertEquals("cancellation must wait for the terminal finish operation",
+                Thread.State.BLOCKED, cancel.getState());
+
+        output.allowFlush.countDown();
+        finish.join(2000);
+        cancel.join(2000);
+        assertFalse("finish thread did not terminate", finish.isAlive());
+        assertFalse("cancel thread did not terminate", cancel.isAlive());
+        assertTrue(finishResult.get());
+        assertEquals(List.of("req-1|panel-a"), h.completed);
+        assertTrue(h.cancelled.isEmpty());
+        assertNull(h.bridge.activeRequestId());
+    }
+
     @Test public void shortWriteAndOverrunAreRejectedThroughTheBridgeMethod() {
         Harness shortWrite = new Harness();
         TrackingOutput shortOutput = new TrackingOutput();
@@ -128,6 +170,23 @@ public class NativeBackupDownloadBridgeTest {
         }
         @Override public void onCancelled(String requestId, String panelId) {
             cancelled.add(requestId + "|" + panelId);
+        }
+    }
+
+    private static final class BlockingFlushOutput extends OutputStream {
+        final CountDownLatch flushEntered = new CountDownLatch(1);
+        final CountDownLatch allowFlush = new CountDownLatch(1);
+        @Override public void write(int value) {}
+        @Override public void flush() throws java.io.IOException {
+            flushEntered.countDown();
+            try {
+                if (!allowFlush.await(5, TimeUnit.SECONDS)) {
+                    throw new java.io.IOException("timed out waiting to finish flush");
+                }
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new java.io.IOException("flush interrupted", error);
+            }
         }
     }
 

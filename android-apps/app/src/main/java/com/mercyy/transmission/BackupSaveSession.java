@@ -2,12 +2,15 @@ package com.mercyy.transmission;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * One in-flight SAF backup write. Every operation is scoped to both the
  * originating panel and its unique request id.
  */
 final class BackupSaveSession {
+    private static final Logger LOGGER = Logger.getLogger(BackupSaveSession.class.getName());
     static final int MAX_CHUNK_BYTES = 32 * 1024;
 
     private String requestId;
@@ -111,6 +114,6 @@ final class BackupSaveSession {
 
     private static void closeQuietly(OutputStream stream) {
         if (stream == null) return;
-        try { stream.close(); } catch (IOException ignored) {}
+        try { stream.close(); } catch (IOException error) { LOGGER.log(Level.WARNING, "Failed to close partial backup output", error); }
     }
 }

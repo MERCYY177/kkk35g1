@@ -86,7 +86,8 @@ function makeProductionHarness({managerWindow, zipEnabled}) {
   const preflight = between('ChatBackup.preflightBackup=async function(data){','// ---------- 正式导出：只使用v99 build').replace(/\n}\s*$/, '');
   const exporter = between('async function v99ExportBackupToFile(flags){','if(global.ChatBackup)global.ChatBackup.exportBackupToFile=v99ExportBackupToFile;')+
     '\nglobal.__v99ExportBackupToFile=v99ExportBackupToFile;';
-  const parser = between('async function parseZipBackup(ab){','async function loadBackupFromArrayBuffer(ab){')+
+  const zipDetector = between('function isZipArrayBuffer(ab){','async function parseZipBackup(ab){');
+  const parser = zipDetector+between('async function parseZipBackup(ab){','async function loadBackupFromArrayBuffer(ab){')+
     '\n'+between('async function loadBackupFromArrayBuffer(ab){','async function loadBackupFromFile(file){')+
     '\nglobal.__v99LoadBackupFromArrayBuffer=loadBackupFromArrayBuffer;';
   vm.runInNewContext('var oldBuild=ChatBackup.buildBackupPayload,oldPreflight=ChatBackup.preflightBackup,oldLoadFile=ChatBackup.loadBackupFromFile;\n'+build+mediaValidator+preflight+exporter+parser,context,{filename:'production-v99-backup-pipeline.js'});

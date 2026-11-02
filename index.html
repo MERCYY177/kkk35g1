@@ -5315,10 +5315,24 @@ function updateBatchPreview() {
             const __xsBatchConversation = 'card';
             const sendingList = batchMessages.map((msg) => ({ text: msg.text || '', image: msg.image || null, stickerId: msg.stickerId || '' }));
             const batchStart = Date.now();
+            let rejectedStickerCount = 0;
+            let sentCount = 0;
             showNotification(`正在发送 ${sendingList.length} 条消息...`, 'info', 2000);
 
-            // 旧逻辑用 setTimeout 分条 addMessage；如果立刻退出网页，后面的定时器还没执行，整组消息就不会进入保存链。
+            // A queued sticker ID is only a reference, not a durable send authorization.
+            // Revalidate immediately before creating each new chat message.
             sendingList.forEach((msg, index) => {
+                if (msg.stickerId) {
+                    const store = window.xiaoshuStickerStore;
+                    const authorizedId = store && typeof store.authorizeSendId === 'function'
+                        ? store.authorizeSendId(msg.stickerId)
+                        : '';
+                    if (authorizedId !== msg.stickerId) {
+                        rejectedStickerCount += 1;
+                        return;
+                    }
+                }
+
                 addMessage({
                     id: batchStart + '_batch_' + index + '_' + Math.random().toString(16).slice(2),
                     sender: 'user',
@@ -5333,12 +5347,18 @@ function updateBatchPreview() {
                     type: 'normal',
                     conversationId: __xsBatchConversation
                 }, { deferSave: true });
+                sentCount += 1;
                 try { playSound('send'); } catch(e) {}
             });
 
-            try { if (typeof xsQueueChatMessagesSave === 'function') xsQueueChatMessagesSave('batch-send-sync'); } catch(e) {}
+            if (rejectedStickerCount) {
+                showNotification(`已跳过 ${rejectedStickerCount} 张已删除、隐藏或无法确认的表情；其他有效消息照常发送`, 'warning', 2600);
+            }
+            if (sentCount) {
+                try { if (typeof xsQueueChatMessagesSave === 'function') xsQueueChatMessagesSave('batch-send-sync'); } catch(e) {}
+                simulateReply(__xsBatchConversation);
+            }
 
-            simulateReply(__xsBatchConversation);
             isBatchMode = false; batchMessages = [];
             DOMElements.batchBtn.classList.remove('active'); DOMElements.batchPreview.style.display = 'none';
             const placeholder = "";

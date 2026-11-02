@@ -262,6 +262,48 @@
         return rawRegister(src);
       };
     }
+
+    // Authorize a queued ID against fresh, readable deletion/hidden state and the live pool.
+    // Storage read/parse failures are not equivalent to an empty list: fail closed.
+    api.authorizeSendId = function (id) {
+      id = String(id || '');
+      if (!/^stk_[a-z0-9_]+$/i.test(id) || !rawRegister || typeof api.resolve !== 'function') return '';
+
+      var storage;
+      try {
+        storage = root.localStorage;
+        if (!storage || typeof storage.getItem !== 'function') return '';
+      } catch (_) { return ''; }
+
+      function readArray(key) {
+        try {
+          var raw = storage.getItem(key);
+          if (raw == null) return { ok: true, values: [] };
+          var values = JSON.parse(raw);
+          return Array.isArray(values) ? { ok: true, values: values } : { ok: false, values: [] };
+        } catch (_) {
+          return { ok: false, values: [] };
+        }
+      }
+
+      var deletedState = readArray(sessionKey());
+      var hiddenState = readArray(HIDDEN_KEY);
+      if (!deletedState.ok || !hiddenState.ok) return '';
+      if (deletedState.values.indexOf(id) !== -1) return '';
+
+      var src = '';
+      try { src = norm(api.resolve(id)); } catch (_) { return ''; }
+      if (!src || hash(src) !== id || hiddenState.values.some(function (value) { return norm(value) === src; })) return '';
+
+      try {
+        if (!api.getMigrationState || !api.getMigrationState().hydrated) return '';
+      } catch (_) { return ''; }
+
+      // Reuse the guarded live-pool check and public registration contract.
+      if (!matches(api.getPool(), src)) return '';
+      return api.register(src) === id ? id : '';
+    };
+
     api.markUploadsDeleted = function (sources) {
       loadDeleted(true);
       var available = new Set(rawGetUploads().map(norm));

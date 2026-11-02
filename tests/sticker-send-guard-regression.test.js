@@ -252,3 +252,104 @@ test('immediate automatic sticker replies use the guarded register before creati
   assert.match(replyPath, /xiaoshuStickerStore\.register\(replySticker\)/);
   assert.match(replyPath, /if\s*\(replyStickerId\)\s*\{[\s\S]*?addMessage\(/);
 });
+
+test('queued sticker IDs are rejected after deletion and valid IDs remain sendable', () => {
+  const storage = createSharedStorage();
+  const root = createRuntime('batch-delete-session', storage);
+  const store = createStore(root, [deletedSource, validSource], [deletedSource, validSource]);
+  const deletedId = root.XiaoshuStickerCore.stickerId(deletedSource);
+  const validId = root.XiaoshuStickerCore.stickerId(validSource);
+
+  assert.equal(store.authorizeSendId(deletedId), deletedId);
+  assert.equal(store.removeUpload(deletedSource, false), true);
+  assert.equal(store.authorizeSendId(deletedId), '');
+  assert.equal(store.authorizeSendId(validId), validId);
+});
+
+test('queued sticker authorization fails closed when deletion-marker storage cannot be read', () => {
+  const storage = createSharedStorage();
+  const root = createRuntime('batch-storage-failure-session', storage);
+  const store = createStore(root, [validSource], [validSource]);
+  const validId = root.XiaoshuStickerCore.stickerId(validSource);
+  storage.getItem = function () { throw new Error('storage blocked'); };
+
+  assert.equal(store.authorizeSendId(validId), '');
+});
+
+test('queued sticker authorization fails closed when hidden-list storage cannot be read', () => {
+  const storage = createSharedStorage();
+  const originalGetItem = storage.getItem.bind(storage);
+  const root = createRuntime('batch-hidden-failure-session', storage);
+  const store = createStore(root, [validSource], [validSource]);
+  const validId = root.XiaoshuStickerCore.stickerId(validSource);
+  storage.getItem = function (key) {
+    if (key === 'disabledStickerItems') throw new Error('hidden storage blocked');
+    return originalGetItem(key);
+  };
+
+  assert.equal(store.authorizeSendId(validId), '');
+});
+
+test('batch message creation revalidates every sticker ID immediately before addMessage', () => {
+  const start = html.indexOf('function sendBatchMessages()');
+  const end = html.indexOf('window.simulateReply =', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const body = html.slice(start, end);
+  const authorizeAt = body.indexOf('store.authorizeSendId(msg.stickerId)');
+  const addAt = body.indexOf('addMessage({');
+  assert.ok(authorizeAt >= 0 && addAt > authorizeAt, 'sticker authorization must precede new message creation');
+  assert.match(body, /if\s*\(authorizedId !== msg\.stickerId\)\s*\{/);
+  assert.match(body, /rejectedStickerCount/);
+  assert.match(body, /if\s*\(sentCount\)\s*\{/);
+});
+
+test('history resource resolution remains available and separate from send authorization', () => {
+  assert.match(html, /function resolveMessageResource\(id\)/);
+  assert.match(html, /resolve:resolveMessageResource/);
+  assert.match(guardSource, /api\.authorizeSendId\s*=\s*function\s*\(id\)/);
+  assert.match(guardSource, /api\.resolve\(id\)/);
+});
+
+test('batch send skips deleted sticker IDs but still sends valid stickers and ordinary messages', () => {
+  const start = html.indexOf('function sendBatchMessages()');
+  const end = html.indexOf('\n\n        window.simulateReply =', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const sender = html.slice(start, end);
+  const added = [];
+  const notices = [];
+  let saved = 0;
+  let replies = 0;
+  const context = {
+    batchMessages: [
+      { text: '', stickerId: 'deleted-id' },
+      { text: '', stickerId: 'valid-id' },
+      { text: 'ordinary text', stickerId: '' },
+    ],
+    window: {
+      xiaoshuStickerStore: {
+        authorizeSendId(id) { return id === 'valid-id' ? id : ''; },
+      },
+    },
+    showNotification(message) { notices.push(message); },
+    addMessage(message) { added.push(message); },
+    playSound() {},
+    xsQueueChatMessagesSave() { saved += 1; },
+    simulateReply() { replies += 1; },
+    isBatchMode: true,
+    DOMElements: {
+      batchBtn: { classList: { remove() {} } },
+      batchPreview: { style: {} },
+      messageInput: { placeholder: '' },
+    },
+  };
+
+  vm.runInNewContext(sender + '; sendBatchMessages();', context);
+
+  assert.deepEqual(added.map(message => message.stickerId || message.text), ['valid-id', 'ordinary text']);
+  assert.equal(saved, 1);
+  assert.equal(replies, 1);
+  assert.equal(context.batchMessages.length, 0);
+  assert.ok(notices.some(message => String(message).includes('已跳过 1 张')));
+});

@@ -126,6 +126,8 @@ function makeHarness(options = {}) {
     global: null
   };
   sandbox.global = sandbox;
+  sandbox.ChuanXunFontManager = manager;
+  sandbox.ChuanXunFontBackupCodec = window.ChuanXunFontBackupCodec;
   sandbox.window.ChuanXunFontManager = manager;
   sandbox.window.ChuanXunFontBackupCodec = window.ChuanXunFontBackupCodec;
   if (options.fontExport) manager.exportBackupSnapshot = options.fontExport;
@@ -165,6 +167,16 @@ test('successful emergency export produces a validated full extension with Base6
   const legacy = await h.sandbox.buildRescueLegacyV99(parsed);
   assert.equal(legacy.fontBackup.fonts[0].blob.size, expectedBytes.length);
   assert.deepEqual(Array.from(new Uint8Array(await legacy.fontBackup.fonts[0].blob.arrayBuffer())), Array.from(expectedBytes));
+  const db = await openFontDb(h.manager.__testIndexedDB);
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(['fonts', 'meta'], 'readwrite');
+    tx.objectStore('fonts').clear();
+    tx.objectStore('meta').clear();
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+  db.close();
   await h.manager.restoreBackupSnapshot(legacy.fontBackup);
   const readback = await h.manager.exportBackupSnapshot();
   assert.equal(readback.currentFontId, 'rescue-font');
@@ -207,6 +219,23 @@ test('IndexedDB read failure is recorded and prevents full completeness', async 
   assert.equal(extended.payload.stage, 'partial');
   assert.equal(extended.payload.complete, false);
   assert.ok(extended.errors.some(error => /injected IndexedDB read failure/.test(error)));
+});
+
+
+test('corrupt font bytes or checksum prevent the extension from being marked complete', async () => {
+  const h = makeHarness();
+  await seedFont(h.manager);
+  const invalid = await h.manager.exportBackupSnapshot();
+  invalid.fonts[0].checksum = '0'.repeat(64);
+  h.manager.exportBackupSnapshot = async () => invalid;
+  const result = await h.sandbox.xiaoshuEmergencyRescueExport({ reason: 'corrupt-font-snapshot' });
+  const extended = await result.extendedPromise;
+  assert.equal(extended.ok, false);
+  assert.equal(extended.payload.stage, 'partial');
+  assert.equal(extended.payload.complete, false);
+  assert.equal(extended.payload.fontBackup, null);
+  assert.equal(extended.payload.fontBackupComplete, false);
+  assert.ok(extended.errors.some(error => /校验失败|校验值/.test(error)));
 });
 
 test('legacy emergency package without fontBackup remains importable without a font restore', async () => {

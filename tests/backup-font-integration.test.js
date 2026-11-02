@@ -30,7 +30,7 @@ test('formal JSON and ZIP exporters and import parsers preserve font binaries sy
   assert.match(index, /fromJsonSnapshot\(data\.fontBackup\)/);
   assert.match(index, /fromZipSnapshot\(data\.fontBackup,zip\)/);
   assert.match(codec, /zip\.file\(path, bytes, \{ binary: true, createFolders: false \}\)/);
-  assert.match(codec, /verifyBytes\\(bytes, meta, version\\)/);
+  assert.match(codec, /verifyBytes\(bytes, meta, version\)/);
   assert.ok(codec.includes("fonts\\/font-[0-9]{5}"));
 });
 

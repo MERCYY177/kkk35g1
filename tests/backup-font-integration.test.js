@@ -30,7 +30,7 @@ test('formal JSON and ZIP exporters and import parsers preserve font binaries sy
   assert.match(index, /fromJsonSnapshot\(data\.fontBackup\)/);
   assert.match(index, /fromZipSnapshot\(data\.fontBackup,zip\)/);
   assert.match(codec, /zip\.file\(path, bytes, \{ binary: true, createFolders: false \}\)/);
-  assert.match(codec, /verifyBytes\(bytes, meta\)/);
+  assert.match(codec, /verifyBytes\\(bytes, meta, version\\)/);
   assert.ok(codec.includes("fonts\\/font-[0-9]{5}"));
 });
 
@@ -53,6 +53,10 @@ test('old backups without fontBackup remain compatible while damaged new font sn
   assert.match(index, /if\(data&&Object\.prototype\.hasOwnProperty\.call\(data,'fontBackup'\)\)/);
   assert.match(index, /pre\.errors\.push\('字体备份预检失败：'/);
   assert.match(fontManager, /缺少有效二进制校验值或校验失败/);
+  assert.match(fontManager, /formatVersion: 2/);
+  assert.match(fontManager, /MAX_TOTAL_FONT_SIZE = 200 \* 1024 \* 1024/);
+  assert.match(codec, /MAX_TOTAL = 200 \* 1024 \* 1024/);
+  assert.match(codec, /SHA-256/);
   assert.match(fontManager, /格式声明与文件内容不一致/);
 });
 

@@ -22304,7 +22304,36 @@ function lfSetStrict(k,v,onLate){var p;try{p=strictLfApi().setItem(k,v);}catch(e
 function lfRemoveStrict(k,onLate){var p;try{p=strictLfApi().removeItem(k);}catch(e){return Promise.reject(e);}return timeoutPromise(p,V99.writeTimeout,'IndexedDB删除 '+k).catch(function(e){if(/超时/.test(errText(e))&&onLate)scheduleLateRepair(p,onLate,'remove '+k);throw e;});}
 function lsSetStrict(k,v){if(v==null){localStorage.removeItem(k);if(localStorage.getItem(k)!==null)throw new Error('localStorage删除校验失败 '+k);return;}localStorage.setItem(k,String(v));if(localStorage.getItem(k)!==String(v))throw new Error('localStorage写后校验失败 '+k);}
 async function snapshotSelected(ids){var sel=selectedSet(ids),lf={},ls={},lfKeys=await lfKeysStrict(),lsKeys=[];for(var i=0;i<lfKeys.length;i++){var k=lfKeys[i],c=ChatBackup.classifyKey(k,'lf');if(c&&sel[c]){var v=await lfGetStrict(k);if(v!==null&&v!==undefined)lf[k]=clone(v)===null?v:clone(v);}}try{for(var j=0;j<localStorage.length;j++){var x=localStorage.key(j);if(x)lsKeys.push(x);}}catch(e){throw new Error('localStorage列举失败: '+errText(e));}for(var q=0;q<lsKeys.length;q++){var y=lsKeys[q],cc=ChatBackup.classifyKey(y,'ls');if(cc&&sel[cc])ls[y]=localStorage.getItem(y);}return {lf:lf,ls:ls,lfKeys:lfKeys.filter(function(k){var c=ChatBackup.classifyKey(k,'lf');return c&&sel[c];}),lsKeys:lsKeys.filter(function(k){var c=ChatBackup.classifyKey(k,'ls');return c&&sel[c];})};}
-async function rollbackSnapshot(snap,ids){var sel=selectedSet(ids),now=await lfKeysStrict();for(var i=0;i<now.length;i++){var k=now[i],c=ChatBackup.classifyKey(k,'lf');if(c&&sel[c]&&!own(snap.lf,k))try{await timeoutPromise(strictLfApi().removeItem(k),V99.writeTimeout,'回滚删除 '+k);}catch(e){}}for(var k2 of Object.keys(snap.lf)){await timeoutPromise(strictLfApi().setItem(k2,snap.lf[k2]),V99.writeTimeout,'回滚写入 '+k2);}var lsNow=[];for(var j=0;j<localStorage.length;j++){var lk=localStorage.key(j);if(lk)lsNow.push(lk);}lsNow.forEach(function(k){var c=ChatBackup.classifyKey(k,'ls');if(c&&sel[c]&&!own(snap.ls,k))try{localStorage.removeItem(k);}catch(e){}});Object.keys(snap.ls).forEach(function(k){try{localStorage.setItem(k,snap.ls[k]);}catch(e){}});}
+async function rollbackSnapshot(snap,ids){
+ var sel=selectedSet(ids),failures=[],now=[];
+ try{now=await lfKeysStrict();}catch(e){failures.push('LocalForage列举当前键失败：'+errText(e));}
+ for(var i=0;i<now.length;i++){
+   var k=now[i],c=ChatBackup.classifyKey(k,'lf');
+   if(c&&sel[c]&&!own(snap.lf,k)){
+     try{await timeoutPromise(strictLfApi().removeItem(k),V99.writeTimeout,'回滚删除 '+k);var removed=await lfGetStrict(k);if(removed!==null&&removed!==undefined)throw new Error('删除后仍可读取');}
+     catch(e){failures.push('LocalForage删除新增键 '+k+' 失败：'+errText(e));}
+   }
+ }
+ for(var k2 of Object.keys(snap.lf)){
+   try{await timeoutPromise(strictLfApi().setItem(k2,snap.lf[k2]),V99.writeTimeout,'回滚写入 '+k2);var restored=await lfGetStrict(k2);if(checksum(restored)!==checksum(snap.lf[k2]))throw new Error('回读值与原快照不一致');}
+   catch(e){failures.push('LocalForage恢复原键 '+k2+' 失败：'+errText(e));}
+ }
+ var lsNow=[];
+ try{for(var j=0;j<localStorage.length;j++){var lk=localStorage.key(j);if(lk)lsNow.push(lk);}}
+ catch(e){failures.push('LocalStorage列举当前键失败：'+errText(e));}
+ for(var n=0;n<lsNow.length;n++){
+   var oldKey=lsNow[n],category=ChatBackup.classifyKey(oldKey,'ls');
+   if(category&&sel[category]&&!own(snap.ls,oldKey)){
+     try{localStorage.removeItem(oldKey);if(localStorage.getItem(oldKey)!==null)throw new Error('删除后仍可读取');}
+     catch(e){failures.push('LocalStorage删除新增键 '+oldKey+' 失败：'+errText(e));}
+   }
+ }
+ Object.keys(snap.ls).forEach(function(key){
+   try{localStorage.setItem(key,snap.ls[key]);if(localStorage.getItem(key)!==String(snap.ls[key]))throw new Error('回读值与原快照不一致');}
+   catch(e){failures.push('LocalStorage恢复原键 '+key+' 失败：'+errText(e));}
+ });
+ if(failures.length)throw new Error('主存储回滚不完整：'+failures.join('；'));
+}
 var V99_RETIRED_DATA_PATTERNS=['dg_custom_data','dg_status_pool','weekly_fortune','daily_fortune','customWeather_','dg_header_bg','dg_overlay_bg','dg_overlay_bg_tint','_dgUserSalt','dailyFortuneNotes_','moyuRecords','currentMoyuRecord','moyuWorkSession','moyuLocations','moyuActivities','moyuUnread','petGameState','pixelPetGame','diaryTodos','diaryHabits','diaryHabitRecords','diaryPeriodRecords','diaryAnniversaries','diaryTodoCategories','diaryPeriodLastReminderDate','accountingRecords','accountingLabels','envelopeData','pending_envelope','moodCalendar','customMoodOptions','moodTrash','diviHistory','customTarotDeck','customTarotEnabled','groupChatSettings','gca_','chat_streak_data','tiSettings_showAvatar','tiSettings_customText','splashPledgeSigned_v3','callFeatureEnabled','callWindowPos','callWindowSize','callPillPos','callBgImageData','moments_data','moments_visitor_records','moments_friends','moments_reply_speed','moments_reply_count_min','moments_reply_count_max','moments_cover','moments_visitor_last_online','moments_visitor_last_viewed_count'];
 function isCurrentCallV2KeyV99(k){return /^CHAT_APP_V3_.+_(?:callRecordsV2|callSettingsV2)$/.test(String(k||''));}
 function isLegacyCallDataV99(k){return /(?:^|_)(?:callRecords|xiaoshu_call_records_v1|ta_phone_call_records|xiaoshu_ta_phone_call_records_v1)$/.test(String(k||''));}

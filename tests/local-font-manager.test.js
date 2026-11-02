@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const { IDBFactory, IDBObjectStore } = require('fake-indexeddb');
+const { webcrypto } = require('node:crypto');
+const integritySource = fs.readFileSync(path.join(__dirname, '..', 'font-integrity.js'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'custom-font-manager.js'), 'utf8');
 
@@ -15,8 +17,9 @@ function loadManager() {
     documentElement: { classList: { contains() { return false; } } }
   };
   const indexedDB = new IDBFactory();
-  const window = { document, indexedDB, addEventListener() {} };
+  const window = { document, indexedDB, crypto: webcrypto, addEventListener() {} };
   const context = { window, console, Uint8Array, ArrayBuffer, Promise, Error, Math, Date, Blob, setTimeout, clearTimeout };
+  vm.runInNewContext(integritySource, context, { filename: 'font-integrity.js' });
   vm.runInNewContext(source, context, { filename: 'custom-font-manager.js' });
   const manager = window.ChuanXunFontManager;
   Object.defineProperty(manager, '__testIndexedDB', { value: indexedDB, enumerable: false });

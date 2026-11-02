@@ -9,7 +9,7 @@ const integritySource = fs.readFileSync(path.join(__dirname, '..', 'font-integri
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'custom-font-manager.js'), 'utf8');
 
-function loadManager() {
+function loadManager(options = {}) {
   const listeners = {};
   const document = {
     readyState: 'loading',
@@ -17,7 +17,7 @@ function loadManager() {
     documentElement: { classList: { contains() { return false; } } }
   };
   const indexedDB = new IDBFactory();
-  const window = { document, indexedDB, crypto: webcrypto, addEventListener() {} };
+  const window = { document, indexedDB, crypto: options.noCrypto ? null : webcrypto, addEventListener() {} };
   const context = { window, console, Uint8Array, ArrayBuffer, Promise, Error, Math, Date, Blob, setTimeout, clearTimeout };
   vm.runInNewContext(integritySource, context, { filename: 'font-integrity.js' });
   vm.runInNewContext(source, context, { filename: 'custom-font-manager.js' });
@@ -228,4 +228,24 @@ test('font snapshot validation rejects duplicate IDs, invalid formats and damage
     context.validateBackupSnapshot({ ...good, fonts: [{ ...record, size: 99 }] }),
     /文件大小与记录不一致/
   );
+});
+
+test('new font snapshots use SHA-256 and block when WebCrypto is unavailable', async () => {
+  const manager = loadManager();
+  const record = makeFontRecord('sha-font', 'ttf');
+  await seedFonts(manager.__testIndexedDB, [record], 'sha-font');
+  const snapshot = await manager.exportBackupSnapshot();
+  assert.equal(snapshot.formatVersion, 2);
+  assert.match(snapshot.fonts[0].checksum, /^[0-9a-f]{64}$/);
+  const blocked = loadManager({ noCrypto: true });
+  await seedFonts(blocked.__testIndexedDB, [record], 'sha-font');
+  await assert.rejects(blocked.exportBackupSnapshot(), /不支持 WebCrypto SHA-256/);
+});
+
+test('font manager enforces cumulative font count and total size limits', async () => {
+  const manager = loadManager();
+  const good = await manager.validateBackupSnapshot({ schema:'chuanxun-font-library-backup',formatVersion:2,currentFontId:null,fonts:[] });
+  assert.equal(good.fonts.length, 0);
+  await assert.rejects(manager.validateBackupSnapshot({ schema:'chuanxun-font-library-backup',formatVersion:2,currentFontId:null,fonts:Array.from({length:101},(_,i)=>({id:'x'+i,size:1})) }), /数量超过 100/);
+  await assert.rejects(manager.validateBackupSnapshot({ schema:'chuanxun-font-library-backup',formatVersion:2,currentFontId:null,fonts:[{id:'a',size:150*1024*1024},{id:'b',size:60*1024*1024}] }), /总大小超过 200 MB/);
 });

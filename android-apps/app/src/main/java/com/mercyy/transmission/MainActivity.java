@@ -360,6 +360,7 @@ public class MainActivity extends Activity {
             } catch (Exception error) {
                 Log.e("ChuanXunBackup", "Failed to open the selected backup document", error);
                 backupDownloadBridge.cancelSave(requestId, panelId);
+                deletePartialBackupDocument(target);
                 backupDownloadBridge.notifyPickerResult(requestId, false, "无法写入所选文件");
             }
         }

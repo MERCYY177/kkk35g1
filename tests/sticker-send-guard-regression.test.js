@@ -353,3 +353,160 @@ test('batch send skips deleted sticker IDs but still sends valid stickers and or
   assert.equal(context.batchMessages.length, 0);
   assert.ok(notices.some(message => String(message).includes('已跳过 1 张')));
 });
+
+
+test('a queued sticker hidden after selection is rejected at final authorization', () => {
+  const storage = createSharedStorage();
+  const root = createRuntime('batch-hidden-after-queue-session', storage);
+  const store = createStore(root, [validSource], [validSource]);
+  const validId = root.XiaoshuStickerCore.stickerId(validSource);
+  storage.setItem('disabledStickerItems', JSON.stringify([validSource]));
+  assert.equal(store.authorizeSendId(validId), '');
+  assert.equal(store.getPool().includes(validSource), false);
+});
+
+test('final authorization rejects malformed deletion and hidden state instead of treating it as empty', () => {
+  for (const key of ['xiaoshu_deleted_upload_hashes_v1_malformed-session', 'disabledStickerItems']) {
+    const storage = createSharedStorage();
+    const root = createRuntime('malformed-session', storage);
+    const store = createStore(root, [validSource], [validSource]);
+    const validId = root.XiaoshuStickerCore.stickerId(validSource);
+    storage.setItem(key, JSON.stringify({ unexpected: true }));
+    assert.equal(store.authorizeSendId(validId), '', key + ' must fail closed');
+  }
+});
+
+test('a deletion arriving during final resolution is observed before authorization returns', () => {
+  const storage = createSharedStorage();
+  const root = createRuntime('interleaved-delete-session', storage);
+  const store = createStore(root, [deletedSource, validSource], [deletedSource, validSource]);
+  const deletedId = root.XiaoshuStickerCore.stickerId(deletedSource);
+  const tombstoneKey = 'xiaoshu_deleted_upload_hashes_v1_interleaved-delete-session';
+  const originalResolve = store.resolve.bind(store);
+  store.resolve = function (id) {
+    const source = originalResolve(id);
+    if (id === deletedId) storage.setItem(tombstoneKey, JSON.stringify([deletedId]));
+    return source;
+  };
+  assert.equal(store.authorizeSendId(deletedId), '');
+  const validId = root.XiaoshuStickerCore.stickerId(validSource);
+  assert.equal(store.authorizeSendId(validId), validId);
+});
+
+test('queued sticker authorization waits for migration hydration', () => {
+  const storage = createSharedStorage();
+  const root = createRuntime('migration-pending-session', storage);
+  const store = createStore(root, [validSource], [validSource]);
+  const validId = root.XiaoshuStickerCore.stickerId(validSource);
+  store.getMigrationState = () => ({ hydrated: false });
+  assert.equal(store.authorizeSendId(validId), '');
+});
+
+test('a stale queued sticker cannot reappear after reload and IndexedDB hydration', async () => {
+  const storage = createSharedStorage();
+  const firstTab = createRuntime('reload-session', storage);
+  const firstStore = createStore(firstTab, [deletedSource, validSource], [deletedSource, validSource]);
+  const deletedId = firstTab.XiaoshuStickerCore.stickerId(deletedSource);
+  assert.equal(firstStore.removeUpload(deletedSource, false), true);
+  const reloadedTab = createRuntime('reload-session', storage);
+  const reloadedStore = createStore(reloadedTab, [deletedSource, validSource], [deletedSource, validSource]);
+  await reloadedStore.hydrate();
+  assert.equal(reloadedStore.getUploads().includes(deletedSource), false);
+  assert.equal(reloadedStore.getPool().includes(deletedSource), false);
+  assert.equal(reloadedStore.authorizeSendId(deletedId), '');
+  const validId = reloadedTab.XiaoshuStickerCore.stickerId(validSource);
+  assert.equal(reloadedStore.authorizeSendId(validId), validId);
+});
+
+test('failed deletion persistence preserves the still-valid sticker send authorization', () => {
+  const storage = createSharedStorage();
+  const root = createRuntime('delete-write-failure-session', storage);
+  const store = createStore(root, [deletedSource, validSource], [deletedSource, validSource]);
+  const deletedId = root.XiaoshuStickerCore.stickerId(deletedSource);
+  storage.setItem = function () { throw new Error('storage blocked'); };
+  assert.equal(store.removeUpload(deletedSource, false), false);
+  assert.equal(store.getUploads().includes(deletedSource), true);
+  assert.equal(store.authorizeSendId(deletedId), deletedId);
+});
+
+test('each queued sticker is reauthorized independently during a repeated batch send', () => {
+  const start = html.indexOf('function sendBatchMessages()');
+  const end = html.indexOf('\\n\\n        window.simulateReply =', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const sender = html.slice(start, end);
+  const added = [];
+  let authorizationCalls = 0;
+  const context = {
+    batchMessages: [
+      { text: '', stickerId: 'same-id' },
+      { text: '', stickerId: 'same-id' },
+      { text: 'keep this text', stickerId: '' },
+    ],
+    window: { xiaoshuStickerStore: { authorizeSendId(id) {
+      authorizationCalls += 1;
+      return authorizationCalls === 1 ? id : '';
+    } } },
+    showNotification() {},
+    addMessage(message) { added.push(message); },
+    playSound() {},
+    xsQueueChatMessagesSave() {},
+    simulateReply() {},
+    isBatchMode: true,
+    DOMElements: {
+      batchBtn: { classList: { remove() {} } },
+      batchPreview: { style: {} },
+      messageInput: { placeholder: '' },
+    },
+  };
+  vm.runInNewContext(sender + '; sendBatchMessages();', context);
+  assert.equal(authorizationCalls, 2);
+  assert.deepEqual(added.map(message => message.stickerId || message.text), ['same-id', 'keep this text']);
+});
+
+test('a batch containing only rejected stickers does not save an empty message set or simulate a reply', () => {
+  const start = html.indexOf('function sendBatchMessages()');
+  const end = html.indexOf('\\n\\n        window.simulateReply =', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const sender = html.slice(start, end);
+  let saved = 0;
+  let replies = 0;
+  const context = {
+    batchMessages: [
+      { text: '', stickerId: 'deleted-one' },
+      { text: '', stickerId: 'deleted-two' },
+    ],
+    window: { xiaoshuStickerStore: { authorizeSendId() { return ''; } } },
+    showNotification() {},
+    addMessage() { assert.fail('rejected stickers must not create messages'); },
+    playSound() {},
+    xsQueueChatMessagesSave() { saved += 1; },
+    simulateReply() { replies += 1; },
+    isBatchMode: true,
+    DOMElements: {
+      batchBtn: { classList: { remove() {} } },
+      batchPreview: { style: {} },
+      messageInput: { placeholder: '' },
+    },
+  };
+  vm.runInNewContext(sender + '; sendBatchMessages();', context);
+  assert.equal(saved, 0);
+  assert.equal(replies, 0);
+  assert.equal(context.batchMessages.length, 0);
+});
+
+test('historical message resource mappings remain readable after upload deletion', () => {
+  const storage = createSharedStorage();
+  const root = createRuntime('history-retention-session', storage);
+  const store = createStore(root, [deletedSource], [deletedSource]);
+  const deletedId = root.XiaoshuStickerCore.stickerId(deletedSource);
+  const historical = root.XiaoshuStickerCore.rebuildResourceMap(
+    [{ stickerId: deletedId }],
+    { [deletedId]: deletedSource },
+    []
+  );
+  assert.equal(store.removeUpload(deletedSource, false), true);
+  assert.equal(historical.map[deletedId], deletedSource);
+  assert.deepEqual(historical.missing, []);
+});

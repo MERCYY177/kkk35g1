@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
+import android.util.Log;
 import android.view.View;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -342,7 +343,11 @@ public class MainActivity extends Activity {
 
     private void deletePartialBackupDocument(Uri uri) {
         if (uri == null) return;
-        try { getContentResolver().delete(uri, null, null); } catch (Exception ignored) {}
+        try {
+            getContentResolver().delete(uri, null, null);
+        } catch (Exception error) {
+            Log.e("ChuanXunBackup", "Failed to delete an incomplete backup document", error);
+        }
     }
 
     private void notifyBackupPicker(String requestId, boolean ok, String message) {
@@ -446,7 +451,9 @@ public class MainActivity extends Activity {
                     if (attached) backupDocumentUri = target;
                 }
                 if (!attached) {
-                    try { stream.close(); } catch (IOException ignored) {}
+                    try { stream.close(); } catch (IOException error) {
+                        Log.e("ChuanXunBackup", "Failed to close an unattached backup stream", error);
+                    }
                     deletePartialBackupDocument(target);
                     return;
                 }

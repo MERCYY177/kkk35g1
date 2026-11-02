@@ -84,10 +84,23 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Build all three Android debug APKs for device acceptance
+        working-directory: android-apps
+        run: gradle --no-daemon :app:assembleChuanxun1Debug :app:assembleChuanxun2Debug :app:assembleChuanxun3Debug
+
+      - name: Upload Android debug APKs for manual device acceptance
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-device-acceptance-apks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: android-apps/app/build/outputs/apk/**/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Report validation scope
         if: always()
         run: |
-          echo "This workflow is validation-only."
+          echo "This workflow validates source and builds debug APKs for manual device acceptance."
           echo "It does not build or deploy a web release."
+          echo "It does not install APKs on a physical Android device."
           echo "It does not access or modify a user's browser databases."
           echo "Android device file-picker behavior still requires device verification."

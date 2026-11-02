@@ -83,7 +83,8 @@ async function installChat2SendHarness(page, functions) {
     document.body.appendChild(frame);
   }, functions);
   const frame = page.frameLocator('#e2e-chat2');
-  await frame.locator('body').waitFor();
+  await frame.locator('body').waitFor({ state: 'attached' });
+  await frame.locator('body').evaluate(() => { if (typeof window.__sendSharedSticker !== 'function') throw new Error('Chat 2 send function did not initialize'); });
   return frame;
 }
 

@@ -85,18 +85,21 @@ public final class NativeBackupDownloadBridge {
 
     @JavascriptInterface
     public boolean finishSave(String requestId, String panelId) {
-        if (!isActive(requestId, panelId)) return false;
-        if (!session.finish(requestId, panelId)) {
-            cancelSave(requestId, panelId);
-            return false;
-        }
+        boolean completed;
         synchronized (lock) {
-            if (!matchesLocked(requestId, panelId)) return false;
+            if (!matchesLocked(requestId, panelId) || !session.isActive(requestId, panelId)) {
+                return false;
+            }
+            // Serialize the terminal stream operation with cancelSave/onDestroy.
+            // Otherwise cancellation can clear the bridge after finish() closes
+            // the stream but before this method clears the request identity.
+            completed = session.finish(requestId, panelId);
             this.requestId = null;
             this.panelId = null;
         }
-        host.onCompleted(requestId, panelId);
-        return true;
+        if (completed) host.onCompleted(requestId, panelId);
+        else host.onCancelled(requestId, panelId);
+        return completed;
     }
 
     @JavascriptInterface

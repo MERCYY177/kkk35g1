@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const activitySource = fs.readFileSync(path.join(__dirname, '..',
   'android-apps/app/src/main/java/com/mercyy/transmission/MainActivity.java'), 'utf8');
 const bridgeMatch = activitySource.match(
-  /INSTALL_BACKUP_DOWNLOAD_BRIDGE_JS\\s*=\\s*"""([\\s\\S]*?)\\n\\s*""";/
+  /INSTALL_BACKUP_DOWNLOAD_BRIDGE_JS\s*=\s*"""([\s\S]*?)\n\s*""";/
 );
 assert.ok(bridgeMatch, 'Android native save bridge JavaScript must be present');
 

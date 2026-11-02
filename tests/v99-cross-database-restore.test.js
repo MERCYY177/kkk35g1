@@ -256,7 +256,7 @@ test('font write followed by font readback failure removes only new fonts and re
     return originalExport();
   };
   try {
-    await assert.rejects(f.apply(), /字体恢复后回读/);
+    await assert.rejects(f.apply(), /injected font readback failure/);
   } finally {
     f.manager.exportBackupSnapshot = originalExport;
   }

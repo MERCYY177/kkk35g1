@@ -5,6 +5,8 @@ const vm = require('node:vm');
 const path = require('node:path');
 const JSZip = require('jszip');
 const { IDBFactory } = require('fake-indexeddb');
+const { webcrypto, createHash } = require('node:crypto');
+const integritySource = fs.readFileSync(path.join(__dirname, '..', 'font-integrity.js'), 'utf8');
 const managerSource = fs.readFileSync(path.join(__dirname, '..', 'custom-font-manager.js'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'font-backup-codec.js'), 'utf8');
@@ -12,8 +14,10 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'font-backup-codec.js'
 function loadManager() {
   const document = { readyState: 'loading', addEventListener() {}, documentElement: { classList: { contains() { return false; } } } };
   const indexedDB = new IDBFactory();
-  const window = { document, indexedDB, addEventListener() {} };
-  vm.runInNewContext(managerSource, { window, console, Uint8Array, ArrayBuffer, Promise, Error, Math, Date, Blob, setTimeout, clearTimeout }, { filename: 'custom-font-manager.js' });
+  const window = { document, indexedDB, crypto: webcrypto, addEventListener() {} };
+  const context = { window, console, Uint8Array, ArrayBuffer, Promise, Error, Math, Date, Blob, setTimeout, clearTimeout };
+  vm.runInNewContext(integritySource, context, { filename: 'font-integrity.js' });
+  vm.runInNewContext(managerSource, context, { filename: 'custom-font-manager.js' });
   Object.defineProperty(window.ChuanXunFontManager, '__testIndexedDB', { value: indexedDB });
   return window.ChuanXunFontManager;
 }
@@ -28,15 +32,13 @@ async function seedManager(manager, records, currentFontId) {
   });
 }
 function loadCodec() {
-  const window = { btoa, atob };
-  vm.runInNewContext(source, { window, Blob, Uint8Array, ArrayBuffer, Promise, Math, Error, String, Number, Object, RegExp }, { filename: 'font-backup-codec.js' });
+  const window = { btoa, atob, crypto: webcrypto };
+  const context = { window, Blob, Uint8Array, ArrayBuffer, Promise, Math, Error, String, Number, Object, RegExp };
+  vm.runInNewContext(integritySource, context, { filename: 'font-integrity.js' });
+  vm.runInNewContext(source, context, { filename: 'font-backup-codec.js' });
   return window.ChuanXunFontBackupCodec;
 }
-function checksum(bytes) {
-  let hash = 2166136261;
-  for (const byte of bytes) { hash ^= byte; hash = Math.imul(hash, 16777619); }
-  return (hash >>> 0).toString(16).padStart(8, '0');
-}
+function checksum(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
 function record(id, format, sig) {
   const bytes = new Uint8Array(24);
   bytes.set(sig);
@@ -46,7 +48,7 @@ function record(id, format, sig) {
 }
 const snapshot = () => ({
   schema: 'chuanxun-font-library-backup',
-  formatVersion: 1,
+  formatVersion: 2,
   currentFontId: 'woff2-id',
   fonts: [
     record('ttf-id', 'ttf', [0, 1, 0, 0]),

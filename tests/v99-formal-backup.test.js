@@ -55,7 +55,7 @@ function makeProductionHarness({managerWindow, zipEnabled}) {
     buildBackupPayload: async () => ({type:'chatapp-backup-v6',formatVersion:6,appName:'ChatApp',
       timestamp:'2026-11-02T00:00:00.000Z',sessionId:'sid',appPrefix:'app:',modules:[],
       manifest:{},diagnostics:{},localforage:{},localStorage:{},mediaStore:{}}),
-    preflightBackup: async data => ({ok:true,errors:[],warnings:[],data,availableCategoryIds:[],summary:{}})
+    preflightBackup: data => ({ok:true,errors:[],warnings:[],data,availableCategoryIds:[],summary:{}})
   };
   const notices=[],offered=[];
   const window = Object.assign(managerWindow, {

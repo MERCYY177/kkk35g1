@@ -159,6 +159,7 @@ test('successful emergency export produces a validated full extension with Base6
   const result = await h.sandbox.xiaoshuEmergencyRescueExport({ reason: 'test-success' });
   assert.equal(result.ok, true);
   const extended = await result.extendedPromise;
+  if (!extended.ok) console.error('[V99 emergency export diagnostic]', JSON.stringify({ errors: extended.errors || [], payload: extended.payload || null, panelError: h.captured.panelError || null }));
   assert.equal(extended.ok, true);
   assert.equal(extended.payload.stage, 'full');
   assert.equal(extended.payload.complete, true);

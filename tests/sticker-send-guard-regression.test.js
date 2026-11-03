@@ -510,3 +510,99 @@ test('historical message resource mappings remain readable after upload deletion
   assert.equal(historical.map[deletedId], deletedSource);
   assert.equal(historical.missing.length, 0);
 });
+
+test('Chat 1 final message writer rejects a sticker deleted after picker selection', () => {
+  const start = html.indexOf('const addMessage = (message, options = null) => {');
+  const marker = '\\n};\\n\\n            if (imageFiles.length)';
+  const end = html.indexOf(marker, start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const writer = html.slice(start, end + 3);
+  let authorizationCalls = 0;
+  const messages = [];
+  const context = {
+    window: {
+      xiaoshuStickerStore: {
+        authorizeSendId(id) { authorizationCalls += 1; return ''; },
+      },
+    },
+    showNotification() {},
+    messages,
+  };
+  vm.runInNewContext(writer + '; globalThis.writeResult = addMessage({ stickerId: "deleted-after-selection", sender: "user" });', context);
+  assert.equal(authorizationCalls, 1);
+  assert.equal(context.writeResult, false);
+  assert.equal(messages.length, 0);
+});
+
+test('Chat 2 final message writer rejects a stale iframe sticker before persistence', () => {
+  const start = html.indexOf("function addMessage(who,content,type='text'){");
+  const end = html.indexOf('\\nfunction sendInput(){', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const writer = html.slice(start, end);
+  let authorizationCalls = 0;
+  const state = { messages: [] };
+  const context = {
+    window: {
+      parent: {
+        xiaoshuStickerStore: {
+          authorizeSendId(id) { authorizationCalls += 1; return ''; },
+        },
+      },
+    },
+    state,
+    console: { warn() {} },
+  };
+  vm.runInNewContext(writer + '; globalThis.writeResult = addMessage("me", "deleted-after-selection", "sticker");', context);
+  assert.equal(authorizationCalls, 1);
+  assert.equal(context.writeResult, false);
+  assert.equal(state.messages.length, 0);
+});
+
+test('batch send does not count, save, or reply when the final message writer rejects after selection-time authorization', () => {
+  const start = html.indexOf('function sendBatchMessages()');
+  const end = html.indexOf('window.simulateReply =', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const sender = html.slice(start, end);
+  let saved = 0;
+  let replies = 0;
+  const added = [];
+  const context = {
+    batchMessages: [{ text: '', stickerId: 'deleted-at-final-write' }],
+    window: {
+      xiaoshuStickerStore: {
+        authorizeSendId(id) { return id; },
+      },
+    },
+    showNotification() {},
+    addMessage(message) { added.push(message); return false; },
+    playSound() {},
+    xsQueueChatMessagesSave() { saved += 1; },
+    simulateReply() { replies += 1; },
+    isBatchMode: true,
+    DOMElements: {
+      batchBtn: { classList: { remove() {} } },
+      batchPreview: { style: {} },
+      messageInput: { placeholder: '' },
+    },
+  };
+  vm.runInNewContext(sender + '; sendBatchMessages();', context);
+  assert.equal(added.length, 1);
+  assert.equal(saved, 0);
+  assert.equal(replies, 0);
+  assert.equal(context.batchMessages.length, 0);
+});
+
+test('Chat 1 and Chat 2 sticker senders propagate final writer rejection', () => {
+  const chat1Start = html.indexOf('function sendSticker(src)');
+  const chat1End = html.indexOf('function emit(pool)', chat1Start);
+  const chat1 = html.slice(chat1Start, chat1End);
+  assert.match(chat1, /if\\s*\\(addMessage\\([\\s\\S]*?\\)===false\\)return false/);
+
+  const chat2Start = html.indexOf('function sendSharedSticker(src)');
+  const chat2End = html.indexOf('function load(){', chat2Start);
+  const chat2 = html.slice(chat2Start, chat2End);
+  assert.match(chat2, /if\\(addMessage\\('me',stickerId,'sticker'\\)===false\\)return false/);
+});

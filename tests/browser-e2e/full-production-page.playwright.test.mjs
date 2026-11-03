@@ -160,6 +160,10 @@ test('full production UI uploads, deletes and rejects a deleted sticker in real 
       buttons.some(button => button.__stickerSrc === src && !!button.querySelector('img')), uploadedSrc
     );
     assert.equal(uploadedVisible, true, 'newly uploaded image must appear in the shared sticker picker');
+    const queuedStickerId = await page.evaluate(src => window.xiaoshuStickerStore.register(src), uploadedSrc);
+    assert.ok(queuedStickerId, 'picker selection must produce a queued sticker resource ID');
+    assert.equal(await page.evaluate(() => typeof addMessage), 'function',
+      'production Chat 1 message writer must be reachable for the final-write regression check');
     await page.locator('#combo-content-area [data-xs-final-manage-sticker]').click();
     await page.locator('#xiaoshu-sticker-admin-modal').waitFor({ state: 'visible', timeout: 15000 });
     await page.locator('#xs-sticker-upload-grid [data-xs-remove-upload]').waitFor({ state: 'visible' });
@@ -184,6 +188,27 @@ test('full production UI uploads, deletes and rejects a deleted sticker in real 
       return await window.localforage.getItem(prefix + sid + '_myStickerLibrary');
     });
     assert.deepEqual(persistedUploads, [], 'deleted upload must be absent from the canonical IndexedDB upload key');
+
+    const finalWrite = await page.evaluate(stickerId => {
+      const before = document.querySelectorAll('.message-wrapper').length;
+      const result = addMessage({
+        id: 'deleted-after-selection-final-write',
+        sender: 'user',
+        text: '',
+        timestamp: new Date(),
+        stickerId,
+        messageKind: 'sticker',
+        status: 'sent',
+        type: 'normal',
+        favorited: false,
+        note: null,
+        conversationId: 'card'
+      });
+      const after = document.querySelectorAll('.message-wrapper').length;
+      return { result, before, after };
+    }, queuedStickerId);
+    assert.equal(finalWrite.result, false, 'final Chat 1 message writer must reject the queued ID after deletion');
+    assert.equal(finalWrite.after, finalWrite.before, 'rejected sticker must not create a chat message');
 
     const staleSendResult = await page.evaluate(src => window.xiaoshuStickerStore.send(src), uploadedSrc);
     assert.equal(staleSendResult, false, 'production send API must reject the just-deleted upload');

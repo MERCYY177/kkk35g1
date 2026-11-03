@@ -514,11 +514,10 @@ test('historical message resource mappings remain readable after upload deletion
 
 test('Chat 1 final message writer rejects a sticker deleted after picker selection', () => {
   const start = html.indexOf('const addMessage = (message, options = null) => {');
-  const marker = '\n};\n\n            if (imageFiles.length)';
-  const end = html.indexOf(marker, start);
+  const end = html.indexOf("    message.conversationId = 'card';", start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
-  const writer = html.slice(start, end + 3);
+  const writer = html.slice(start, end) + '};';
   let authorizationCalls = 0;
   const messages = [];
   const context = {
@@ -538,10 +537,10 @@ test('Chat 1 final message writer rejects a sticker deleted after picker selecti
 
 test('Chat 2 final message writer rejects a stale iframe sticker before persistence', () => {
   const start = html.indexOf("function addMessage(who,content,type='text'){");
-  const end = html.indexOf('\nfunction sendInput(){', start);
+  const end = html.indexOf('  const wasNearBottom=isChatNearBottom();', start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
-  const writer = html.slice(start, end);
+  const writer = html.slice(start, end) + '}';
   let authorizationCalls = 0;
   const state = { messages: [] };
   const context = {

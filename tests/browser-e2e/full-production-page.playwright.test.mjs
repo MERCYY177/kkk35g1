@@ -107,6 +107,16 @@ test('full production index.html boots in an isolated real Chromium browser', as
     assert.deepEqual(failedLocalRequests, [], 'all requested local production assets must load');
     assert.deepEqual(pageErrors, [], 'production page must not emit uncaught JavaScript errors during boot');
 
+    // Boot lands on the lock-screen home page. Enter Chat 1 through the real
+    // production app drawer before touching the chat-only input bar.
+    await page.locator('#xiaoshuDrawerHomeEntry').waitFor({ state: 'visible', timeout: 15000 });
+    await page.locator('#xiaoshuDrawerHomeEntry').click();
+    await page.locator('#xiaoshuAppDrawer').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('#xiaoshuAppDrawer [data-xs-drawer-app="chat"]').click();
+    await page.waitForFunction(() => document.body.classList.contains('xiaoshu-chat-active'), null, { timeout: 15000 });
+    await page.locator('.input-area-wrapper').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('#combo-btn').waitFor({ state: 'visible', timeout: 10000 });
+
     // Exercise the actual production picker -> management modal -> upload/delete UI.
     await page.locator('#combo-btn').click();
     await page.locator('#user-sticker-picker [data-xs-tab="stickers"]').click();

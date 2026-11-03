@@ -126,7 +126,7 @@ test('full production index.html boots in an isolated real Chromium browser', as
 
     await page.waitForFunction(() => window.xiaoshuStickerStore.getUploads().length === 1, null, { timeout: 20000 });
     const uploadedSrc = await page.evaluate(() => window.xiaoshuStickerStore.getUploads()[0]);
-    assert.match(uploadedSrc, /^data:image\\//, 'production upload must produce an image data URL');
+    assert.ok(uploadedSrc.startsWith('data:image/'), 'production upload must produce an image data URL');
     await page.locator('#xs-sticker-upload-grid [data-xs-remove-upload]').waitFor({ state: 'visible' });
 
     // Delete using the real per-upload × control and accept its confirmation dialog.

@@ -26,6 +26,7 @@ const controllerSource = scriptById('xiaoshu-shared-sticker-controller-v6');
 const chat2Source = scriptById('xiaoshuChat2Source');
 const chat2SendFunctions =
   between(chat2Source, 'function chat2StickerHash(src){', 'function resolveChat2Sticker(id){') +
+  between(chat2Source, "function addMessage(who,content,type='text'){", 'function sendInput(){') +
   between(chat2Source, 'function sendSharedSticker(src){', 'function load(){');
 const batchSendFunction = between(
   indexHtml,
@@ -75,14 +76,15 @@ async function installChat2SendHarness(page, functions) {
     frame.srcdoc = [
       '<script>',
       'function safeResourceUrl(value, kind){const text=String(value||"").trim();return kind==="image"&&/^data:image\\//i.test(text)?text:"";}',
-      'const state={stickerResources:Object.create(null),autoReply:"off"};',
+      'const state={stickerResources:Object.create(null),messages:[],autoReply:"off"};',
       'const sharedStickerCatalog=Object.create(null);',
       'let sharedStickerPool=[];',
-      'const sent=[];',
-      'function addMessage(){sent.push(Array.from(arguments));}',
+      'function isChatNearBottom(){return true;}',
+      'function save(){return true;}',
+      'function appendMessageToChat(){}',
       'function closeSharedStickers(){}',
       source,
-      'window.__sendSharedSticker=sendSharedSticker;window.__chat2Sent=sent;',
+      'window.__sendSharedSticker=sendSharedSticker;window.__chat2Sent=state.messages;',
       '</script>'
     ].join('');
     document.body.appendChild(frame);
@@ -141,6 +143,12 @@ test('real Chromium: Chat 1, Chat 2 iframe, two tabs, IndexedDB reload and histo
     assert.equal(await chat2.evaluate((src) => window.xiaoshuStickerStore.send(src), source), false);
     assert.equal(await frame.locator('body').evaluate((_, src) => window.__sendSharedSticker(src), source), false);
     assert.equal(await frame.locator('body').evaluate(() => window.__chat2Sent.length), 1);
+    const chat2FinalWrite = await frame.locator('body').evaluate((_, stickerId) =>
+      addMessage('me', stickerId, 'sticker'), id
+    );
+    assert.equal(chat2FinalWrite, false, 'Chat 2 final writer must reject the queued ID after parent deletion');
+    assert.equal(await frame.locator('body').evaluate(() => window.__chat2Sent.length), 1,
+      'rejected Chat 2 sticker must not be persisted in iframe chat state');
 
     // Run the real Chat 1 batch sender in Chromium: reject the deleted ID while
     // keeping a second valid sticker and ordinary text in the same batch.

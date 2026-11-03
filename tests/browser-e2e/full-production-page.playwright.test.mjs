@@ -24,7 +24,7 @@ function createStaticServer() {
       res.writeHead(400).end('Bad request');
       return;
     }
-    const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+    const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\\/+/, '');
     const file = path.resolve(root, relative);
     if (file !== root && !file.startsWith(root + path.sep)) {
       res.writeHead(403).end('Forbidden');
@@ -55,7 +55,12 @@ test('full production index.html boots in an isolated real Chromium browser', as
   let browser;
   try {
     browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ permissions: [] });
+    // The production sticker picker is in the chat bottom bar. Use a phone-sized
+    // viewport so responsive desktop rules do not hide the real user control.
+    const context = await browser.newContext({
+      permissions: [],
+      viewport: { width: 390, height: 844 }
+    });
     const page = await context.newPage();
     const pageErrors = [];
     const failedLocalRequests = [];
@@ -101,7 +106,6 @@ test('full production index.html boots in an isolated real Chromium browser', as
     assert.equal(bootState.stickerAdminModalPresent, true);
     assert.deepEqual(failedLocalRequests, [], 'all requested local production assets must load');
     assert.deepEqual(pageErrors, [], 'production page must not emit uncaught JavaScript errors during boot');
-
 
     // Exercise the actual production picker -> management modal -> upload/delete UI.
     await page.locator('#combo-btn').click();

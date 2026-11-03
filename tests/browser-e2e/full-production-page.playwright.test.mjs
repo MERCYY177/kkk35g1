@@ -137,6 +137,12 @@ test('full production index.html boots in an isolated real Chromium browser', as
       return !!grid && !grid.querySelector('[data-xs-remove-upload]');
     }, null, { timeout: 10000 });
 
+    await page.waitForFunction(async () => {
+      const sid = String(window.SESSION_ID || '');
+      const prefix = String(window.APP_PREFIX || 'CHAT_APP_V3_');
+      const saved = await window.localforage.getItem(prefix + sid + '_myStickerLibrary');
+      return Array.isArray(saved) && saved.length === 0;
+    }, null, { timeout: 20000 });
     const persistedUploads = await page.evaluate(async () => {
       const sid = String(window.SESSION_ID || '');
       const prefix = String(window.APP_PREFIX || 'CHAT_APP_V3_');

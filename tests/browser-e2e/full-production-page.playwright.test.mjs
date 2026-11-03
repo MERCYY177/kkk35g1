@@ -24,7 +24,7 @@ function createStaticServer() {
       res.writeHead(400).end('Bad request');
       return;
     }
-    const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\\/+/, '');
+    const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
     const file = path.resolve(root, relative);
     if (file !== root && !file.startsWith(root + path.sep)) {
       res.writeHead(403).end('Forbidden');

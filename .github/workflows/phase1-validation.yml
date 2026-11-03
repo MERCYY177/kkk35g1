@@ -74,6 +74,9 @@ jobs:
       - name: Run real Chromium sticker deletion end-to-end test
         run: node --test tests/browser-e2e/sticker-deletion.playwright.test.mjs
 
+      - name: Run full production page Chromium boot smoke test
+        run: node --test tests/browser-e2e/full-production-page.playwright.test.mjs
+
       - name: Audit Android packaging and font integration
         run: python3 tests/audit_local_android_project.py
 

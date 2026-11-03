@@ -147,8 +147,17 @@ test('full production UI uploads, deletes and rejects a deleted sticker in real 
     await page.locator('#xs-close-sticker-admin').click();
     await page.locator('#combo-btn').click();
     await page.locator('#user-sticker-picker [data-xs-tab="stickers"]').click();
-    const uploadedVisible = await page.locator('#combo-content-area img').evaluateAll((imgs, src) =>
-      imgs.some(img => img.src === src), uploadedSrc
+    // Picker tiles are created before their lazy image src is assigned on the next
+    // animation frame. Verify the authoritative source attached to the rendered tile,
+    // not img.src at this earlier point in the lazy-load lifecycle.
+    await page.waitForFunction(src => {
+      const area = document.getElementById('combo-content-area');
+      return !!area && Array.from(area.querySelectorAll('.xs-final-sticker-btn')).some(button =>
+        button.__stickerSrc === src && !!button.querySelector('img')
+      );
+    }, uploadedSrc, { timeout: 10000 });
+    const uploadedVisible = await page.locator('#combo-content-area .xs-final-sticker-btn').evaluateAll((buttons, src) =>
+      buttons.some(button => button.__stickerSrc === src && !!button.querySelector('img')), uploadedSrc
     );
     assert.equal(uploadedVisible, true, 'newly uploaded image must appear in the shared sticker picker');
     await page.locator('#combo-content-area [data-xs-final-manage-sticker]').click();

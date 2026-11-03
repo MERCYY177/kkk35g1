@@ -102,6 +102,62 @@ test('full production index.html boots in an isolated real Chromium browser', as
     assert.deepEqual(failedLocalRequests, [], 'all requested local production assets must load');
     assert.deepEqual(pageErrors, [], 'production page must not emit uncaught JavaScript errors during boot');
 
+
+    // Exercise the actual production picker -> management modal -> upload/delete UI.
+    await page.locator('#combo-btn').click();
+    await page.locator('#user-sticker-picker [data-xs-tab="stickers"]').click();
+    await page.locator('#combo-content-area [data-xs-final-manage-sticker]').click();
+    await page.locator('#xiaoshu-sticker-admin-modal').waitFor({ state: 'visible', timeout: 15000 });
+
+    const initialUploads = await page.evaluate(() => window.xiaoshuStickerStore.getUploads().length);
+    assert.equal(initialUploads, 0, 'isolated production browser must start with no user-uploaded stickers');
+
+    page.on('dialog', dialog => dialog.accept());
+    await page.locator('#xs-admin-upload-stickers').click();
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pWQAAAAASUVORK5CYII=',
+      'base64'
+    );
+    await page.locator('#my-sticker-quick-upload').setInputFiles({
+      name: 'production-ui-upload.png',
+      mimeType: 'image/png',
+      buffer: tinyPng
+    });
+
+    await page.waitForFunction(() => window.xiaoshuStickerStore.getUploads().length === 1, null, { timeout: 20000 });
+    const uploadedSrc = await page.evaluate(() => window.xiaoshuStickerStore.getUploads()[0]);
+    assert.match(uploadedSrc, /^data:image\\//, 'production upload must produce an image data URL');
+    await page.locator('#xs-sticker-upload-grid [data-xs-remove-upload]').waitFor({ state: 'visible' });
+
+    // Delete using the real per-upload × control and accept its confirmation dialog.
+    await page.locator('#xs-sticker-upload-grid [data-xs-remove-upload]').click();
+    await page.waitForFunction(() => window.xiaoshuStickerStore.getUploads().length === 0, null, { timeout: 20000 });
+    await page.waitForFunction(() => {
+      const grid = document.getElementById('xs-sticker-upload-grid');
+      return !!grid && !grid.querySelector('[data-xs-remove-upload]');
+    }, null, { timeout: 10000 });
+
+    const persistedUploads = await page.evaluate(async () => {
+      const sid = String(window.SESSION_ID || '');
+      const prefix = String(window.APP_PREFIX || 'CHAT_APP_V3_');
+      return await window.localforage.getItem(prefix + sid + '_myStickerLibrary');
+    });
+    assert.deepEqual(persistedUploads, [], 'deleted upload must be absent from the canonical IndexedDB upload key');
+
+    const staleSendResult = await page.evaluate(src => window.xiaoshuStickerStore.send(src), uploadedSrc);
+    assert.equal(staleSendResult, false, 'production send API must reject the just-deleted upload');
+    await page.locator('#xs-close-sticker-admin').click();
+
+    // Re-open the visible sticker picker and verify the deleted image is not rendered.
+    await page.locator('#combo-btn').click();
+    await page.locator('#user-sticker-picker [data-xs-tab="stickers"]').click();
+    const staleVisible = await page.locator('#combo-content-area img').evaluateAll((imgs, src) =>
+      imgs.some(img => img.src === src), uploadedSrc
+    );
+    assert.equal(staleVisible, false, 'deleted upload must not reappear in the production sticker picker');
+    assert.deepEqual(failedLocalRequests, [], 'production UI interactions must not fail local asset requests');
+    assert.deepEqual(pageErrors, [], 'production UI interactions must not emit uncaught JavaScript errors');
+
     await context.close();
   } finally {
     if (browser) await browser.close();

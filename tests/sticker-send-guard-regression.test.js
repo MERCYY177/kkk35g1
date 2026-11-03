@@ -511,9 +511,10 @@ test('historical message resource mappings remain readable after upload deletion
   assert.equal(historical.missing.length, 0);
 });
 
+
 test('Chat 1 final message writer rejects a sticker deleted after picker selection', () => {
   const start = html.indexOf('const addMessage = (message, options = null) => {');
-  const marker = '\\n};\\n\\n            if (imageFiles.length)';
+  const marker = '\n};\n\n            if (imageFiles.length)';
   const end = html.indexOf(marker, start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
@@ -537,7 +538,7 @@ test('Chat 1 final message writer rejects a sticker deleted after picker selecti
 
 test('Chat 2 final message writer rejects a stale iframe sticker before persistence', () => {
   const start = html.indexOf("function addMessage(who,content,type='text'){");
-  const end = html.indexOf('\\nfunction sendInput(){', start);
+  const end = html.indexOf('\nfunction sendInput(){', start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const writer = html.slice(start, end);
@@ -599,10 +600,10 @@ test('Chat 1 and Chat 2 sticker senders propagate final writer rejection', () =>
   const chat1Start = html.indexOf('function sendSticker(src)');
   const chat1End = html.indexOf('function emit(pool)', chat1Start);
   const chat1 = html.slice(chat1Start, chat1End);
-  assert.match(chat1, /if\\s*\\(addMessage\\([\\s\\S]*?\\)===false\\)return false/);
+  assert.match(chat1, /if\s*\(addMessage\([\s\S]*?\)===false\)return false/);
 
   const chat2Start = html.indexOf('function sendSharedSticker(src)');
   const chat2End = html.indexOf('function load(){', chat2Start);
   const chat2 = html.slice(chat2Start, chat2End);
-  assert.match(chat2, /if\\(addMessage\\('me',stickerId,'sticker'\\)===false\\)return false/);
+  assert.match(chat2, /if\(addMessage\('me',stickerId,'sticker'\)===false\)return false/);
 });

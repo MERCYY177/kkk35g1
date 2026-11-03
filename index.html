@@ -4785,6 +4785,18 @@ function xsGetMessageIdSet() {
 window.xiaoshuInvalidateMessageIdSet = xsInvalidateMessageIdSet;
 const addMessage = (message, options = null) => {
     if (!message || typeof message !== 'object') return;
+    // Final write barrier: every Chat 1 sticker message (manual, batch, or automatic)
+    // must be authorized against fresh deletion/hidden state immediately before insertion.
+    if (message.stickerId) {
+        const stickerStore = window.xiaoshuStickerStore;
+        const authorizedId = stickerStore && typeof stickerStore.authorizeSendId === 'function'
+            ? stickerStore.authorizeSendId(message.stickerId)
+            : '';
+        if (authorizedId !== message.stickerId) {
+            try { showNotification('这张表情已删除、隐藏或无法确认，未发送', 'warning', 1800); } catch (_e) {}
+            return false;
+        }
+    }
     message.conversationId = 'card';
     if (!(message.timestamp instanceof Date)) message.timestamp = new Date(message.timestamp);
     const __xsExistingIds = xsGetMessageIdSet();
@@ -16345,6 +16357,18 @@ function updateInput(){
   const el=$('chatInput');el.textContent=inputText;el.classList.toggle('empty',!inputText);$('keyboardPreview').textContent=inputText||'输入预览';
 }
 function addMessage(who,content,type='text'){
+  // Chat 2's own message writer is the final persistence boundary. Never trust a
+  // cached iframe sticker selection; ask the parent controller again before push/save.
+  if(type==='sticker'){
+    const parentStore=window.parent&&window.parent.xiaoshuStickerStore;
+    const stickerId=String(content||'');
+    const authorizedId=parentStore&&typeof parentStore.authorizeSendId==='function'
+      ?parentStore.authorizeSendId(stickerId):'';
+    if(!stickerId||authorizedId!==stickerId){
+      try{console.warn('[Chat 2 表情发送] 表情已删除、隐藏或无法确认，已拒绝写入');}catch(_e){}
+      return false;
+    }
+  }
   const wasNearBottom=isChatNearBottom();
   if(type==='sticker')content=String(content||'');
   const m={who,content,type,time:Date.now()};

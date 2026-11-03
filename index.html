@@ -5345,7 +5345,7 @@ function updateBatchPreview() {
                     }
                 }
 
-                addMessage({
+                const writeResult = addMessage({
                     id: batchStart + '_batch_' + index + '_' + Math.random().toString(16).slice(2),
                     sender: 'user',
                     text: msg.text || '',
@@ -5359,6 +5359,10 @@ function updateBatchPreview() {
                     type: 'normal',
                     conversationId: __xsBatchConversation
                 }, { deferSave: true });
+                if (writeResult === false) {
+                    if (msg.stickerId) rejectedStickerCount += 1;
+                    return;
+                }
                 sentCount += 1;
                 try { playSound('send'); } catch(e) {}
             });
@@ -16000,7 +16004,7 @@ try{const parent=window.parent,store=parent&&parent.xiaoshuStickerStore;const po
 return false;
 }
 const stickerId=registerChat2Sticker(src);if(!stickerId||stickerId!==liveId)return false;
-addMessage('me',stickerId,'sticker');closeSharedStickers();
+if(addMessage('me',stickerId,'sticker')===false)return false;closeSharedStickers();
 if(state.autoReply==='on'){
 scheduleHisReply();
 scheduleHisStickerReply(src);
@@ -19108,7 +19112,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
         if(typeof updateBatchPreview==='function')updateBatchPreview();
       }else if(typeof addMessage==='function'){
         var targetConversation='card';
-        addMessage({id:Date.now()+'_sticker_'+Math.random().toString(16).slice(2),sender:'user',text:'',timestamp:new Date(),stickerId:stickerId,messageKind:'sticker',status:'sent',type:'normal',favorited:false,note:null,conversationId:targetConversation});
+        if(addMessage({id:Date.now()+'_sticker_'+Math.random().toString(16).slice(2),sender:'user',text:'',timestamp:new Date(),stickerId:stickerId,messageKind:'sticker',status:'sent',type:'normal',favorited:false,note:null,conversationId:targetConversation})===false)return false;
         try{if(typeof playSound==='function')playSound('send');}catch(_e){}
         try{
           if(typeof simulateReply==='function')simulateReply('card');

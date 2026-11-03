@@ -44,7 +44,7 @@ function createStaticServer() {
   });
 }
 
-test('full production index.html boots in an isolated real Chromium browser', async () => {
+test('full production UI uploads, deletes and rejects a deleted sticker in real Chromium', async () => {
   const server = createStaticServer();
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -141,6 +141,18 @@ test('full production index.html boots in an isolated real Chromium browser', as
     await page.waitForFunction(() => window.xiaoshuStickerStore.getUploads().length === 1, null, { timeout: 20000 });
     const uploadedSrc = await page.evaluate(() => window.xiaoshuStickerStore.getUploads()[0]);
     assert.ok(uploadedSrc.startsWith('data:image/'), 'production upload must produce an image data URL');
+    await page.locator('#xs-sticker-upload-grid [data-xs-remove-upload]').waitFor({ state: 'visible' });
+
+    // Verify the uploaded image is actually exposed by the shared picker before deletion.
+    await page.locator('#xs-close-sticker-admin').click();
+    await page.locator('#combo-btn').click();
+    await page.locator('#user-sticker-picker [data-xs-tab="stickers"]').click();
+    const uploadedVisible = await page.locator('#combo-content-area img').evaluateAll((imgs, src) =>
+      imgs.some(img => img.src === src), uploadedSrc
+    );
+    assert.equal(uploadedVisible, true, 'newly uploaded image must appear in the shared sticker picker');
+    await page.locator('#combo-content-area [data-xs-final-manage-sticker]').click();
+    await page.locator('#xiaoshu-sticker-admin-modal').waitFor({ state: 'visible', timeout: 15000 });
     await page.locator('#xs-sticker-upload-grid [data-xs-remove-upload]').waitFor({ state: 'visible' });
 
     // Delete using the real per-upload × control and accept its confirmation dialog.

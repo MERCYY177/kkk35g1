@@ -153,7 +153,10 @@ function createHarness(options) {
   };
 
   vm.createContext(sandbox);
-  const instrumentedControllerSource = controllerSource.replace('var api={', 'window.__testStickerAdminOps={toggle:toggleAdminSelection,batchDelete:batchDeleteSelected};' + String.fromCharCode(10) + 'var api={');
+  const marker = '})();';
+  const injectionAt = controllerSource.lastIndexOf(marker);
+  assert.ok(injectionAt >= 0, 'controller IIFE boundary must exist');
+  const instrumentedControllerSource = controllerSource.slice(0, injectionAt) + 'window.__testStickerAdminOps={toggle:toggleAdminSelection,batchDelete:batchDeleteSelected};' + String.fromCharCode(10) + controllerSource.slice(injectionAt);
   vm.runInContext(instrumentedControllerSource, sandbox, { filename: 'shared-sticker-controller-v6.js' });
 
   return {

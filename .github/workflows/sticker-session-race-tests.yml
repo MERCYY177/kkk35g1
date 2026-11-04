@@ -1,0 +1,37 @@
+name: Sticker session race regression tests
+
+on:
+  push:
+    branches:
+      - audit/sticker-session-races
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "index.html"
+      - "sticker-core.js"
+      - "tests/**"
+      - ".github/workflows/sticker-session-race-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  sticker-session-races:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check guard syntax
+        run: node --check sticker-core.js
+      - name: Run sticker regression tests
+        run: >-
+          node --test
+          tests/sticker-session-race-regression.test.js
+          tests/sticker-send-guard-regression.test.js
+          tests/sticker-deletion-regression.test.js
+          tests/sticker-load-retry.test.js

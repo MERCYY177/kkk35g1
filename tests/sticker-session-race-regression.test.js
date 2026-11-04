@@ -153,7 +153,8 @@ function createHarness(options) {
   };
 
   vm.createContext(sandbox);
-  vm.runInContext(controllerSource, sandbox, { filename: 'shared-sticker-controller-v6.js' });
+  const instrumentedControllerSource = controllerSource.replace('var api={', 'window.__testStickerAdminOps={toggle:toggleAdminSelection,batchDelete:batchDeleteSelected};\\nvar api={');
+  vm.runInContext(instrumentedControllerSource, sandbox, { filename: 'shared-sticker-controller-v6.js' });
 
   return {
     window,
@@ -407,4 +408,28 @@ test('T1c: public store reads, sends, admin and sync stop exposing A after switc
   assert.deepEqual(Array.from(h.store.sync()), []);
   assert.equal(h.store.openAdmin(), false);
   assert.deepEqual(Object.keys(h.store.getMessageResources()), []);
+});
+
+
+test('T8b: a batch deletion selected in A cannot remove B uploads after switching', async () => {
+  const aSource = 'https://cdn.test/A-selected.png';
+  const bSource = 'https://cdn.test/B-only.png';
+  const h = createHarness({
+    sessionId: 'A',
+    db: {
+      [uploadsKey('A')]: [aSource],
+      [uploadsKey('B')]: [bSource]
+    }
+  });
+  assert.equal(await h.store.hydrate(true), true);
+  h.store.markUploadsDeleted = () => true;
+  assert.equal(h.window.__testStickerAdminOps.toggle(aSource), true);
+
+  h.setSession('B');
+  assert.equal(h.window.__testStickerAdminOps.batchDelete(false), false);
+  assert.equal(h.db.get(uploadsKey('B')).includes(bSource), true);
+  assert.equal(h.db.get(uploadsKey('A')).includes(aSource), true);
+
+  assert.equal(await h.store.hydrate(true), true);
+  assert.deepEqual(Array.from(h.store.getUploads()), [bSource]);
 });

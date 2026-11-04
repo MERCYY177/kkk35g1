@@ -18785,6 +18785,7 @@ var startupLegacyUploadSeedSessionId = '';
 var startupLegacyUploadSeedPending = true;
 var resourcePersistToken = 0;
 var adminSelectedSessionId = '';
+var adminVisibleSessionId = '';
 var pendingUploadPersist = false;
 // Serialize writes to the canonical upload key so late autosaves cannot overtake a deletion.
 var canonicalUploadWriteChain = Promise.resolve();
@@ -18911,6 +18912,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       fullPoolPublished=false;
       adminSelected.clear();
       adminSelectedSessionId='';
+      clearAdminSessionView();
       clearTimeout(resourcePersistTimer);
       resourcePersistTimer=null;
       resourcePersistToken++;
@@ -18930,6 +18932,20 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     var activeSid=currentSessionId();
     if(sessionGenerationId!==activeSid)captureSessionContext(activeSid);
     return activeSid===context.sid&&sessionGeneration===context.generation&&sessionDataReady(context.sid);
+  }
+  function isAdminViewCurrent(){
+    return !!adminVisibleSessionId&&adminVisibleSessionId===currentSessionId()&&sessionDataReady(adminVisibleSessionId)&&migrationState.hydrated&&hydratedSessionId===adminVisibleSessionId;
+  }
+  function clearAdminSessionView(){
+    adminVisibleSessionId='';adminVisibleItems=[];
+    try{
+      var stat=$('xs-sticker-admin-stat'),grid=$('xs-sticker-upload-grid'),batchGrid=$('xs-sticker-batch-grid'),selectionCount=$('xs-sticker-selection-count'),uc=$('xs-sticker-upload-count'),hc=$('xs-sticker-hidden-count');
+      if(stat)stat.textContent='正在载入当前会话的表情…';
+      if(grid)grid.innerHTML='<div class="xs-sticker-admin-empty">正在载入…</div>';
+      if(batchGrid)batchGrid.innerHTML='<div class="xs-sticker-admin-empty">正在载入…</div>';
+      if(selectionCount)selectionCount.textContent='已选 0 张';
+      if(uc)uc.textContent='—';if(hc)hc.textContent='—';
+    }catch(_clearAdminViewError){}
   }
   function readJsonFrom(store,key){
     try{if(!store)return[];var raw=store.getItem(key);if(!raw)return[];var v=JSON.parse(raw);return Array.isArray(v)?v:[];}catch(e){return[];}
@@ -19190,8 +19206,9 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       function fallback(){var r=new FileReader();r.onload=function(){resolve(norm(r.result));};r.onerror=function(){resolve('');};r.readAsDataURL(file);}
     });
   }
-  async function addFiles(files){
-    var owner=captureSessionContext();
+  async function addFiles(files,expectedContext){
+    var owner=expectedContext&&expectedContext.sid?expectedContext:captureSessionContext();
+    if(expectedContext&&owner.sid!==currentSessionId())return 0;
     if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return 0;
     files=Array.prototype.slice.call(files||[]);
     if(!files.length)return 0;
@@ -19209,34 +19226,50 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     notify(added?'已加入共享表情包 '+added+' 张':'没有新增表情包',added?'success':'info',1600);
     return added;
   }
-  function openUpload(){var input=ensureInput(INPUT_IDS[0]);if(input)input.click();}
-  function hideSticker(src,silent){var owner=captureSessionContext();src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;hidden.add(src);persistHidden(owner);syncRuntime(true,owner);if(!silent)notify('已隐藏，可在表情包管理中恢复','success',1500);return true;}
-  function restoreSticker(src){var owner=captureSessionContext();src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;hidden.delete(src);persistHidden(owner);syncRuntime(true,owner);return true;}
-  function clearHidden(ask){
-    var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
+  function openUpload(expectedSessionId){
+    var sid=String(expectedSessionId||currentSessionId()||'');
+    if(!sid||sid!==currentSessionId())return false;
+    var owner=captureSessionContext(sid);
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
+    var input=ensureInput(INPUT_IDS[0]);
+    if(!input)return false;
+    input.__xsUploadOwner=owner;
+    input.click();
+    return true;
+  }
+  function hideSticker(src,silent,expectedSessionId){var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;var owner=captureSessionContext(activeSid);src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;hidden.add(src);persistHidden(owner);syncRuntime(true,owner);if(!silent)notify('已隐藏，可在表情包管理中恢复','success',1500);return true;}
+  function restoreSticker(src,expectedSessionId){var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;var owner=captureSessionContext(activeSid);src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;hidden.delete(src);persistHidden(owner);syncRuntime(true,owner);return true;}
+  function clearHidden(ask,expectedSessionId){
+    var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;
+    var owner=captureSessionContext(activeSid);if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     if(ask!==false&&!confirm('恢复全部已隐藏表情？'))return false;
     if(!isSessionContextCurrent(owner))return false;
     hidden.clear();persistHidden(owner);syncRuntime(true,owner);notify('已恢复全部隐藏表情');return true;
   }
-  function removeUpload(src,ask){
-    var owner=captureSessionContext();src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
+  function removeUpload(src,ask,expectedSessionId){
+    var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;
+    var owner=captureSessionContext(activeSid);src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     if(ask!==false&&!confirm('删除这张上传表情？'))return false;
     if(!isSessionContextCurrent(owner))return false;
-    var before=uploads.length;uploads=uploads.filter(function(x){return norm(x)!==src;});hidden.delete(src);
-    if(uploads.length===before)return false;
+    var before=uploads.length,nextUploads=uploads.filter(function(x){return norm(x)!==src;});
+    if(nextUploads.length===before)return false;
+    uploads=nextUploads;hidden.delete(src);
     persistUploads(owner);persistHidden(owner);syncRuntime(true,owner);notify('已删除上传表情');return true;
   }
-  function clearUploads(ask){
-    var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
+  function clearUploads(ask,expectedSessionId){
+    var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;
+    var owner=captureSessionContext(activeSid);if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     if(ask!==false&&!confirm('清空全部上传表情包？内置表情不会受影响。'))return false;
     if(!isSessionContextCurrent(owner))return false;
     uploads=[];persistUploads(owner);syncRuntime(true,owner);notify('已清空上传表情包');return true;
   }
-  function clearAdminSelection(){adminSelected.clear();adminSelectedSessionId=currentSessionId();renderAdmin();}
-  function selectAllAdmin(){var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;adminSelected.clear();adminSelectedSessionId=owner.sid;adminVisibleItems.forEach(function(it){adminSelected.add(norm(it.src));});renderAdmin();return true;}
-  function toggleAdminSelection(src){var owner=captureSessionContext();src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;if(adminSelectedSessionId!==owner.sid){adminSelected.clear();adminSelectedSessionId=owner.sid;}if(adminSelected.has(src)){adminSelected.delete(src);return false;}adminSelected.add(src);return true;}
-  function batchDeleteSelected(ask){
-    var owner=captureSessionContext();
+  function clearAdminSelection(){if(!isAdminViewCurrent())return false;adminSelected.clear();adminSelectedSessionId=adminVisibleSessionId;renderAdmin();return true;}
+  function selectAllAdmin(){if(!isAdminViewCurrent())return false;var owner=captureSessionContext(adminVisibleSessionId);if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;adminSelected.clear();adminSelectedSessionId=owner.sid;adminVisibleItems.forEach(function(it){adminSelected.add(norm(it.src));});renderAdmin();return true;}
+  function toggleAdminSelection(src,expectedSessionId){var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;if(!isAdminViewCurrent())return false;var owner=captureSessionContext(activeSid);src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;if(adminSelectedSessionId!==owner.sid){adminSelected.clear();adminSelectedSessionId=owner.sid;}if(adminSelected.has(src)){adminSelected.delete(src);return false;}adminSelected.add(src);return true;}
+  function batchDeleteSelected(ask,expectedSessionId){
+    var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;
+    if(!isAdminViewCurrent())return false;
+    var owner=captureSessionContext(activeSid);
     if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid||adminSelectedSessionId!==owner.sid)return false;
     var chosen=Array.from(adminSelected).filter(isImage);
     if(!chosen.length){notify('请先点选要删除的表情','info',1600);return false;}
@@ -19278,11 +19311,16 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     items.sort(function(a,b){return String(a.pack).localeCompare(String(b.pack),'zh-CN')||String(a.label).localeCompare(String(b.label),'zh-CN');});
     return{type:'xiaoshu-hidden-sticker-list',version:'2.0',exportTime:new Date().toISOString(),count:items.length,note:'统一表情包管理导出的隐藏清单，可按 src 做源码级删除。',hiddenStickers:items};
   }
-  async function exportHidden(copyOnly){
+  async function exportHidden(copyOnly,expectedSessionId){
+    var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;
+    if(!isAdminViewCurrent())return false;
+    var owner=captureSessionContext(activeSid);
     var payload=buildHiddenPayload(),text=JSON.stringify(payload,null,2),out=$('xs-sticker-hidden-output');
     if(out){out.style.display='block';out.value=text;}
     if(!copyOnly)downloadText('_已隐藏表情清单_'+payload.count+'个.json',text);
-    var ok=await copyText(text);notify(ok?(copyOnly?'已复制隐藏清单':'已导出并复制隐藏清单'):'清单已生成，请手动复制',ok?'success':'info',1800);
+    var ok=await copyText(text);
+    if(!isSessionContextCurrent(owner)||!isAdminViewCurrent())return false;
+    notify(ok?(copyOnly?'已复制隐藏清单':'已导出并复制隐藏清单'):'清单已生成，请手动复制',ok?'success':'info',1800);
     return payload;
   }
   function ensureInput(id){
@@ -19292,7 +19330,9 @@ if(!input.dataset.xsSharedStickerControllerV6){
 input.dataset.xsSharedStickerControllerV6='1';
 input.addEventListener('change',function(e){
 e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();
-var files=Array.prototype.slice.call(input.files||[]);input.value='';addFiles(files);
+var files=Array.prototype.slice.call(input.files||[]),owner=input.__xsUploadOwner||null;input.__xsUploadOwner=null;input.value='';
+if(!owner||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return;
+addFiles(files,owner);
 },true);
 }
 return input;
@@ -19311,22 +19351,25 @@ m.innerHTML='<div class="modal-content">'+
 '<div class="modal-buttons"><button class="modal-btn modal-btn-secondary" id="xs-close-sticker-admin">关闭</button></div>'+
 '</div>';
 document.body.appendChild(m);
-m.querySelector('#xs-admin-upload-stickers').addEventListener('click',function(e){e.preventDefault();openUpload();});
-m.querySelector('#xs-admin-refresh-stickers').addEventListener('click',function(e){e.preventDefault();hydrate(true).then(syncRuntime);});
-m.querySelector('#xs-select-all-stickers').addEventListener('click',function(e){e.preventDefault();selectAllAdmin();});
-m.querySelector('#xs-clear-selected-stickers').addEventListener('click',function(e){e.preventDefault();clearAdminSelection();});
-m.querySelector('#xs-delete-selected-stickers').addEventListener('click',function(e){e.preventDefault();batchDeleteSelected(true);});
-m.querySelector('#xs-clear-upload-stickers').addEventListener('click',function(e){e.preventDefault();if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.clearUploads==='function')window.xiaoshuStickerStore.clearUploads(true);else clearUploads(true);});
-m.querySelector('#xs-restore-hidden-stickers').addEventListener('click',function(e){e.preventDefault();clearHidden(true);});
-m.querySelector('#xs-export-hidden-stickers').addEventListener('click',function(e){e.preventDefault();exportHidden(false);});
-m.querySelector('#xs-copy-hidden-stickers').addEventListener('click',function(e){e.preventDefault();exportHidden(true);});
+m.querySelector('#xs-admin-upload-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())openUpload(adminVisibleSessionId);});
+m.querySelector('#xs-admin-refresh-stickers').addEventListener('click',function(e){e.preventDefault();if(!isAdminViewCurrent())return;var owner=captureSessionContext(adminVisibleSessionId);hydrate(true).then(function(ok){if(ok&&isSessionContextCurrent(owner)&&isAdminViewCurrent())syncRuntime(true,owner);});});
+m.querySelector('#xs-select-all-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())selectAllAdmin();});
+m.querySelector('#xs-clear-selected-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())clearAdminSelection();});
+m.querySelector('#xs-delete-selected-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())batchDeleteSelected(true,adminVisibleSessionId);});
+m.querySelector('#xs-clear-upload-stickers').addEventListener('click',function(e){e.preventDefault();if(!isAdminViewCurrent())return;if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.clearUploads==='function')window.xiaoshuStickerStore.clearUploads(true,adminVisibleSessionId);else clearUploads(true,adminVisibleSessionId);});
+m.querySelector('#xs-restore-hidden-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())clearHidden(true,adminVisibleSessionId);});
+m.querySelector('#xs-export-hidden-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())exportHidden(false,adminVisibleSessionId);});
+m.querySelector('#xs-copy-hidden-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())exportHidden(true,adminVisibleSessionId);});
 m.querySelector('#xs-close-sticker-admin').addEventListener('click',function(e){e.preventDefault();if(typeof hideModal==='function')hideModal(m);else m.style.display='none';});
-m.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('[data-xs-remove-upload]');if(!b)return;e.preventDefault();e.stopPropagation();removeUpload(b.getAttribute('data-xs-remove-upload'),true);});
-m.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('[data-xs-batch-index]');if(!b)return;e.preventDefault();e.stopPropagation();var i=Number(b.getAttribute('data-xs-batch-index'));if(!adminVisibleItems[i])return;var selected=toggleAdminSelection(adminVisibleItems[i].src);b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',selected?'true':'false');var count=$('xs-sticker-selection-count');if(count)count.textContent='已选 '+adminSelected.size+' 张';});
+m.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('[data-xs-remove-upload]');if(!b)return;e.preventDefault();e.stopPropagation();if(!isAdminViewCurrent())return;removeUpload(b.getAttribute('data-xs-remove-upload'),true,adminVisibleSessionId);});
+m.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('[data-xs-batch-index]');if(!b)return;e.preventDefault();e.stopPropagation();if(!isAdminViewCurrent())return;var i=Number(b.getAttribute('data-xs-batch-index'));if(!adminVisibleItems[i])return;var selected=toggleAdminSelection(adminVisibleItems[i].src,adminVisibleSessionId);b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',selected?'true':'false');var count=$('xs-sticker-selection-count');if(count)count.textContent='已选 '+adminSelected.size+' 张';});
 return m;
 }
 function renderAdmin(){
-var m=$('xiaoshu-sticker-admin-modal');if(!m)return;
+var owner=captureSessionContext();
+if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid){clearAdminSessionView();return false;}
+adminVisibleSessionId=owner.sid;
+var m=$('xiaoshu-sticker-admin-modal');if(!m)return false;
 var stat=$('xs-sticker-admin-stat'),grid=$('xs-sticker-upload-grid'),batchGrid=$('xs-sticker-batch-grid'),selectionCount=$('xs-sticker-selection-count'),uc=$('xs-sticker-upload-count'),hc=$('xs-sticker-hidden-count');
 if(stat)stat.innerHTML='共享可见表情：<b>'+getPool().length+'</b> 个<br>内置表情：<b>'+builtinSrcs().length+'</b> 个<br>上传表情：<b>'+uploads.length+'</b> 个<br>已隐藏：<b>'+hidden.size+'</b> 个<br>旧分组已迁移：<b>'+migrationState.legacyGroupItems+'</b> 个；已拦截回写：<b>'+migrationState.blockedGroupWrites+'</b> 次';
 if(uc)uc.textContent=uploads.length+' 个';if(hc)hc.textContent=hidden.size+' 个';

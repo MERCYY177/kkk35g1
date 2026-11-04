@@ -410,7 +410,7 @@ test('T1c: public store reads, sends, admin and sync stop exposing A after switc
   assert.equal(h.store.send(aSource), false);
   assert.deepEqual(Array.from(h.store.sync()), []);
   assert.equal(h.store.openAdmin(), false);
-  assert.deepEqual(Object.keys(h.store.getMessageResources()), []);
+  assert.equal(h.store.getMessageResources(), null, 'backup consumers must not persist an empty map before B hydrates');
 });
 
 

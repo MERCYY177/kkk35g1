@@ -365,3 +365,20 @@ function deferValue() {
 test('controller script parses after session-race hardening', () => {
   assert.doesNotThrow(() => new Function(controllerSource));
 });
+
+
+test('T3b: a delayed A legacy-group writer cannot merge into B uploads', async () => {
+  const h = createHarness({ sessionId: 'B', db: { [uploadsKey('B')]: [] } });
+  assert.equal(await h.store.hydrate(true), true);
+  h.store.installWriteGuard();
+
+  const aKey = 'APP_A_customStickerGroups';
+  await h.window.localforage.setItem(aKey, [{ name: 'A group', items: ['https://cdn.test/A-only.png'] }]);
+  assert.equal(h.store.getUploads().includes('https://cdn.test/A-only.png'), false);
+  assert.equal(h.db.has(aKey), true, 'A data remains under A key until A owns the session again');
+
+  const bKey = 'APP_B_customStickerGroups';
+  await h.window.localforage.setItem(bKey, [{ name: 'B group', items: ['https://cdn.test/B-only.png'] }]);
+  assert.equal(h.store.getUploads().includes('https://cdn.test/B-only.png'), true);
+  assert.equal(h.db.has(bKey), false, 'the active B legacy key is migrated into B uploads');
+});

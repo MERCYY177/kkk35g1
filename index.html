@@ -18999,13 +18999,24 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       var guarded=function(key,value){
         key=String(key||'');
         if(isLegacyGroupKey(key)){
+          var ownerSid=currentSessionId();
+          var ownerGroupKey=ownerSid?storageKey(LEGACY_GROUP_NAME,ownerSid):'';
+          var ownsGroupKey=key===ownerGroupKey||(key===LEGACY_GROUP_NAME&&ownerSid===startupLegacyUploadSeedSessionId);
+          // A delayed writer from A may still target A's namespaced key after B is
+          // active. Preserve that A write, but never merge it into B's closure state.
+          if(!ownsGroupKey||!sessionDataReady(ownerSid)||!migrationState.hydrated||hydratedSessionId!==ownerSid)return raw(key,value);
+          var ownerContext=captureSessionContext(ownerSid);
+          if(!isSessionContextCurrent(ownerContext))return raw(key,value);
           migrationState.blockedGroupWrites++;
           var added=mergeLegacyGroups(value);
           if(added){
-            var saved=persistUploads();
-            if(saved&&migrationState.hydrated&&hydratedSessionId===currentSessionId())syncRuntime();
+            var saved=persistUploads(ownerContext);
+            if(saved&&isSessionContextCurrent(ownerContext)&&migrationState.hydrated&&hydratedSessionId===ownerSid)syncRuntime(true,ownerContext);
           }
-          try{return window.localforage.removeItem(key).then(function(){return null;});}catch(e){return Promise.resolve(null);}
+          try{
+            if(!isSessionContextCurrent(ownerContext))return Promise.resolve(null);
+            return window.localforage.removeItem(key).then(function(){return null;});
+          }catch(e){return Promise.resolve(null);}
         }
         // The canonical upload key has one writer: this controller's current uploads list.
         // Ignore stale snapshots supplied by saveData(), and suppress writes before hydration

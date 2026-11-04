@@ -382,3 +382,29 @@ test('T3b: a delayed A legacy-group writer cannot merge into B uploads', async (
   assert.equal(h.store.getUploads().includes('https://cdn.test/B-only.png'), true);
   assert.equal(h.db.has(bKey), false, 'the active B legacy key is migrated into B uploads');
 });
+
+
+test('T1c: public store reads, sends, admin and sync stop exposing A after switching to B', async () => {
+  const aSource = 'https://cdn.test/A-only.png';
+  const aId = 'stk_A';
+  const h = createHarness({
+    sessionId: 'A',
+    db: {
+      [uploadsKey('A')]: [aSource],
+      [resourceKey('A')]: { [aId]: aSource },
+      [uploadsKey('B')]: []
+    }
+  });
+  assert.equal(await h.store.hydrate(true), true);
+  assert.equal(h.store.getUploads().includes(aSource), true);
+  assert.equal(h.store.resolve(aId), aSource);
+
+  h.setSession('B');
+  assert.deepEqual(Array.from(h.store.getUploads()), []);
+  assert.deepEqual(Array.from(h.store.getPool()), []);
+  assert.equal(h.store.resolve(aId), '');
+  assert.equal(h.store.send(aSource), false);
+  assert.deepEqual(Array.from(h.store.sync()), []);
+  assert.equal(h.store.openAdmin(), false);
+  assert.deepEqual(Array.from(h.store.getMessageResources()), {});
+});

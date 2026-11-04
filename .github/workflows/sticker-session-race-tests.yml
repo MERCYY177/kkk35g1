@@ -26,6 +26,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Check all embedded HTML scripts
+        run: python3 tests/check_html_scripts.py
       - name: Check guard syntax
         run: node --check sticker-core.js
       - name: Run sticker regression tests

@@ -19133,13 +19133,15 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   }
   function getLocalPool(){var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return[];return buildPool(true).filter(isImage);}
   function sendSticker(src){
+    var owner=captureSessionContext();
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     src=norm(src);
     if(!src||!isImage(src))return false;
     // 不信任已经过期的面板/iframe 点击事件：发送时必须重新确认资源仍在当前可用池中。
     var activePool=buildPool(true).map(norm);
     if(activePool.indexOf(src)<0){notify('这张表情已删除或隐藏，请重新打开表情面板再选择','info',1800);return false;}
     var stickerId=registerMessageResource(src);if(!stickerId)return false;
-    persistMessageResourcesNow();
+    persistMessageResourcesNow(owner);
     try{
       if(typeof isBatchMode!=='undefined'&&isBatchMode&&typeof batchMessages!=='undefined'){
         batchMessages.push({id:Date.now()+batchMessages.length,text:'',stickerId:stickerId,messageKind:'sticker'});
@@ -19160,8 +19162,8 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     try{window.dispatchEvent(new CustomEvent('stickerLibraryUpdated',{detail:{count:pool.length,uploads:uploads.length,hidden:hidden.size}}));}catch(e){}
   }
   function syncRuntime(eagerBuiltins,expectedContext){
-    var ctx=expectedContext&&expectedContext.sid?expectedContext:(expectedContext?captureSessionContext(expectedContext):null);
-    if(ctx&&!isSessionContextCurrent(ctx))return[];
+    var ctx=expectedContext&&expectedContext.sid?expectedContext:captureSessionContext(typeof expectedContext==='string'?expectedContext:undefined);
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return[];
     clearLegacyGroupRuntime();
     var validHiddenTargets=new Set(builtinSrcs().concat(uploads).map(norm)),staleHidden=false;
     hidden.forEach(function(src){if(!validHiddenTargets.has(norm(src))){hidden.delete(src);staleHidden=true;}});
@@ -19339,6 +19341,7 @@ card=document.createElement('div');card.className='settings-card';card.id='xiaos
 grid.appendChild(card);card.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();openAdmin();});
 }
 function openAdmin(){
+var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
 var m=ensureModal();renderAdmin();
 if(typeof showModal==='function')showModal(m);else m.style.display='flex';
 }

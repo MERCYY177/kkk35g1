@@ -403,11 +403,15 @@ test('T1c: public store reads, sends, admin and sync stop exposing A after switc
   assert.equal(h.store.getUploads().includes(aSource), true);
   assert.equal(h.store.resolve(aId), aSource);
   assert.ok(h.window._stickerLibrary.includes(aSource), 'A pool is published for compatibility consumers while A is active');
+  h.window.customStickerGroups = [{ name: 'A retired group', items: [aSource] }];
+  h.sandbox.customStickerGroups = [{ name: 'A retired group', items: [aSource] }];
 
   h.setSession('B');
   assert.deepEqual(Array.from(h.store.getUploads()), []);
   assert.deepEqual(Array.from(h.store.getPool()), []);
   assert.deepEqual(Array.from(h.window._stickerLibrary), [], 'legacy fallback pool must not retain A stickers');
+  assert.deepEqual(Array.from(h.window.customStickerGroups), [], 'retired window group alias must be cleared');
+  assert.deepEqual(Array.from(h.sandbox.customStickerGroups), [], 'retired lexical group alias must be cleared');
   assert.equal(h.store.resolve(aId), '');
   assert.equal(h.store.send(aSource), false);
   assert.deepEqual(Array.from(h.store.sync()), []);

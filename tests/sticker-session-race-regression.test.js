@@ -343,7 +343,7 @@ test('T7: upload completion from A is discarded after switching to B', async () 
 });
 
 test('T8: delete selections and deletion-guard completions are session-bound', () => {
-  const batchStart = controllerSource.indexOf('function batchDeleteSelected(ask){');
+  const batchStart = controllerSource.indexOf('function batchDeleteSelected(ask,expectedSessionId){');
   const batchEnd = controllerSource.indexOf('function downloadText(', batchStart);
   assert.ok(batchStart >= 0 && batchEnd > batchStart);
   const batchBody = controllerSource.slice(batchStart, batchEnd);
@@ -351,13 +351,33 @@ test('T8: delete selections and deletion-guard completions are session-bound', (
   const deleteMutation = batchBody.indexOf('uploads=uploads.filter');
   assert.ok(sessionCheck >= 0 && sessionCheck < deleteMutation, 'batch delete must reject a selection from another session');
 
+  const adminStart = controllerSource.indexOf('function ensureModal(){');
+  const adminEnd = controllerSource.indexOf('function renderAdmin(){', adminStart);
+  const adminBody = controllerSource.slice(adminStart, adminEnd);
+  assert.match(adminBody, /isAdminViewCurrent\\(\\)\\)return/);
+  assert.match(adminBody, /removeUpload\\([^\\n]+adminVisibleSessionId/);
+  assert.match(adminBody, /clearUploads\\(true,adminVisibleSessionId\\)/);
+  assert.match(adminBody, /batchDeleteSelected\\(true,adminVisibleSessionId\\)/);
+
+  const inputStart = controllerSource.indexOf('function ensureInput(id){');
+  const inputEnd = controllerSource.indexOf('function ensureInputs(){', inputStart);
+  const inputBody = controllerSource.slice(inputStart, inputEnd);
+  assert.match(inputBody, /input\\.__xsUploadOwner\\s*\\|\\|\\s*null/);
+  assert.match(inputBody, /isSessionContextCurrent\\(owner\\)/);
+  assert.match(inputBody, /addFiles\\(files,owner\\)/);
+
   const guard = fs.readFileSync(path.join(__dirname, '..', 'sticker-core.js'), 'utf8');
   const hydrateGuard = guard.slice(guard.indexOf('api.hydrate = function ()'), guard.indexOf('api.openAdmin = function ()'));
-  const uploadGuard = guard.slice(guard.indexOf('api.addFiles = function ()'), guard.indexOf('// Final guard for the picker renderer'));
-  assert.match(hydrateGuard, /ownerSessionId\s*=\s*activeSessionId/);
-  assert.match(hydrateGuard, /activeSessionId\(\)\s*!==\s*ownerSessionId/);
-  assert.match(uploadGuard, /ownerSessionId\s*=\s*activeSessionId/);
-  assert.match(uploadGuard, /activeSessionId\(\)\s*!==\s*ownerSessionId/);
+  const uploadGuard = guard.slice(guard.indexOf('api.addFiles = function (files, expectedContext)'), guard.indexOf('// Final guard for the picker renderer'));
+  const deleteGuard = guard.slice(guard.indexOf('api.removeUpload = function (src, ask, expectedSessionId)'), guard.indexOf('api.send = function (src)'));
+  assert.match(hydrateGuard, /ownerSessionId\\s*=\\s*activeSessionId/);
+  assert.match(hydrateGuard, /activeSessionId\\(\\)\\s*!==\\s*ownerSessionId/);
+  assert.match(uploadGuard, /expectedContext/);
+  assert.match(uploadGuard, /expectedSid\\s*!==\\s*ownerSessionId/);
+  assert.match(uploadGuard, /activeSessionId\\(\\)\\s*!==\\s*ownerSessionId/);
+  assert.match(deleteGuard, /expectedSessionId\\s*!==\\s*ownerSessionId/);
+  assert.match(deleteGuard, /!matches\\(currentUploads, src\\)\\)\\s*return false/);
+  assert.doesNotMatch(deleteGuard, /if\\s*\\(!exists\\)\\s*return rawRemoveUpload/);
 });
 
 function deferValue() {

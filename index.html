@@ -128,6 +128,73 @@ function callbackify(p,cb){if(typeof cb==='function')p.then(function(v){cb(null,
 global.localforage=createInstance();
 })(window);
 </script>
+<script id="xiaoshu-image-format-core-v1">(function(global){
+'use strict';
+var EXTENSION_MIME={jpg:'image/jpeg',jpeg:'image/jpeg',jpe:'image/jpeg',png:'image/png',apng:'image/png',gif:'image/gif',webp:'image/webp',avif:'image/avif',bmp:'image/bmp',svg:'image/svg+xml'};
+function asBytes(value){
+  if(value instanceof Uint8Array)return value;
+  if(value instanceof ArrayBuffer)return new Uint8Array(value);
+  if(value&&value.buffer instanceof ArrayBuffer)return new Uint8Array(value.buffer,value.byteOffset||0,value.byteLength);
+  return new Uint8Array(0);
+}
+function ascii(bytes,start,end){var out='';for(var i=start;i<end&&i<bytes.length;i++)out+=String.fromCharCode(bytes[i]);return out;}
+function extensionOf(name){var match=String(name||'').toLowerCase().match(/\.([a-z0-9]+)$/);return match?match[1]:'';}
+function detectBytes(value,name,type){
+  var bytes=asBytes(value),mime='',detected=false,animated=false;
+  if(bytes.length>=6&&(ascii(bytes,0,6)==='GIF87a'||ascii(bytes,0,6)==='GIF89a')){mime='image/gif';detected=true;animated=true;}
+  else if(bytes.length>=3&&bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff){mime='image/jpeg';detected=true;}
+  else if(bytes.length>=8&&bytes[0]===0x89&&ascii(bytes,1,4)==='PNG'&&bytes[4]===0x0d&&bytes[5]===0x0a&&bytes[6]===0x1a&&bytes[7]===0x0a){
+    mime='image/png';detected=true;
+    // APNG is still a PNG byte stream. Detect its animation control chunk and preserve it.
+    for(var p=8;p+12<=bytes.length;){var length=((bytes[p]<<24)|(bytes[p+1]<<16)|(bytes[p+2]<<8)|bytes[p+3])>>>0;var chunk=ascii(bytes,p+4,p+8);if(chunk==='acTL'){animated=true;break;}if(!length&&chunk==='IEND')break;var next=p+12+length;if(next<=p||next>bytes.length)break;p=next;}
+  }
+  else if(bytes.length>=12&&ascii(bytes,0,4)==='RIFF'&&ascii(bytes,8,12)==='WEBP'){
+    mime='image/webp';detected=true;
+    for(var w=12;w+8<=bytes.length;){var chunkName=ascii(bytes,w,w+4),chunkSize=(bytes[w+4]|(bytes[w+5]<<8)|(bytes[w+6]<<16)|(bytes[w+7]<<24))>>>0;if(chunkName==='ANIM'||chunkName==='ANMF'){animated=true;break;}var nextW=w+8+chunkSize+(chunkSize&1);if(nextW<=w||nextW>bytes.length)break;w=nextW;}
+  }
+  else if(bytes.length>=2&&ascii(bytes,0,2)==='BM'){mime='image/bmp';detected=true;}
+  else if(bytes.length>=12&&ascii(bytes,4,8)==='ftyp'&&/(?:avif|avis)/.test(ascii(bytes,8,Math.min(bytes.length,64)))){mime='image/avif';detected=true;}
+  else if(bytes.length){
+    var head=ascii(bytes,0,Math.min(bytes.length,4096)).replace(/^\uFEFF/,'').replace(/^\s+/, '');
+    if(/^(?:<\?xml[\s\S]*?\?>\s*)?<svg(?:\s|>)/i.test(head)){mime='image/svg+xml';detected=true;}
+  }
+  if(!mime){var ext=extensionOf(name);mime=EXTENSION_MIME[ext]||(/^image\//i.test(String(type||''))?String(type).toLowerCase():'');}
+  if(mime==='image/apng')mime='image/png';
+  return {mime:mime,detected:detected,animated:animated,isJpeg:detected&&mime==='image/jpeg',extension:extensionOf(name)};
+}
+function readPrefix(file){
+  return new Promise(function(resolve){
+    if(!file){resolve(new Uint8Array(0));return;}
+    var part=file;try{if(typeof file.slice==='function')part=file.slice(0,65536);}catch(_sliceError){}
+    var fallbackRead=function(){
+      if(typeof global.FileReader!=='function'){resolve(new Uint8Array(0));return;}
+      try{var reader=new global.FileReader();reader.onload=function(){resolve(asBytes(reader.result));};reader.onerror=reader.onabort=function(){resolve(new Uint8Array(0));};reader.readAsArrayBuffer(part);}catch(_readerError){resolve(new Uint8Array(0));}
+    };
+    if(part&&typeof part.arrayBuffer==='function'){
+      try{Promise.resolve(part.arrayBuffer()).then(function(buffer){resolve(asBytes(buffer));},fallbackRead);return;}catch(_arrayBufferError){}
+    }
+    fallbackRead();
+  });
+}
+function inspectFile(file){return readPrefix(file).then(function(bytes){return detectBytes(bytes,file&&file.name,file&&file.type);});}
+function normalizeDataUrl(value,info,file){
+  value=String(value||'');
+  if(!/^data:[^,]+,/i.test(value))return '';
+  var actual=info&&info.detected&&info.mime?info.mime:'';
+  var fallback=info&&info.mime?info.mime:'';
+  if(!fallback&&file){var ext=extensionOf(file.name);fallback=EXTENSION_MIME[ext]||(/^image\//i.test(String(file.type||''))?String(file.type).toLowerCase():'');}
+  var mime=actual||fallback;
+  if(mime&&/^data:[^;,]+(?:;[^,]*)?,/i.test(value))value=value.replace(/^data:[^;,]+/i,'data:'+mime);
+  return /^data:image\/[a-z0-9.+-]+(?:;[^,]*)?,/i.test(value)?value:'';
+}
+function byteLength(value){
+  value=String(value||'');var comma=value.indexOf(',');if(comma<0)return 0;
+  var meta=value.slice(0,comma),payload=value.slice(comma+1);
+  if(/;base64/i.test(meta)){payload=payload.replace(/\s/g,'');var padding=payload.endsWith('==')?2:(payload.endsWith('=')?1:0);return Math.max(0,Math.floor(payload.length*3/4)-padding);}
+  try{var decoded=decodeURIComponent(payload);return typeof TextEncoder==='function'?new TextEncoder().encode(decoded).length:unescape(encodeURIComponent(decoded)).length;}catch(_error){return payload.length;}
+}
+global.XiaoshuImageFormat={detectBytes:detectBytes,inspectFile:inspectFile,normalizeDataUrl:normalizeDataUrl,byteLength:byteLength};
+})(window);</script>
 <script src="media-core.js"></script>
 <script src="custom-font-manager.js"></script>
 <script id="xiaoshu-strict-media-runtime-v1">(function(global){
@@ -146,13 +213,23 @@ function readFile(file){return new Promise(function(resolve,reject){var reader=n
 function decodeImage(source){return new Promise(function(resolve,reject){var image=new Image();image.onload=function(){resolve(image);};image.onerror=function(){reject(core.classifyMediaError(new Error('image decode failed'),'decode'));};image.src=source;});}
 async function compressImage(file,context){
   context=context||{};
-  if(!file||!/^image\/(?:png|jpe?g|webp|gif|bmp|avif)$/i.test(String(file.type||'')))throw core.MediaError('INVALID_FORMAT','format',new Error('unsupported image type: '+String(file&&file.type||'')),context);
-  var raw=await readFile(file),image=await decodeImage(raw),width=image.naturalWidth||image.width,height=image.naturalHeight||image.height;
+  if(!file)throw core.MediaError('INVALID_FORMAT','format',new Error('missing image file'),context);
+  var formatCore=global.XiaoshuImageFormat;
+  var formatInfo=formatCore&&typeof formatCore.inspectFile==='function'?await formatCore.inspectFile(file):null;
+  var detectedMime=formatInfo&&formatInfo.mime?formatInfo.mime:String(file.type||'');
+  if(!/^image\//i.test(detectedMime))throw core.MediaError('INVALID_FORMAT','format',new Error('unsupported image type: '+detectedMime),context);
+  var raw=await readFile(file);
+  if(formatCore&&typeof formatCore.normalizeDataUrl==='function')raw=formatCore.normalizeDataUrl(raw,formatInfo,file);
+  if(!core.isDataImage(raw))throw core.MediaError('INVALID_FORMAT','format',new Error('file bytes are not a supported image'),context);
+  // Mail and leaf media must not flatten animated images or strip PNG/WebP alpha.
+  // Only byte-confirmed JPEG files are eligible for the JPEG compression pipeline.
+  if(!(formatInfo&&formatInfo.isJpeg))return raw;
+  var image=await decodeImage(raw),width=image.naturalWidth||image.width,height=image.naturalHeight||image.height;
   if(!width||!height)throw core.MediaError('IMAGE_DECODE','decode',new Error('image dimensions unavailable'),context);
   var plans=[{max:960,q:.82,limit:260*1024},{max:800,q:.76,limit:200*1024},{max:720,q:.70,limit:160*1024},{max:600,q:.64,limit:125*1024},{max:480,q:.58,limit:95*1024}],best='';
   try{
     for(var i=0;i<plans.length;i++){
-      var plan=plans[i],ratio=Math.min(1,plan.max/Math.max(width,height)),w=Math.max(1,Math.round(width*ratio)),h=Math.max(1,Math.round(height*ratio)),canvas=document.createElement('canvas');
+      var plan=plans[i],safeScale=Math.min(1,8192/width,8192/height,Math.sqrt(16000000/(width*height))),ratio=Math.min(safeScale,plan.max/Math.max(width,height)),w=Math.max(1,Math.round(width*ratio)),h=Math.max(1,Math.round(height*ratio)),canvas=document.createElement('canvas');
       canvas.width=w;canvas.height=h;var ctx=canvas.getContext('2d');if(!ctx)throw new Error('2D canvas unavailable');ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(image,0,0,w,h);var data=canvas.toDataURL('image/jpeg',plan.q);if(!core.isDataImage(data))throw new Error('canvas returned invalid image');best=data;if(data.length<=plan.limit*1.38)return data;
     }
   }catch(error){throw core.classifyMediaError(error,'canvas',context);}
@@ -921,6 +998,9 @@ html[data-theme="dark"] #ta-phone-container .xs-collection-jump{background:#1e1e
 <script data-inlined-from="js/config.js">/*应用常量与数据结构*/
 const APP_PREFIX = 'CHAT_APP_V3_';
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+// Limit raw input before image decoding to avoid unbounded memory use. JPEGs below this
+// safety ceiling may still be optimized before the final 5 MiB payload limit is applied.
+const MAX_IMAGE_SOURCE_SIZE = 20 * 1024 * 1024;
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
 const CONSTANTS = {
 HEADER_MOTTOS: [],
@@ -4934,43 +5014,161 @@ const addMessage = (message, options = null) => {
             });
         };
 
-        function optimizeImage(file, maxWidth = 800, quality = 0.7) {
+        function optimizeImage(file, maxWidth = 800, quality = 0.7, knownFormatInfo = null) {
             return new Promise((resolve, reject) => {
-                if (file.size < 300 * 1024) {
-                    const reader = new FileReader();
-                    reader.onload = e => resolve(e.target.result);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
+                let settled = false;
+                let readingOriginal = false;
+                let objectUrl = '';
+                const formatCore = window.XiaoshuImageFormat;
+                const finish = (value, error) => {
+                    if (settled) return;
+                    settled = true;
+                    if (error) reject(error);
+                    else resolve(value);
+                };
+                const revokeObjectUrl = () => {
+                    if (!objectUrl) return;
+                    try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+                    objectUrl = '';
+                };
+                const readOriginal = info => {
+                    if (settled || readingOriginal) return;
+                    readingOriginal = true;
+                    try {
+                        const reader = new FileReader();
+                        reader.onload = event => {
+                            let value = String((event && event.target && event.target.result) || reader.result || '');
+                            if (formatCore && typeof formatCore.normalizeDataUrl === 'function') {
+                                value = formatCore.normalizeDataUrl(value, info, file);
+                            } else if (/^data:(?:application\/octet-stream|application\/binary);base64,/i.test(value)) {
+                                const fallbackMime = /^image\//i.test(String(file.type || '')) ? file.type : '';
+                                if (fallbackMime) value = value.replace(/^data:[^;]+;/i, 'data:' + fallbackMime + ';');
+                            }
+                            if (/^data:image\/[a-z0-9.+-]+(?:;[^,]*)?,/i.test(value)) finish(value);
+                            else finish(null, new Error('原始图片读取结果不是有效的图片 Data URL'));
+                        };
+                        reader.onerror = () => finish(null, reader.error || new Error('原始图片读取失败'));
+                        reader.onabort = () => finish(null, new Error('原始图片读取已取消'));
+                        reader.readAsDataURL(file);
+                    } catch (error) {
+                        finish(null, error);
+                    }
+                };
+                const processFormat = info => {
+                    if (settled) return;
+                    // Only a JPEG confirmed by its file signature may enter Canvas -> JPEG.
+                    // MIME and filename are metadata and are not sufficient to prove content.
+                    const confirmedJpeg = !!(info && info.detected && info.mime === 'image/jpeg' && info.isJpeg);
+                    if ((Number(file.size) || 0) < 300 * 1024 || !confirmedJpeg) {
+                        readOriginal(info);
+                        return;
+                    }
+                    const requestedMaxWidth = Number(maxWidth);
+                    const safeMaxWidth = Number.isFinite(requestedMaxWidth) && requestedMaxWidth > 0
+                        ? Math.max(1, Math.floor(requestedMaxWidth)) : 800;
+                    const requestedQuality = Number(quality);
+                    const safeQuality = Number.isFinite(requestedQuality)
+                        ? Math.max(0.4, Math.min(0.95, requestedQuality)) : 0.7;
+                    const image = new Image();
+                    image.onload = () => {
+                        try {
+                            const naturalWidth = Number(image.naturalWidth || image.width);
+                            const naturalHeight = Number(image.naturalHeight || image.height);
+                            if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight) || naturalWidth < 1 || naturalHeight < 1) {
+                                throw new Error('图片尺寸无效');
+                            }
+                            const maxCanvasEdge = 8192;
+                            const maxCanvasPixels = 16000000;
+                            const scale = Math.min(
+                                1,
+                                safeMaxWidth / naturalWidth,
+                                maxCanvasEdge / naturalWidth,
+                                maxCanvasEdge / naturalHeight,
+                                Math.sqrt(maxCanvasPixels / (naturalWidth * naturalHeight))
+                            );
+                            const width = Math.max(1, Math.floor(naturalWidth * scale));
+                            const height = Math.max(1, Math.floor(naturalHeight * scale));
+                            if (!Number.isFinite(width * height) || width * height > maxCanvasPixels) {
+                                throw new Error('图片尺寸超过 Canvas 安全范围');
+                            }
+                            const canvas = document.createElement('canvas');
+                            canvas.width = width;
+                            canvas.height = height;
+                            const context = canvas.getContext('2d');
+                            if (!context) throw new Error('浏览器无法创建 Canvas 2D 上下文');
+                            context.drawImage(image, 0, 0, width, height);
+                            const output = canvas.toDataURL('image/jpeg', safeQuality);
+                            if (!/^data:image\/jpeg;base64,/i.test(String(output || ''))) {
+                                throw new Error('Canvas 导出了无效图片');
+                            }
+                            const outputBytes = formatCore && formatCore.byteLength ? formatCore.byteLength(output) : Math.ceil(output.length * 3 / 4);
+                            if (!outputBytes || outputBytes >= (Number(file.size) || 0)) {
+                                revokeObjectUrl();
+                                readOriginal(info);
+                                return;
+                            }
+                            revokeObjectUrl();
+                            finish(output);
+                        } catch (error) {
+                            revokeObjectUrl();
+                            readOriginal(info);
+                        }
+                    };
+                    image.onerror = () => {
+                        revokeObjectUrl();
+                        readOriginal(info);
+                    };
+                    try {
+                        objectUrl = URL.createObjectURL(file);
+                        image.src = objectUrl;
+                    } catch (error) {
+                        revokeObjectUrl();
+                        readOriginal(info);
+                    }
+                };
+                if (!file) {
+                    finish(null, new Error('没有可处理的图片文件'));
                     return;
                 }
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    let {
-                        width,
-                        height
-                    } = img;
-                    if (width > maxWidth) {
-                        height = Math.round((height * maxWidth) / width);
-                        width = maxWidth;
-                    }
-                    canvas.width = width;
-                    canvas.height = height;
-                    ctx.drawImage(img, 0, 0, width, height);
-                    resolve(canvas.toDataURL('image/jpeg', quality));
-                    URL.revokeObjectURL(img.src);
-                };
-                img.onerror = () => {
-                    const reader = new FileReader();
-                    reader.onload = e => resolve(e.target.result);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
-                    URL.revokeObjectURL(img.src);
-                };
-                img.src = URL.createObjectURL(file);
+                if (knownFormatInfo) {
+                    processFormat(knownFormatInfo);
+                } else if (formatCore && typeof formatCore.inspectFile === 'function') {
+                    formatCore.inspectFile(file).then(processFormat, () => readOriginal(null));
+                } else {
+                    // Without byte inspection, preserve the source rather than risk flattening it.
+                    readOriginal(null);
+                }
             });
         }
+        function imageDataUrlByteLength(value) {
+            const core = window.XiaoshuImageFormat;
+            return core && typeof core.byteLength === 'function' ? core.byteLength(value) : 0;
+        }
+        function prepareImageForLimit(file, maxWidth, quality, maxOutputBytes) {
+            const core = window.XiaoshuImageFormat;
+            const sourceBytes = Math.max(0, Number(file && file.size) || 0);
+            if (sourceBytes > MAX_IMAGE_SOURCE_SIZE) {
+                return Promise.resolve({ ok: false, sourceOversize: true, sourceBytes });
+            }
+            const inspect = core && typeof core.inspectFile === 'function'
+                ? Promise.resolve().then(() => core.inspectFile(file)).catch(() => null)
+                : Promise.resolve(null);
+            return inspect.then(info => {
+                // Non-JPEG formats are preserved byte-for-byte. Since they are not
+                // recompressed, reject an already-oversized source before reading it
+                // into a base64 Data URL (which would use substantially more memory).
+                if (!(info && info.isJpeg) && sourceBytes > maxOutputBytes) {
+                    return { ok: false, oversize: true, outputBytes: sourceBytes, preservedSource: true };
+                }
+                return optimizeImage(file, maxWidth, quality, info).then(image => {
+                    const outputBytes = imageDataUrlByteLength(image);
+                    if (!outputBytes) return { ok: false, error: new Error('图片数据无效') };
+                    if (outputBytes > maxOutputBytes) return { ok: false, oversize: true, outputBytes };
+                    return { ok: true, image, outputBytes };
+                }, error => ({ ok: false, error }));
+            });
+        }
+
         window.updateReplyPreview = function() {
             const container = DOMElements.replyPreviewContainer;
             if (!container) return;
@@ -5089,9 +5287,6 @@ const addMessage = (message, options = null) => {
             DOMElements.messageInput.value = '';
             DOMElements.messageInput.style.height = '36px';
             DOMElements.messageInput.style.overflow = 'hidden';
-            if (imageFiles.some(file => file.size > MAX_IMAGE_SIZE)) {
-                showNotification('有图片超过5MB限制', 'error'); DOMElements.imageInput.value = ''; return;
-            }
             const MAX_VIDEO_SIZE = 300 * 1024 * 1024;
             if (videoFiles.some(file => file.size > MAX_VIDEO_SIZE)) {
                 showNotification('有视频超过300MB限制', 'error'); if (DOMElements.videoInput) DOMElements.videoInput.value = ''; return;
@@ -5160,9 +5355,41 @@ if (!isBatchMode && type === 'normal') {
 
             if (imageFiles.length) {
                 showNotification(`正在优化 ${imageFiles.length} 张图片...`, 'info', 1500);
-                Promise.all(imageFiles.map(file => optimizeImage(file)))
-                    .then(items => items.forEach((img, index) => createMessage(img, null, { mediaIndex: index, mediaTotal: items.length })))
-                    .catch(() => showNotification('图片处理失败', 'error'));
+                const imageTasks = imageFiles.map((file, index) =>
+                    prepareImageForLimit(file, 800, 0.7, MAX_IMAGE_SIZE)
+                        .then(result => Object.assign({ index }, result), error => ({ ok: false, index, error }))
+                );
+                Promise.all(imageTasks).then(results => {
+                    let sent = 0;
+                    let failed = 0;
+                    let oversize = 0;
+                    let sourceOversize = 0;
+                    results.forEach(result => {
+                        if (!result.ok) {
+                            if (result.sourceOversize) sourceOversize++;
+                            else if (result.oversize) oversize++;
+                            else failed++;
+                            console.warn('[图片发送] 第 ' + (result.index + 1) + ' 张处理失败', result.error || (result.sourceOversize ? '原图超过20MB安全上限' : '输出超过5MB：' + result.outputBytes));
+                            return;
+                        }
+                        try {
+                            createMessage(result.image, null, { mediaIndex: result.index, mediaTotal: imageFiles.length });
+                            sent++;
+                        } catch (error) {
+                            failed++;
+                            console.warn('[图片发送] 第 ' + (result.index + 1) + ' 张写入消息失败', error);
+                        }
+                    });
+                    if (failed || oversize || sourceOversize) {
+                        const details = [];
+                        if (sourceOversize) details.push(sourceOversize + ' 张原图超过20MB安全上限');
+                        if (oversize) details.push(oversize + ' 张优化/保留后仍超过5MB');
+                        if (failed) details.push(failed + ' 张读取或处理失败');
+                        showNotification(sent
+                            ? `已发送 ${sent} 张图片；${details.join('；')}`
+                            : details.join('；') + '，请检查文件后重试', sent ? 'warning' : 'error', 3000);
+                    }
+                });
             } else if (videoFiles.length) {
                 videoFiles.forEach((file, index) => {
                     try {
@@ -5297,11 +5524,41 @@ function updateBatchPreview() {
             input.addEventListener('change', async (e) => {
                 const files = Array.from(e.target.files || []);
                 if (!files.length) return;
-                if (files.some(file => file.size > MAX_IMAGE_SIZE)) { showNotification('有图片超过5MB限制', 'warning'); return; }
                 try {
-                    const images = await Promise.all(files.map(file => optimizeImage(file, 600, 0.8)));
-                    images.forEach(base64 => addToBatch(base64));
-                } catch(err) { showNotification('图片处理失败', 'error'); }
+                    const results = await Promise.all(files.map((file, index) =>
+                        prepareImageForLimit(file, 600, 0.8, MAX_IMAGE_SIZE)
+                            .then(result => Object.assign({ index }, result), error => ({ ok: false, index, error }))
+                    ));
+                    let added = 0;
+                    let failed = 0;
+                    let oversize = 0;
+                    let sourceOversize = 0;
+                    results.forEach(result => {
+                        if (!result.ok) {
+                            if (result.sourceOversize) sourceOversize++;
+                            else if (result.oversize) oversize++;
+                            else failed++;
+                            console.warn('[批量图片] 第 ' + (result.index + 1) + ' 张处理失败', result.error || (result.sourceOversize ? '原图超过20MB安全上限' : '输出超过5MB：' + result.outputBytes));
+                            return;
+                        }
+                        try {
+                            addToBatch(result.image);
+                            added++;
+                        } catch (error) {
+                            failed++;
+                            console.warn('[批量图片] 第 ' + (result.index + 1) + ' 张加入批量草稿失败', error);
+                        }
+                    });
+                    if (failed || oversize || sourceOversize) {
+                        const details = [];
+                        if (sourceOversize) details.push(sourceOversize + ' 张原图超过20MB安全上限');
+                        if (oversize) details.push(oversize + ' 张优化/保留后仍超过5MB');
+                        if (failed) details.push(failed + ' 张读取或处理失败');
+                        showNotification(added
+                            ? `已加入 ${added} 张图片；${details.join('；')}`
+                            : details.join('；') + '，请检查文件后重试', added ? 'warning' : 'error', 3000);
+                    }
+                } catch(err) { console.warn('[批量图片] 处理队列异常', err); showNotification('图片处理失败', 'error'); }
                 e.target.value = '';
             });
         }
@@ -11111,32 +11368,51 @@ hideModal(DOMElements.appearanceModal.modal);
 });
 const bgInput = document.getElementById('bg-gallery-input');
 if (bgInput) {
-bgInput.addEventListener('change', (e) => {
+bgInput.addEventListener('change', async (e) => {
 const file = e.target.files[0];
 if (!file) return;
 if (file.size > 10 * 1024 * 1024) {
 showNotification('背景图片不能超过10MB', 'error');
+e.target.value = '';
 return;
 }
 if (file.size > 5 * 1024 * 1024) {
-showNotification('文件较大，正在处理中...', 'info', 2000);
+showNotification('文件较大，正在读取原始图片...', 'info', 2000);
 }
+try {
+const formatCore = window.XiaoshuImageFormat;
+const info = formatCore && formatCore.inspectFile ? await formatCore.inspectFile(file) : null;
+if (!info || !/^image\//i.test(info.mime || '')) throw new Error('背景图片格式无法识别');
 const reader = new FileReader();
-reader.onload = (event) => {
-const base64 = event.target.result;
+reader.onload = async (event) => {
+const base64 = formatCore && formatCore.normalizeDataUrl
+  ? formatCore.normalizeDataUrl(event.target.result, info, file)
+  : String(event.target.result || '');
+if (!/^data:image\//i.test(base64)) {
+showNotification('背景图片读取结果无效', 'error');
+e.target.value = '';
+return;
+}
 savedBackgrounds.push({
 id: `user-${Date.now()}`,
-type: file.type === 'image/gif' ? 'gif' : 'image',
+type: info.mime === 'image/gif' ? 'gif' : 'image',
 value: base64
 });
 saveBackgroundGallery();
 renderBackgroundGallery();
 window.applyBackground && window.applyBackground(base64);
-localforage.setItem(getStorageKey('chatBackground'), base64);
+try { await localforage.setItem(getStorageKey('chatBackground'), base64); }
+catch (storageError) { console.warn('[背景图片] 保存失败', storageError); showNotification('背景已应用，但本地保存失败', 'warning'); e.target.value = ''; return; }
 showNotification('新背景已添加并应用', 'success');
-};
-reader.readAsDataURL(file);
 e.target.value = '';
+};
+reader.onerror = reader.onabort = () => { showNotification('背景图片读取失败', 'error'); e.target.value = ''; };
+reader.readAsDataURL(file);
+} catch (error) {
+console.warn('[背景图片] 格式识别失败', error);
+showNotification(error && error.message ? error.message : '背景图片处理失败', 'error');
+e.target.value = '';
+}
 });
 }
 const autoSendToggle = document.getElementById('auto-send-toggle');
@@ -12418,23 +12694,39 @@ function updateProfilePreview(){
   const hint = assetsBusy ? '图片处理中，完成后再保存。' : (tempAssets.dirty ? '已选新图片，点右上角保存生效。' : '');
   if(qs('#saveHintText')) qs('#saveHintText').textContent = hint;
 }
-function compressImage(file, max=900, quality=.82){
-  return new Promise((resolve,reject)=>{
+function compressImage(file, max=900, quality=.82, knownFormatInfo=null){
+  const core=window.XiaoshuImageFormat;
+  const inspect=knownFormatInfo?Promise.resolve(knownFormatInfo):(core&&core.inspectFile?core.inspectFile(file):Promise.resolve(null));
+  return inspect.then(info=>new Promise((resolve,reject)=>{
     const fr = new FileReader();
     fr.onload = () => {
+      let raw=String(fr.result||'');
+      if(core&&core.normalizeDataUrl)raw=core.normalizeDataUrl(raw,info,file);
+      if(!/^data:image\//i.test(raw)){reject(new Error('图片读取结果无效'));return;}
+      // Preserve GIF/APNG/WebP/PNG alpha and all non-JPEG source bytes.
+      if(!(info&&info.isJpeg)){resolve(raw);return;}
       const img = new Image();
       img.onload = () => {
-        let w=img.width,h=img.height;
-        if(w>h && w>max){ h = Math.round(h*max/w); w=max; }
-        else if(h>=w && h>max){ w = Math.round(w*max/h); h=max; }
-        const c = document.createElement('canvas'); c.width=w; c.height=h;
-        const ctx = c.getContext('2d'); ctx.drawImage(img,0,0,w,h);
-        resolve(c.toDataURL('image/jpeg', quality));
+        try{
+          let w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+          if(!w||!h){resolve(raw);return;}
+          const scale=Math.min(1,max/Math.max(w,h),8192/w,8192/h,Math.sqrt(16000000/(w*h)));
+          w=Math.max(1,Math.floor(w*scale));h=Math.max(1,Math.floor(h*scale));
+          const c = document.createElement('canvas'); c.width=w; c.height=h;
+          const ctx = c.getContext('2d'); if(!ctx){resolve(raw);return;}
+          ctx.drawImage(img,0,0,w,h);
+          const output=c.toDataURL('image/jpeg',quality);
+          const outputBytes=core&&core.byteLength?core.byteLength(output):0;
+          const originalBytes=core&&core.byteLength?core.byteLength(raw):Number(file.size)||0;
+          resolve(/^data:image\/jpeg;base64,/i.test(output)&&outputBytes>0&&outputBytes<originalBytes?output:raw);
+        }catch(_error){resolve(raw);}
       };
-      img.onerror = reject; img.src = fr.result;
+      img.onerror = () => resolve(raw);
+      img.src = raw;
     };
-    fr.onerror = reject; fr.readAsDataURL(file);
-  });
+    fr.onerror = reject; fr.onabort=()=>reject(new Error('图片读取已取消'));
+    try{fr.readAsDataURL(file);}catch(error){reject(error);}
+  }));
 }
 function readFileAsDataURL(file){
   return new Promise((resolve,reject)=>{
@@ -12445,11 +12737,14 @@ function readFileAsDataURL(file){
   });
 }
 async function buildMediaItem(file){
-  if(file.type.startsWith('image/')){
-    const src = await compressImage(file, 1080, .84);
+  const formatCore=window.XiaoshuImageFormat;
+  const formatInfo=formatCore&&formatCore.inspectFile?await formatCore.inspectFile(file):null;
+  const actualType=(formatInfo&&formatInfo.mime)||String(file&&file.type||'');
+  if(actualType.startsWith('image/')){
+    const src = await compressImage(file, 1080, .84, formatInfo);
     return { id:'m_'+Math.random().toString(36).slice(2), type:'image', src };
   }
-  if(file.type.startsWith('video/')){
+  if(String(file&&file.type||'').startsWith('video/')){
     if(file.size > 2.5 * 1024 * 1024) throw new Error('视频太大了，先试试更短一点的视频。');
     const src = await readFileAsDataURL(file);
     return { id:'m_'+Math.random().toString(36).slice(2), type:'video', src };
@@ -13881,8 +14176,10 @@ ${socialHtml}
 
   const originalBuildMediaItem = buildMediaItem;
   buildMediaItem = async function(file){
-    if(file && file.type && file.type.startsWith('image/')){
-      const src = await compressImage(file, 720, .72);
+    const formatCore=window.XiaoshuImageFormat;
+    const formatInfo=formatCore&&formatCore.inspectFile?await formatCore.inspectFile(file):null;
+    if(file && ((formatInfo&&formatInfo.mime)||file.type||'').startsWith('image/')){
+      const src = await compressImage(file, 720, .72, formatInfo);
       return { id:'m_'+Math.random().toString(36).slice(2), type:'image', src };
     }
     return originalBuildMediaItem(file);
@@ -18619,38 +18916,40 @@ function cssUrl(v){return /gradient\(/i.test(String(v))?String(v):'url("'+String
     return canvas.toDataURL('image/jpeg',q);
   }
   function compressImage(file,done,fail){
-    var reader=new FileReader();
-    reader.onerror=function(){if(fail)fail('读取失败');};
-    reader.onload=function(){
-      var raw=String(reader.result||'');
-      if(!/^data:image\//i.test(raw)){done(raw);return;}
-      if(/^data:image\/gif/i.test(raw)){done(raw);return;}
-      var img=new Image();
-      img.onload=function(){
-        try{
-          var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
-          if(!w||!h){done(raw);return;}
-          var plans=[
-            {max:1100,q:.74,limit:900*1024},
-            {max:900,q:.68,limit:720*1024},
-            {max:720,q:.62,limit:540*1024},
-            {max:540,q:.58,limit:390*1024}
-          ];
-          var best='';
-          for(var i=0;i<plans.length;i++){
-            var p=plans[i], ratio=Math.min(1,p.max/Math.max(w,h));
-            var cw=Math.max(1,Math.round(w*ratio)), ch=Math.max(1,Math.round(h*ratio));
-            var out=drawToDataURL(img,cw,ch,p.q);
-            best=out||best;
-            if(out && out.length<=p.limit){done(out);return;}
-          }
-          done(best||raw);
-        }catch(e){done(raw);}
+    var core=window.XiaoshuImageFormat;
+    var inspect=core&&core.inspectFile?core.inspectFile(file):Promise.resolve(null);
+    inspect.then(function(info){
+      var reader=new FileReader();
+      reader.onerror=function(){if(fail)fail('读取失败');};
+      reader.onabort=function(){if(fail)fail('读取已取消');};
+      reader.onload=function(){
+        var raw=String(reader.result||'');
+        if(core&&core.normalizeDataUrl)raw=core.normalizeDataUrl(raw,info,file);
+        if(!/^data:image\//i.test(raw)){if(fail)fail('图片格式无法识别');return;}
+        // Wallpaper display is still image-based; preserve every non-JPEG source format.
+        if(!(info&&info.isJpeg)){done(raw);return;}
+        var img=new Image();
+        img.onload=function(){
+          try{
+            var w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+            if(!w||!h){done(raw);return;}
+            var plans=[{max:1100,q:.74,limit:900*1024},{max:900,q:.68,limit:720*1024},{max:720,q:.62,limit:540*1024},{max:540,q:.58,limit:390*1024}],best='';
+            var scale=Math.min(1,8192/w,8192/h,Math.sqrt(16000000/(w*h)));
+            for(var i=0;i<plans.length;i++){
+              var plan=plans[i],ratio=Math.min(scale,plan.max/Math.max(w,h));
+              var cw=Math.max(1,Math.floor(w*ratio)),ch=Math.max(1,Math.floor(h*ratio));
+              var out=drawToDataURL(img,cw,ch,plan.q);best=out||best;
+              var outBytes=core&&core.byteLength?core.byteLength(out):0;
+              if(/^data:image\/jpeg;base64,/i.test(out||'')&&outBytes>0&&outBytes<(Number(file.size)||0)){done(out);return;}
+            }
+            done(raw);
+          }catch(_error){done(raw);}
+        };
+        img.onerror=function(){done(raw);};
+        img.src=raw;
       };
-      img.onerror=function(){done(raw);};
-      img.src=raw;
-    };
-    reader.readAsDataURL(file);
+      try{reader.readAsDataURL(file);}catch(error){if(fail)fail(error&&error.message||'读取失败');}
+    }).catch(function(error){if(fail)fail(error&&error.message||'图片识别失败');});
   }
   function setPreviewNode(preview,val,txt){
     if(!preview) return;
@@ -18775,8 +19074,21 @@ var INPUT_IDS = ['my-sticker-quick-upload'];
 var uploads = [];
 var hidden = new Set();
 var hydratePromise = null;
+var hydratePromiseSessionId = '';
+var hydratePromiseToken = 0;
 var hydratedSessionId = '';
+var sessionGenerationId = '';
+var sessionGeneration = 0;
+var startupLegacyUploadSeed = [];
+var startupLegacyUploadSeedSessionId = '';
+var startupLegacyUploadSeedPending = true;
+var resourcePersistToken = 0;
+var adminSelectedSessionId = '';
+var adminVisibleSessionId = '';
 var pendingUploadPersist = false;
+// Serialize complete upload batches per session. This prevents a later batch from
+// snapshotting an earlier batch that is still pending and may subsequently roll back.
+var uploadAddFilesChains = Object.create(null);
 // Serialize writes to the canonical upload key so late autosaves cannot overtake a deletion.
 var canonicalUploadWriteChain = Promise.resolve();
 var sessionReadyTimer = null;
@@ -18812,15 +19124,37 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   function indexCatalog(list){(list||[]).forEach(function(src){src=norm(src);if(!src||!isImage(src))return;catalogResources[stickerHash(src)]=src;});}
   function cleanResourceObject(raw){var out=Object.create(null);if(!raw||typeof raw!=='object'||Array.isArray(raw))return out;Object.keys(raw).slice(0,5000).forEach(function(id){var src=norm(raw[id]);if(/^stk_[a-z0-9_]+$/i.test(id)&&isImage(src))out[id]=src;});return out;}
   function resourceStorageKey(sid){return storageKeyForSession(CANONICAL_MESSAGE_RESOURCE_NAME,sid||currentSessionId());}
-  function persistMessageResourcesNow(){
-    var sid=currentSessionId();if(!sid||!sessionDataReady(sid)||!migrationState.hydrated||hydratedSessionId!==sid||!window.localforage)return Promise.resolve(false);
-    var key=resourceStorageKey(sid);if(!key)return Promise.resolve(false);
-    return window.localforage.setItem(key,Object.assign({},messageResources)).then(function(){return true;}).catch(function(err){console.warn('[表情资源表] 保存失败',err);return false;});
+  function persistMessageResourcesSnapshot(context,snapshot){
+    var ctx=context&&context.sid?context:captureSessionContext(context);
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid||!window.localforage)return Promise.resolve(false);
+    var key=resourceStorageKey(ctx.sid);if(!key||!isSessionContextCurrent(ctx))return Promise.resolve(false);
+    var payload=Object.assign({},snapshot||messageResources);
+    return window.localforage.setItem(key,payload).then(function(){return isSessionContextCurrent(ctx)&&hydratedSessionId===ctx.sid;}).catch(function(err){console.warn('[表情资源表] 保存失败',err);return false;});
   }
-  function scheduleResourcePersist(){clearTimeout(resourcePersistTimer);resourcePersistTimer=setTimeout(function(){resourcePersistTimer=null;persistMessageResourcesNow();},120);}
-  function registerMessageResource(src){src=norm(src);if(!isImage(src))return'';var id=stickerHash(src);catalogResources[id]=src;if(messageResources[id]!==src){messageResources[id]=src;scheduleResourcePersist();}return id;}
-  function resolveMessageResource(id){id=String(id||'');return norm(messageResources[id]||catalogResources[id]||'');}
-  function migrateCurrentChatStickerMessages(){
+  function persistMessageResourcesNow(context){
+    var ctx=context&&context.sid?context:captureSessionContext(context);
+    return persistMessageResourcesSnapshot(ctx,Object.assign({},messageResources));
+  }
+  function scheduleResourcePersist(){
+    var ctx=captureSessionContext(),snapshot=Object.assign({},messageResources),token=++resourcePersistToken;
+    clearTimeout(resourcePersistTimer);
+    resourcePersistTimer=setTimeout(function(){
+      if(token!==resourcePersistToken)return;
+      resourcePersistTimer=null;
+      persistMessageResourcesSnapshot(ctx,snapshot);
+    },120);
+  }
+  function registerMessageResource(src){
+    src=norm(src);if(!isImage(src))return'';
+    var ctx=captureSessionContext();if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return'';
+    var id=stickerHash(src);catalogResources[id]=src;
+    if(messageResources[id]!==src){messageResources[id]=src;scheduleResourcePersist();}
+    return id;
+  }
+  function resolveMessageResource(id){var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return'';id=String(id||'');return norm(messageResources[id]||catalogResources[id]||'');}
+  function migrateCurrentChatStickerMessages(context){
+    var ctx=context&&context.sid?context:captureSessionContext(context);
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return 0;
     try{
       var list=(typeof messages!=='undefined'&&Array.isArray(messages))?messages:(Array.isArray(window.messages)?window.messages:[]);if(!list.length)return 0;
       var sourceToId=Object.create(null);Object.keys(catalogResources).forEach(function(id){sourceToId[catalogResources[id]]=id;});Object.keys(messageResources).forEach(function(id){sourceToId[messageResources[id]]=id;});
@@ -18829,13 +19163,15 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       return changed;
     }catch(e){console.warn('[表情资源表] 旧消息迁移失败',e);return 0;}
   }
-  function repairCurrentChatStickerResources(){
+  function repairCurrentChatStickerResources(context){
+    var ctx=context&&context.sid?context:captureSessionContext(context);
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return{repaired:0,missing:[]};
     try{
       if(!window.XiaoshuStickerCore)return{repaired:0,missing:[]};
       var list=(typeof messages!=='undefined'&&Array.isArray(messages))?messages:(Array.isArray(window.messages)?window.messages:[]);
       var catalog=buildPool(true),result=window.XiaoshuStickerCore.rebuildResourceMap(list,messageResources,catalog),repaired=0;
       Object.keys(result.map).forEach(function(id){if(messageResources[id]!==result.map[id]){messageResources[id]=result.map[id];repaired++;}catalogResources[id]=result.map[id];});
-      if(repaired)persistMessageResourcesNow();
+      if(repaired)persistMessageResourcesNow(ctx);
       return{repaired:repaired,missing:result.missing};
     }catch(e){console.warn('[表情资源表] 历史映射修复失败',e);return{repaired:0,missing:[]};}
   }
@@ -18859,6 +19195,59 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   function sessionDataReady(sid){
     sid=String(sid||currentSessionId()||'');
     return !!sid&&String(window.__xiaoshuSessionDataReady||'')===sid;
+  }
+  function resetSessionOwnedRuntime(previousSid,nextSid){
+    if(!previousSid||previousSid===nextSid)return;
+    // Drop the previous conversation's in-memory views as soon as any public or
+    // async path observes a new active session, even before its ready event arrives.
+    if(hydratedSessionId!==nextSid){
+      migrationState.hydrated=false;
+      uploads=[];
+      messageResources=Object.create(null);
+      catalogResources=Object.create(null);
+      // Compatibility consumers may fall back to this runtime-only alias when
+      // getPool() is temporarily empty during B hydration. Never leave A's pool here.
+      try{if(typeof stickerLibrary!=='undefined'&&Array.isArray(stickerLibrary))stickerLibrary.length=0;}catch(_aliasClearError){}
+      try{window.stickerLibrary=[];window._stickerLibrary=[];}catch(_windowAliasClearError){}
+      clearLegacyGroupRuntime();
+      resourceMigrationCatalogReady=false;
+      fullPoolPublished=false;
+      adminSelected.clear();
+      adminSelectedSessionId='';
+      clearAdminSessionView();
+      clearTimeout(resourcePersistTimer);
+      resourcePersistTimer=null;
+      resourcePersistToken++;
+    }
+  }
+  function captureSessionContext(sid){
+    sid=String(sid||currentSessionId()||'');
+    if(sessionGenerationId!==sid){
+      var previousSid=sessionGenerationId;
+      sessionGenerationId=sid;sessionGeneration++;
+      resetSessionOwnedRuntime(previousSid,sid);
+    }
+    return{sid:sid,generation:sessionGeneration};
+  }
+  function isSessionContextCurrent(context){
+    if(!context||!context.sid)return false;
+    var activeSid=currentSessionId();
+    if(sessionGenerationId!==activeSid)captureSessionContext(activeSid);
+    return activeSid===context.sid&&sessionGeneration===context.generation&&sessionDataReady(context.sid);
+  }
+  function isAdminViewCurrent(){
+    return !!adminVisibleSessionId&&adminVisibleSessionId===currentSessionId()&&sessionDataReady(adminVisibleSessionId)&&migrationState.hydrated&&hydratedSessionId===adminVisibleSessionId;
+  }
+  function clearAdminSessionView(){
+    adminVisibleSessionId='';adminVisibleItems=[];
+    try{
+      var stat=$('xs-sticker-admin-stat'),grid=$('xs-sticker-upload-grid'),batchGrid=$('xs-sticker-batch-grid'),selectionCount=$('xs-sticker-selection-count'),uc=$('xs-sticker-upload-count'),hc=$('xs-sticker-hidden-count');
+      if(stat)stat.textContent='正在载入当前会话的表情…';
+      if(grid)grid.innerHTML='<div class="xs-sticker-admin-empty">正在载入…</div>';
+      if(batchGrid)batchGrid.innerHTML='<div class="xs-sticker-admin-empty">正在载入…</div>';
+      if(selectionCount)selectionCount.textContent='已选 0 张';
+      if(uc)uc.textContent='—';if(hc)hc.textContent='—';
+    }catch(_clearAdminViewError){}
   }
   function readJsonFrom(store,key){
     try{if(!store)return[];var raw=store.getItem(key);if(!raw)return[];var v=JSON.parse(raw);return Array.isArray(v)?v:[];}catch(e){return[];}
@@ -18925,9 +19314,9 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   }
   // 会话尚未完成加载时绝不退回裸键，避免空数组覆盖正式会话数据。
   function storageKey(name,sid){return storageKeyForSession(name,sid||currentSessionId());}
-  function cleanupLegacySyncStores(){
+  function cleanupLegacySyncStores(sid){
     var ls=safeWebStorage('localStorage'),ss=safeWebStorage('sessionStorage');
-    LEGACY_UPLOAD_LOCAL_KEYS.forEach(function(k){removeStorageKey(ls,k);removeStorageKey(ss,k);});
+    if(!startupLegacyUploadSeedSessionId||String(sid||'')===startupLegacyUploadSeedSessionId)LEGACY_UPLOAD_LOCAL_KEYS.forEach(function(k){removeStorageKey(ls,k);removeStorageKey(ss,k);});
     removeStorageKey(ss,CANONICAL_HIDDEN_KEY);
     LEGACY_HIDDEN_KEYS.forEach(function(k){removeStorageKey(ls,k);removeStorageKey(ss,k);});
   }
@@ -18936,14 +19325,15 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       if(!window.localforage)return;
       sid=String(sid||currentSessionId()||'');
       var keys=[];
-      LEGACY_UPLOAD_IDB_NAMES.forEach(function(k){var scoped=storageKey(k,sid);if(scoped)keys.push(scoped);keys.push(k);});
+      LEGACY_UPLOAD_IDB_NAMES.forEach(function(k){var scoped=storageKey(k,sid);if(scoped)keys.push(scoped);if(sid&&sid===startupLegacyUploadSeedSessionId)keys.push(k);});
       var runtimeKey=storageKey(CANONICAL_RUNTIME_NAME,sid);if(runtimeKey)keys.push(runtimeKey);
       keys.push(CANONICAL_HIDDEN_KEY);
       var groupKey=storageKey(LEGACY_GROUP_NAME,sid);if(groupKey)keys.push(groupKey);
-      keys.push(LEGACY_GROUP_NAME);
+      if(sid&&sid===startupLegacyUploadSeedSessionId)keys.push(LEGACY_GROUP_NAME);
       LEGACY_HIDDEN_KEYS.forEach(function(k){keys.push(k);});
       uniq(keys).forEach(function(k){window.localforage.removeItem(k).catch(function(){});});
-      window.localforage.keys().then(function(all){(all||[]).filter(isLegacyGroupKey).forEach(function(k){window.localforage.removeItem(k).catch(function(){});});}).catch(function(){});
+      // Do not enumerate and delete every session's retired group key. Each session
+      // owns only its namespaced legacy key; the unscoped key migrates once to the first session.
     }catch(e){}
   }
   function installLegacyGroupWriteGuard(){
@@ -18954,13 +19344,25 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       var guarded=function(key,value){
         key=String(key||'');
         if(isLegacyGroupKey(key)){
+          var ownerSid=currentSessionId();
+          var ownerGroupKey=ownerSid?storageKey(LEGACY_GROUP_NAME,ownerSid):'';
+          var ownsGroupKey=key===ownerGroupKey||(key===LEGACY_GROUP_NAME&&ownerSid===startupLegacyUploadSeedSessionId);
+          // A delayed writer from A may still target A's namespaced key after B is
+          // active. Preserve that A write, but never merge it into B's closure state.
+          if(!ownsGroupKey||!sessionDataReady(ownerSid)||!migrationState.hydrated||hydratedSessionId!==ownerSid)return raw(key,value);
+          var ownerContext=captureSessionContext(ownerSid);
+          if(!isSessionContextCurrent(ownerContext))return raw(key,value);
           migrationState.blockedGroupWrites++;
           var added=mergeLegacyGroups(value);
-          if(added){
-            var saved=persistUploads();
-            if(saved&&migrationState.hydrated&&hydratedSessionId===currentSessionId())syncRuntime();
-          }
-          try{return window.localforage.removeItem(key).then(function(){return null;});}catch(e){return Promise.resolve(null);}
+          var migrationSave=added?persistUploads(ownerContext):Promise.resolve(true);
+          return Promise.resolve(migrationSave).then(function(saved){
+            if(!saved||!isSessionContextCurrent(ownerContext)||!migrationState.hydrated||hydratedSessionId!==ownerSid)return null;
+            if(added)syncRuntime(true,ownerContext);
+            return window.localforage.removeItem(key).then(function(){return null;});
+          }).catch(function(error){
+            console.warn('[共享表情包] 旧分组迁移未能持久化，保留原键以便重试',error);
+            return null;
+          });
         }
         // The canonical upload key has one writer: this controller's current uploads list.
         // Ignore stale snapshots supplied by saveData(), and suppress writes before hydration
@@ -18986,47 +19388,111 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       return true;
     }catch(e){return false;}
   }
-  function persistHidden(){
+  function persistHidden(expectedContext){
+    var ctx=expectedContext&&expectedContext.sid?expectedContext:captureSessionContext(expectedContext);
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return false;
     var arr=Array.from(hidden);
     writeJsonTo(safeWebStorage('localStorage'),CANONICAL_HIDDEN_KEY,arr);
-    cleanupLegacySyncStores();
-    cleanupLegacyIdbStores(hydratedSessionId||currentSessionId());
+    cleanupLegacySyncStores(ctx.sid);
+    cleanupLegacyIdbStores(ctx.sid);
+    return true;
   }
-  function persistUploads(){
+  function sameUploadList(left,right){
+    if(!Array.isArray(left)||!Array.isArray(right)||left.length!==right.length)return false;
+    for(var i=0;i<left.length;i++)if(norm(left[i])!==norm(right[i]))return false;
+    return true;
+  }
+  function persistUploads(expectedContext){
+    var ctx=expectedContext&&expectedContext.sid?expectedContext:captureSessionContext(expectedContext);
+    var sid=ctx.sid;
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==sid){
+      pendingUploadPersist=true;
+      return Promise.resolve(false);
+    }
     uploads=withoutBuiltins(uploads);
-    var sid=currentSessionId();
-    // 读取当前会话的正式数据以前，任何空数组或同步状态都只能留在内存，禁止落盘覆盖。
-    if(!sid||!sessionDataReady(sid)||!migrationState.hydrated||hydratedSessionId!==sid){pendingUploadPersist=true;return false;}
+    var snapshot=uploads.slice();
     var uploadKey=storageKey(CANONICAL_UPLOAD_NAME,sid);
     var runtimeKey=storageKey(CANONICAL_RUNTIME_NAME,sid);
-    if(!uploadKey||!runtimeKey){pendingUploadPersist=true;return false;}
-    cleanupLegacySyncStores();
-    // Keep the main app's saveData alias synchronized with the authoritative upload list.
-    // Otherwise a later general save can write deleted stickers back into IndexedDB.
-    try {
-      var authoritativeUploads = uploads.slice();
-      if (typeof myStickerLibrary !== 'undefined') myStickerLibrary = authoritativeUploads.slice();
-      window.myStickerLibrary = authoritativeUploads.slice();
-      // stickerLibrary is a runtime pool, not a persistent upload list.
-      if (typeof stickerLibrary !== 'undefined' && Array.isArray(stickerLibrary)) stickerLibrary = [];
-      window.stickerLibrary = [];
-    } catch (aliasSyncError) {
-      try { console.warn('[共享表情包] 同步上传表情权威副本失败', aliasSyncError); } catch (_) {}
+    if(!uploadKey||!runtimeKey||!window.localforage||typeof window.localforage.setItem!=='function'||typeof window.localforage.getItem!=='function'){
+      pendingUploadPersist=true;
+      return Promise.resolve(false);
     }
-    try{
-      if(window.localforage){
-        window.localforage.setItem(uploadKey,uploads.slice()).catch(function(err){console.warn('[共享表情包] 上传表情保存失败',err);});
-        window.localforage.setItem(runtimeKey,[]).catch(function(){});
-        LEGACY_UPLOAD_IDB_NAMES.forEach(function(k){var scoped=storageKey(k,sid);if(scoped)window.localforage.removeItem(scoped).catch(function(){});window.localforage.removeItem(k).catch(function(){});});
-        pendingUploadPersist=false;
-        return true;
-      }
-    }catch(e){console.warn('[共享表情包] 上传表情保存失败',e);}
+
+    // Do not clear migration sources or publish success aliases until the canonical
+    // upload array has really committed and can be read back byte-for-byte.
     pendingUploadPersist=true;
-    return false;
+    var localforage=window.localforage;
+    var currentSetter=localforage.setItem;
+    var rawSetter=currentSetter&&currentSetter.__xsStickerGroupRawSetItem;
+    var writeTask;
+    if(typeof rawSetter==='function'){
+      // This uses the same serialization chain as the legacy saveData write guard,
+      // but writes the exact snapshot being committed instead of a later closure value.
+      canonicalUploadWriteChain=canonicalUploadWriteChain.catch(function(){return null;}).then(function(){
+        if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==sid)return false;
+        return rawSetter(uploadKey,snapshot.slice());
+      }).then(function(written){
+        if(written===false)return false;
+        if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==sid)return false;
+        return localforage.getItem(uploadKey).then(function(stored){
+          if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==sid)return false;
+          if(!sameUploadList(stored,snapshot))throw new Error('上传表情写入后校验不一致');
+          return true;
+        });
+      });
+      writeTask=canonicalUploadWriteChain;
+    }else{
+      writeTask=Promise.resolve().then(function(){return localforage.setItem(uploadKey,snapshot.slice());}).then(function(){
+        if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==sid)return false;
+        return localforage.getItem(uploadKey);
+      }).then(function(stored){
+        if(stored===false)return false;
+        if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==sid)return false;
+        if(!sameUploadList(stored,snapshot))throw new Error('上传表情写入后校验不一致');
+        return true;
+      });
+    }
+
+    return Promise.resolve(writeTask).then(function(saved){
+      if(saved!==true||!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==sid)return false;
+      // The runtime key is only a legacy migration source. Empty it after the
+      // canonical list is durable, so old runtime entries cannot be re-imported.
+      return Promise.resolve(localforage.setItem(runtimeKey,[])).catch(function(error){
+        console.warn('[共享表情包] 清理旧运行时表情列表失败',error);
+      }).then(function(){
+        if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==sid)return false;
+        cleanupLegacySyncStores(sid);
+        var cleanupTasks=[];
+        LEGACY_UPLOAD_IDB_NAMES.forEach(function(name){
+          var scoped=storageKey(name,sid);
+          if(scoped)cleanupTasks.push(Promise.resolve().then(function(){return localforage.removeItem(scoped);}).catch(function(error){console.warn('[共享表情包] 清理旧上传键失败',error);}));
+          if(sid===startupLegacyUploadSeedSessionId)cleanupTasks.push(Promise.resolve().then(function(){return localforage.removeItem(name);}).catch(function(error){console.warn('[共享表情包] 清理旧上传键失败',error);}));
+        });
+        return Promise.all(cleanupTasks).then(function(){
+          if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==sid)return false;
+          // Keep the main app's saveData alias synchronized only after the canonical
+          // write is verified; stickerLibrary remains a runtime pool, not saved uploads.
+          try {
+            var authoritativeUploads=uploads.slice();
+            if(typeof myStickerLibrary!=='undefined')myStickerLibrary=authoritativeUploads.slice();
+            window.myStickerLibrary=authoritativeUploads.slice();
+            if(typeof stickerLibrary!=='undefined'&&Array.isArray(stickerLibrary))stickerLibrary=[];
+            window.stickerLibrary=[];
+          } catch(aliasSyncError) {
+            try { console.warn('[共享表情包] 同步上传表情权威副本失败',aliasSyncError); } catch (_) {}
+          }
+          pendingUploadPersist=false;
+          return true;
+        });
+      });
+    }).catch(function(error){
+      if(isSessionContextCurrent(ctx)&&migrationState.hydrated&&hydratedSessionId===sid)pendingUploadPersist=true;
+      console.warn('[共享表情包] 上传表情保存失败',error);
+      return false;
+    });
   }
   var fullPoolPublished=false;
-  function getUploads(){return uploads.slice();}
+  function getUploads(){var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return[];return uploads.slice();}
   function getHidden(){return Array.from(hidden);}
   function buildPool(includeBuiltins){
     var base=includeBuiltins?builtinSrcs():[];
@@ -19034,26 +19500,33 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     var all=uniq(base.concat(withoutBuiltins(uploads))).filter(isImage);
     indexCatalog(all);
     var pool=all.filter(function(x){return !hidden.has(norm(x));});
-    if(includeBuiltins&&!resourceMigrationCatalogReady){resourceMigrationCatalogReady=true;setTimeout(migrateCurrentChatStickerMessages,0);}
+    if(includeBuiltins&&!resourceMigrationCatalogReady){
+      resourceMigrationCatalogReady=true;
+      var migrationContext=captureSessionContext();
+      setTimeout(function(){if(isSessionContextCurrent(migrationContext))migrateCurrentChatStickerMessages(migrationContext);},0);
+    }
     return pool;
   }
   function publishLegacyPool(pool){
     try{if(Array.isArray(stickerLibrary)){stickerLibrary.length=0;pool.forEach(function(x){stickerLibrary.push(x);});}window._stickerLibrary=pool.slice();}catch(e){window._stickerLibrary=pool.slice();}
   }
   function getPool(){
+    var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return[];
     var pool=buildPool(true);
     if(!fullPoolPublished){fullPoolPublished=true;publishLegacyPool(pool);}
     return pool;
   }
-  function getLocalPool(){return buildPool(true).filter(isImage);}
+  function getLocalPool(){var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return[];return buildPool(true).filter(isImage);}
   function sendSticker(src){
+    var owner=captureSessionContext();
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     src=norm(src);
     if(!src||!isImage(src))return false;
     // 不信任已经过期的面板/iframe 点击事件：发送时必须重新确认资源仍在当前可用池中。
     var activePool=buildPool(true).map(norm);
     if(activePool.indexOf(src)<0){notify('这张表情已删除或隐藏，请重新打开表情面板再选择','info',1800);return false;}
     var stickerId=registerMessageResource(src);if(!stickerId)return false;
-    persistMessageResourcesNow();
+    persistMessageResourcesNow(owner);
     try{
       if(typeof isBatchMode!=='undefined'&&isBatchMode&&typeof batchMessages!=='undefined'){
         batchMessages.push({id:Date.now()+batchMessages.length,text:'',stickerId:stickerId,messageKind:'sticker'});
@@ -19073,11 +19546,13 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   function emit(pool){
     try{window.dispatchEvent(new CustomEvent('stickerLibraryUpdated',{detail:{count:pool.length,uploads:uploads.length,hidden:hidden.size}}));}catch(e){}
   }
-  function syncRuntime(eagerBuiltins){
+  function syncRuntime(eagerBuiltins,expectedContext){
+    var ctx=expectedContext&&expectedContext.sid?expectedContext:captureSessionContext(typeof expectedContext==='string'?expectedContext:undefined);
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return[];
     clearLegacyGroupRuntime();
     var validHiddenTargets=new Set(builtinSrcs().concat(uploads).map(norm)),staleHidden=false;
     hidden.forEach(function(src){if(!validHiddenTargets.has(norm(src))){hidden.delete(src);staleHidden=true;}});
-    if(staleHidden)persistHidden();
+    if(staleHidden)persistHidden(ctx||undefined);
     var eager=eagerBuiltins!==false;
     var pool=buildPool(eager);
     fullPoolPublished=eager;
@@ -19087,53 +19562,166 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   }
   function readFile(file){
     return new Promise(function(resolve){
-      if(!file||!/^image\//i.test(file.type||''))return resolve('');
-      if(file.size>2*1024*1024)return resolve('__oversize__');
-      if(typeof optimizeImage==='function'){
-        Promise.resolve(optimizeImage(file,300,0.8)).then(function(v){resolve(norm(v));}).catch(function(){fallback();});
-      }else fallback();
-      function fallback(){var r=new FileReader();r.onload=function(){resolve(norm(r.result));};r.onerror=function(){resolve('');};r.readAsDataURL(file);}
+      if(!file)return resolve({status:'invalid',reason:'empty'});
+      var core=window.XiaoshuImageFormat;
+      var inspect=core&&typeof core.inspectFile==='function'?core.inspectFile(file):Promise.resolve(null);
+      inspect.then(function(info){
+        var name=String(file.name||'').toLowerCase();
+        var extension=(name.match(/\.([a-z0-9]+)$/)||[])[1]||'';
+        var mime=(info&&info.mime)||String(file.type||'');
+        var acceptedType=/^image\//i.test(mime)||!!({png:1,apng:1,jpg:1,jpeg:1,gif:1,webp:1,bmp:1,avif:1,svg:1}[extension]);
+        if(!acceptedType)return {status:'invalid',reason:'format'};
+        var sourceBytes=Math.max(0,Number(file.size)||0);
+        if(sourceBytes>20*1024*1024)return {status:'source-oversize',bytes:sourceBytes};
+        if(!(info&&info.isJpeg)&&sourceBytes>2*1024*1024)return {status:'oversize',bytes:sourceBytes,preservedSource:true};
+        function normalize(value){
+          value=String(value||'');
+          if(core&&typeof core.normalizeDataUrl==='function')value=core.normalizeDataUrl(value,info,file);
+          else if(/^data:(?:application\/octet-stream|application\/binary);base64,/i.test(value)&&mime){value=value.replace(/^data:[^;]+;/i,'data:'+mime+';');}
+          return value&&isImage(value)?value:'';
+        }
+        function readOriginal(){return new Promise(function(resolveOriginal){
+          try{
+            var reader=new FileReader();
+            reader.onload=function(){resolveOriginal(normalize(reader.result));};
+            reader.onerror=reader.onabort=function(){resolveOriginal('');};
+            reader.readAsDataURL(file);
+          }catch(_readError){resolveOriginal('');}
+        });}
+        var optimized=typeof optimizeImage==='function'
+          ?Promise.resolve().then(function(){return optimizeImage(file,300,0.8,info);}).catch(readOriginal)
+          :readOriginal();
+        return Promise.resolve(optimized).then(function(value){
+          var src=normalize(value);
+          if(!src)return {status:'failed',reason:'invalid-data'};
+          var bytes=core&&typeof core.byteLength==='function'?core.byteLength(src):0;
+          if(!bytes)return {status:'failed',reason:'invalid-data'};
+          if(bytes>2*1024*1024)return {status:'oversize',bytes:bytes};
+          return {status:'ok',src:src,bytes:bytes};
+        });
+      }).then(function(result){resolve(result||{status:'failed',reason:'unknown'});}).catch(function(error){resolve({status:'failed',reason:'read',error:error});});
     });
   }
-  async function addFiles(files){
+  async function addFiles(files,expectedContext){
+    var owner=expectedContext&&expectedContext.sid?expectedContext:captureSessionContext();
+    if(expectedContext&&owner.sid!==currentSessionId())return 0;
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return 0;
     files=Array.prototype.slice.call(files||[]);
     if(!files.length)return 0;
     var results=await Promise.all(files.map(readFile));
-    var oversize=results.filter(function(x){return x==='__oversize__';}).length;
-    var before=uploads.length;
-    results.forEach(function(src){if(src&&src!=='__oversize__'&&isImage(src)&&uploads.indexOf(src)<0)uploads.push(src);});
-    uploads=uniq(uploads).filter(isImage);
-    persistUploads();syncRuntime();
-    var added=Math.max(0,uploads.length-before);
-    if(oversize)notify(oversize+' 张图片超过 2MB，已跳过','warning',2200);
-    notify(added?'已加入共享表情包 '+added+' 张':'没有新增表情包',added?'success':'info',1600);
-    return added;
+
+    // File reading can happen concurrently, but the actual list mutation + durable
+    // commit + rollback is serialized per session. Without this transaction queue,
+    // batch B could snapshot batch A while A is still pending; if A then fails, B could
+    // accidentally persist A's rolled-back source.
+    var previousBatch=uploadAddFilesChains[owner.sid]||Promise.resolve();
+    var transaction=Promise.resolve(previousBatch).catch(function(){return null;}).then(async function(){
+      // A completed FileReader/optimizer result is still owned by the session that
+      // started the batch. Discard it after a session switch, before touching uploads.
+      if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return 0;
+      var oversize=results.filter(function(item){return item.status==='oversize';}).length;
+      var sourceOversize=results.filter(function(item){return item.status==='source-oversize';}).length;
+      var invalid=results.filter(function(item){return item.status==='invalid';}).length;
+      var failed=results.filter(function(item){return item.status==='failed';}).length;
+      var known=new Set(uploads.map(norm));
+      var addedSources=[];
+      results.forEach(function(item){
+        if(!item||item.status!=='ok'||!isImage(item.src))return;
+        var src=norm(item.src);
+        if(!src||known.has(src))return;
+        known.add(src);
+        addedSources.push(src);
+      });
+      if(!addedSources.length){
+        var details=[];
+        if(sourceOversize)details.push(sourceOversize+' 张原图超过20MB安全上限');
+        if(oversize)details.push(oversize+' 张优化/保留后仍超过 2MB');
+        if(invalid)details.push(invalid+' 张格式不支持');
+        if(failed)details.push(failed+' 张读取失败');
+        notify(details.length?'没有新增表情包（'+details.join('，')+'）':'没有新增表情包，所选图片可能已经存在','info',2200);
+        return 0;
+      }
+
+      uploads=uniq(uploads.concat(addedSources)).filter(isImage);
+      var saved=await persistUploads(owner);
+      if(!saved){
+        // Roll back only this batch's additions. Do not restore an older snapshot over
+        // any unrelated mutation that may have completed while IndexedDB was pending.
+        if(isSessionContextCurrent(owner)&&migrationState.hydrated&&hydratedSessionId===owner.sid){
+          var rollbackSet=new Set(addedSources.map(norm));
+          uploads=uploads.filter(function(src){return !rollbackSet.has(norm(src));});
+          syncRuntime(true,owner);
+          notify('表情包保存失败，未完成添加；请检查浏览器存储权限或剩余空间后重试','warning',3000);
+        }
+        return 0;
+      }
+      if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return 0;
+      syncRuntime(true,owner);
+      var added=addedSources.length;
+      var details=[];
+      if(sourceOversize)details.push(sourceOversize+' 张原图超过20MB安全上限，已跳过');
+      if(oversize)details.push(oversize+' 张优化/保留后仍超过 2MB，已跳过');
+      if(invalid)details.push(invalid+' 张格式不支持');
+      if(failed)details.push(failed+' 张读取失败');
+      notify('已保存并加入共享表情包 '+added+' 张'+(details.length?'；'+details.join('；'):''),'success',2600);
+      return added;
+    });
+    var settledTransaction=transaction.then(function(){return null;},function(){return null;});
+    uploadAddFilesChains[owner.sid]=settledTransaction;
+    settledTransaction.then(function(){
+      if(uploadAddFilesChains[owner.sid]===settledTransaction)delete uploadAddFilesChains[owner.sid];
+    });
+    return transaction;
   }
-  function openUpload(){var input=ensureInput(INPUT_IDS[0]);if(input)input.click();}
-  function hideSticker(src,silent){src=norm(src);if(!src)return;hidden.add(src);persistHidden();syncRuntime();if(!silent)notify('已隐藏，可在表情包管理中恢复','success',1500);}
-  function restoreSticker(src){src=norm(src);if(!src)return;hidden.delete(src);persistHidden();syncRuntime();}
-  function clearHidden(ask){
+  function openUpload(expectedSessionId){
+    var sid=String(expectedSessionId||currentSessionId()||'');
+    if(!sid||sid!==currentSessionId())return false;
+    var owner=captureSessionContext(sid);
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
+    var input=ensureInput(INPUT_IDS[0]);
+    if(!input)return false;
+    input.__xsUploadOwner=owner;
+    input.click();
+    return true;
+  }
+  function hideSticker(src,silent,expectedSessionId){var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;var owner=captureSessionContext(activeSid);src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;hidden.add(src);persistHidden(owner);syncRuntime(true,owner);if(!silent)notify('已隐藏，可在表情包管理中恢复','success',1500);return true;}
+  function restoreSticker(src,expectedSessionId){var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;var owner=captureSessionContext(activeSid);src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;hidden.delete(src);persistHidden(owner);syncRuntime(true,owner);return true;}
+  function clearHidden(ask,expectedSessionId){
+    var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;
+    var owner=captureSessionContext(activeSid);if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     if(ask!==false&&!confirm('恢复全部已隐藏表情？'))return false;
-    hidden.clear();persistHidden();syncRuntime();notify('已恢复全部隐藏表情');return true;
+    if(!isSessionContextCurrent(owner))return false;
+    hidden.clear();persistHidden(owner);syncRuntime(true,owner);notify('已恢复全部隐藏表情');return true;
   }
-  function removeUpload(src,ask){
-    src=norm(src);if(!src)return false;
+  function removeUpload(src,ask,expectedSessionId){
+    var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;
+    var owner=captureSessionContext(activeSid);src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     if(ask!==false&&!confirm('删除这张上传表情？'))return false;
-    var before=uploads.length;uploads=uploads.filter(function(x){return norm(x)!==src;});hidden.delete(src);
-    if(uploads.length===before)return false;
-    persistUploads();persistHidden();syncRuntime();notify('已删除上传表情');return true;
+    if(!isSessionContextCurrent(owner))return false;
+    var before=uploads.length,nextUploads=uploads.filter(function(x){return norm(x)!==src;});
+    if(nextUploads.length===before)return false;
+    uploads=nextUploads;hidden.delete(src);
+    persistUploads(owner);persistHidden(owner);syncRuntime(true,owner);notify('已删除上传表情');return true;
   }
-  function clearUploads(ask){
+  function clearUploads(ask,expectedSessionId){
+    var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;
+    var owner=captureSessionContext(activeSid);if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     if(ask!==false&&!confirm('清空全部上传表情包？内置表情不会受影响。'))return false;
-    uploads=[];persistUploads();syncRuntime();notify('已清空上传表情包');return true;
+    if(!isSessionContextCurrent(owner))return false;
+    uploads=[];persistUploads(owner);syncRuntime(true,owner);notify('已清空上传表情包');return true;
   }
-  function clearAdminSelection(){adminSelected.clear();renderAdmin();}
-  function selectAllAdmin(){adminVisibleItems.forEach(function(it){adminSelected.add(norm(it.src));});renderAdmin();}
-  function toggleAdminSelection(src){src=norm(src);if(!src)return false;if(adminSelected.has(src)){adminSelected.delete(src);return false;}adminSelected.add(src);return true;}
-  function batchDeleteSelected(ask){
+  function clearAdminSelection(){if(!isAdminViewCurrent())return false;adminSelected.clear();adminSelectedSessionId=adminVisibleSessionId;renderAdmin();return true;}
+  function selectAllAdmin(){if(!isAdminViewCurrent())return false;var owner=captureSessionContext(adminVisibleSessionId);if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;adminSelected.clear();adminSelectedSessionId=owner.sid;adminVisibleItems.forEach(function(it){adminSelected.add(norm(it.src));});renderAdmin();return true;}
+  function toggleAdminSelection(src,expectedSessionId){var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;if(!isAdminViewCurrent())return false;var owner=captureSessionContext(activeSid);src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;if(adminSelectedSessionId!==owner.sid){adminSelected.clear();adminSelectedSessionId=owner.sid;}if(adminSelected.has(src)){adminSelected.delete(src);return false;}adminSelected.add(src);return true;}
+  function batchDeleteSelected(ask,expectedSessionId){
+    var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;
+    if(!isAdminViewCurrent())return false;
+    var owner=captureSessionContext(activeSid);
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid||adminSelectedSessionId!==owner.sid)return false;
     var chosen=Array.from(adminSelected).filter(isImage);
     if(!chosen.length){notify('请先点选要删除的表情','info',1600);return false;}
     if(ask!==false&&!confirm('确定处理已选中的 '+chosen.length+' 张表情？\n上传表情会永久删除，内置表情会隐藏并可恢复。'))return false;
+    if(!isSessionContextCurrent(owner)||adminSelectedSessionId!==owner.sid)return false;
     var chosenSet=new Set(chosen.map(norm)),builtinSet=new Set(builtinSrcs().map(norm)),before=uploads.length,hiddenBuiltins=0;
     // Batch deletion previously edited the closure-level uploads array directly and
     // bypassed api.removeUpload(). Persist tombstones before changing that array so
@@ -19154,7 +19742,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     uploads=uploads.filter(function(src){return !chosenSet.has(norm(src));});
     var removedUploads=Math.max(0,before-uploads.length);
     chosen.forEach(function(src){src=norm(src);if(builtinSet.has(src)&&!hidden.has(src)){hidden.add(src);hiddenBuiltins++;}});
-    adminSelected.clear();persistUploads();persistHidden();syncRuntime();
+    adminSelected.clear();persistUploads(owner);persistHidden(owner);syncRuntime(true,owner);
     notify('已处理 '+(removedUploads+hiddenBuiltins)+' 张表情','success',1800);return true;
   }
   function downloadText(filename,text){
@@ -19170,11 +19758,16 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     items.sort(function(a,b){return String(a.pack).localeCompare(String(b.pack),'zh-CN')||String(a.label).localeCompare(String(b.label),'zh-CN');});
     return{type:'xiaoshu-hidden-sticker-list',version:'2.0',exportTime:new Date().toISOString(),count:items.length,note:'统一表情包管理导出的隐藏清单，可按 src 做源码级删除。',hiddenStickers:items};
   }
-  async function exportHidden(copyOnly){
+  async function exportHidden(copyOnly,expectedSessionId){
+    var activeSid=currentSessionId();if(expectedSessionId&&String(expectedSessionId)!==activeSid)return false;
+    if(!isAdminViewCurrent())return false;
+    var owner=captureSessionContext(activeSid);
     var payload=buildHiddenPayload(),text=JSON.stringify(payload,null,2),out=$('xs-sticker-hidden-output');
     if(out){out.style.display='block';out.value=text;}
     if(!copyOnly)downloadText('_已隐藏表情清单_'+payload.count+'个.json',text);
-    var ok=await copyText(text);notify(ok?(copyOnly?'已复制隐藏清单':'已导出并复制隐藏清单'):'清单已生成，请手动复制',ok?'success':'info',1800);
+    var ok=await copyText(text);
+    if(!isSessionContextCurrent(owner)||!isAdminViewCurrent())return false;
+    notify(ok?(copyOnly?'已复制隐藏清单':'已导出并复制隐藏清单'):'清单已生成，请手动复制',ok?'success':'info',1800);
     return payload;
   }
   function ensureInput(id){
@@ -19184,7 +19777,9 @@ if(!input.dataset.xsSharedStickerControllerV6){
 input.dataset.xsSharedStickerControllerV6='1';
 input.addEventListener('change',function(e){
 e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();
-var files=Array.prototype.slice.call(input.files||[]);input.value='';addFiles(files);
+var files=Array.prototype.slice.call(input.files||[]),owner=input.__xsUploadOwner||null;input.__xsUploadOwner=null;input.value='';
+if(!owner||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return;
+addFiles(files,owner);
 },true);
 }
 return input;
@@ -19203,22 +19798,25 @@ m.innerHTML='<div class="modal-content">'+
 '<div class="modal-buttons"><button class="modal-btn modal-btn-secondary" id="xs-close-sticker-admin">关闭</button></div>'+
 '</div>';
 document.body.appendChild(m);
-m.querySelector('#xs-admin-upload-stickers').addEventListener('click',function(e){e.preventDefault();openUpload();});
-m.querySelector('#xs-admin-refresh-stickers').addEventListener('click',function(e){e.preventDefault();hydrate(true).then(syncRuntime);});
-m.querySelector('#xs-select-all-stickers').addEventListener('click',function(e){e.preventDefault();selectAllAdmin();});
-m.querySelector('#xs-clear-selected-stickers').addEventListener('click',function(e){e.preventDefault();clearAdminSelection();});
-m.querySelector('#xs-delete-selected-stickers').addEventListener('click',function(e){e.preventDefault();batchDeleteSelected(true);});
-m.querySelector('#xs-clear-upload-stickers').addEventListener('click',function(e){e.preventDefault();if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.clearUploads==='function')window.xiaoshuStickerStore.clearUploads(true);else clearUploads(true);});
-m.querySelector('#xs-restore-hidden-stickers').addEventListener('click',function(e){e.preventDefault();clearHidden(true);});
-m.querySelector('#xs-export-hidden-stickers').addEventListener('click',function(e){e.preventDefault();exportHidden(false);});
-m.querySelector('#xs-copy-hidden-stickers').addEventListener('click',function(e){e.preventDefault();exportHidden(true);});
+m.querySelector('#xs-admin-upload-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())openUpload(adminVisibleSessionId);});
+m.querySelector('#xs-admin-refresh-stickers').addEventListener('click',function(e){e.preventDefault();if(!isAdminViewCurrent())return;var owner=captureSessionContext(adminVisibleSessionId);hydrate(true).then(function(ok){if(ok&&isSessionContextCurrent(owner)&&isAdminViewCurrent())syncRuntime(true,owner);});});
+m.querySelector('#xs-select-all-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())selectAllAdmin();});
+m.querySelector('#xs-clear-selected-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())clearAdminSelection();});
+m.querySelector('#xs-delete-selected-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())batchDeleteSelected(true,adminVisibleSessionId);});
+m.querySelector('#xs-clear-upload-stickers').addEventListener('click',function(e){e.preventDefault();if(!isAdminViewCurrent())return;if(window.xiaoshuStickerStore&&typeof window.xiaoshuStickerStore.clearUploads==='function')window.xiaoshuStickerStore.clearUploads(true,adminVisibleSessionId);else clearUploads(true,adminVisibleSessionId);});
+m.querySelector('#xs-restore-hidden-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())clearHidden(true,adminVisibleSessionId);});
+m.querySelector('#xs-export-hidden-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())exportHidden(false,adminVisibleSessionId);});
+m.querySelector('#xs-copy-hidden-stickers').addEventListener('click',function(e){e.preventDefault();if(isAdminViewCurrent())exportHidden(true,adminVisibleSessionId);});
 m.querySelector('#xs-close-sticker-admin').addEventListener('click',function(e){e.preventDefault();if(typeof hideModal==='function')hideModal(m);else m.style.display='none';});
-m.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('[data-xs-remove-upload]');if(!b)return;e.preventDefault();e.stopPropagation();removeUpload(b.getAttribute('data-xs-remove-upload'),true);});
-m.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('[data-xs-batch-index]');if(!b)return;e.preventDefault();e.stopPropagation();var i=Number(b.getAttribute('data-xs-batch-index'));if(!adminVisibleItems[i])return;var selected=toggleAdminSelection(adminVisibleItems[i].src);b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',selected?'true':'false');var count=$('xs-sticker-selection-count');if(count)count.textContent='已选 '+adminSelected.size+' 张';});
+m.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('[data-xs-remove-upload]');if(!b)return;e.preventDefault();e.stopPropagation();if(!isAdminViewCurrent())return;removeUpload(b.getAttribute('data-xs-remove-upload'),true,adminVisibleSessionId);});
+m.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('[data-xs-batch-index]');if(!b)return;e.preventDefault();e.stopPropagation();if(!isAdminViewCurrent())return;var i=Number(b.getAttribute('data-xs-batch-index'));if(!adminVisibleItems[i])return;var selected=toggleAdminSelection(adminVisibleItems[i].src,adminVisibleSessionId);b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',selected?'true':'false');var count=$('xs-sticker-selection-count');if(count)count.textContent='已选 '+adminSelected.size+' 张';});
 return m;
 }
 function renderAdmin(){
-var m=$('xiaoshu-sticker-admin-modal');if(!m)return;
+var owner=captureSessionContext();
+if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid){clearAdminSessionView();return false;}
+adminVisibleSessionId=owner.sid;
+var m=$('xiaoshu-sticker-admin-modal');if(!m)return false;
 var stat=$('xs-sticker-admin-stat'),grid=$('xs-sticker-upload-grid'),batchGrid=$('xs-sticker-batch-grid'),selectionCount=$('xs-sticker-selection-count'),uc=$('xs-sticker-upload-count'),hc=$('xs-sticker-hidden-count');
 if(stat)stat.innerHTML='共享可见表情：<b>'+getPool().length+'</b> 个<br>内置表情：<b>'+builtinSrcs().length+'</b> 个<br>上传表情：<b>'+uploads.length+'</b> 个<br>已隐藏：<b>'+hidden.size+'</b> 个<br>旧分组已迁移：<b>'+migrationState.legacyGroupItems+'</b> 个；已拦截回写：<b>'+migrationState.blockedGroupWrites+'</b> 次';
 if(uc)uc.textContent=uploads.length+' 个';if(hc)hc.textContent=hidden.size+' 个';
@@ -19238,81 +19836,169 @@ card=document.createElement('div');card.className='settings-card';card.id='xiaos
 grid.appendChild(card);card.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();openAdmin();});
 }
 function openAdmin(){
+var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
 var m=ensureModal();renderAdmin();
 if(typeof showModal==='function')showModal(m);else m.style.display='flex';
 }
 async function hydrate(force){
 var sid=currentSessionId();
 if(!sid||!sessionDataReady(sid))return false;
+var owner=captureSessionContext(sid);
 if(hydratedSessionId===sid&&migrationState.hydrated&&!force)return true;
-if(hydratePromise&&!force)return hydratePromise;
+if(hydratePromise&&hydratePromiseSessionId===sid&&!force)return hydratePromise;
 var targetSid=sid;
-if(hydratedSessionId&&hydratedSessionId!==targetSid){messageResources=Object.create(null);catalogResources=Object.create(null);resourceMigrationCatalogReady=false;clearTimeout(resourcePersistTimer);resourcePersistTimer=null;}
 var uploadKey=storageKey(CANONICAL_UPLOAD_NAME,targetSid);
 var runtimeKey=storageKey(CANONICAL_RUNTIME_NAME,targetSid);
 if(!uploadKey||!runtimeKey)return false;
-hydratePromise=(async function(){
-var canonicalReadOk=!window.localforage;
-try{
-// 主程序 loadData 已完成后，词法变量里的当前会话数据可作为同会话种子；切换会话时不沿用旧会话 uploads。
-var seed=[];
-try{if(typeof myStickerLibrary!=='undefined'&&Array.isArray(myStickerLibrary))seed=seed.concat(myStickerLibrary);}catch(e){}
-try{if(Array.isArray(window.myStickerLibrary))seed=seed.concat(window.myStickerLibrary);}catch(e){}
-// 保留会话就绪前从旧同步键/退役分组收集到的迁移候选，避免迁移数据在正式读取时被重置。
-uploads=withoutBuiltins(seed.concat(uploads));
-migrationState.hydrated=false;
-if(window.localforage){
-try{messageResources=cleanResourceObject(await window.localforage.getItem(resourceStorageKey(targetSid)));indexCatalog(Object.keys(messageResources).map(function(id){return messageResources[id];}));}catch(_resourceReadErr){messageResources=Object.create(null);}
-var canonical=await window.localforage.getItem(uploadKey);
-canonicalReadOk=true;
-if(Array.isArray(canonical)){
-// An existing canonical array (including []) is authoritative. Never merge aliases,
-// runtime pools, or retired legacy stores into it: those copies may contain deleted items.
-uploads=withoutBuiltins(canonical);
-}else{
-// One-time migration only when the canonical key does not exist yet.
-for(var i=0;i<LEGACY_UPLOAD_IDB_NAMES.length;i++){
-var scopedLegacy=storageKey(LEGACY_UPLOAD_IDB_NAMES[i],targetSid);
-var names=uniq([scopedLegacy,LEGACY_UPLOAD_IDB_NAMES[i]]);
-for(var n=0;n<names.length;n++){
-try{var arr=await window.localforage.getItem(names[n]);if(Array.isArray(arr)){migrationState.legacyUploadItems+=arr.length;uploads=withoutBuiltins(uploads.concat(arr));}}catch(e){}
+if(hydratedSessionId&&hydratedSessionId!==targetSid){
+  clearTimeout(resourcePersistTimer);resourcePersistTimer=null;resourcePersistToken++;
+  resourceMigrationCatalogReady=false;
 }
-}
-try{var oldRuntime=await window.localforage.getItem(runtimeKey);if(Array.isArray(oldRuntime)&&oldRuntime.length){var recovered=withoutBuiltins(oldRuntime);migrationState.legacyUploadItems+=recovered.length;uploads=withoutBuiltins(uploads.concat(recovered));}}catch(e){}
-var allKeys=[];try{allKeys=await window.localforage.keys();}catch(e){}
-var scopedGroup=storageKey(LEGACY_GROUP_NAME,targetSid);
-var groupKeys=uniq([scopedGroup,LEGACY_GROUP_NAME].concat((allKeys||[]).filter(isLegacyGroupKey)));
-for(var gk=0;gk<groupKeys.length;gk++){
-try{var gv=await window.localforage.getItem(groupKeys[gk]);if(Array.isArray(gv))mergeLegacyGroups(gv);}catch(e){}
-try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}
-}
-}
-var hkeys=[CANONICAL_HIDDEN_KEY].concat(LEGACY_HIDDEN_KEYS);
-for(var j=0;j<hkeys.length;j++){try{var hv=await window.localforage.getItem(hkeys[j]);if(Array.isArray(hv)){migrationState.legacyHiddenItems+=hv.length;mergeHidden(hv);}}catch(e){}}
-}
-}catch(e){
-console.warn('[共享表情包] 读取当前会话数据失败，已停止回写以保护原数据',e);
-canonicalReadOk=false;
-}
-// 等待期间若会话已改变，丢弃本次结果，绝不写入另一个会话。
-if(currentSessionId()!==targetSid||!sessionDataReady(targetSid))return false;
-if(!canonicalReadOk)return false;
-hydratedSessionId=targetSid;
-migrationState.hydrated=true;
-persistUploads();
-persistHidden();
-syncRuntime(false);
-repairCurrentChatStickerResources();
-persistMessageResourcesNow();
-setTimeout(function(){migrateCurrentChatStickerMessages();repairCurrentChatStickerResources();},0);
-try{window.dispatchEvent(new CustomEvent('xiaoshu-sticker-resources-ready',{detail:{sessionId:targetSid,count:Object.keys(messageResources).length}}));}catch(_readyEventError){}
-return true;
+if(!startupLegacyUploadSeedSessionId)startupLegacyUploadSeedSessionId=targetSid;
+var thisHydratePromise=(async function(){
+  var canonicalReadOk=!window.localforage;
+  var stagedUploads=[];
+  var stagedHidden=new Set(hidden);
+  var stagedMessageResources=Object.create(null);
+  var stagedCatalogResources=Object.create(null);
+  var stagedCounts={legacyUploadItems:0,legacyHiddenItems:0,legacyGroupItems:0};
+  var seed=[];
+  try{if(typeof myStickerLibrary!=='undefined'&&Array.isArray(myStickerLibrary))seed=seed.concat(myStickerLibrary);}catch(e){}
+  try{if(Array.isArray(window.myStickerLibrary))seed=seed.concat(window.myStickerLibrary);}catch(e){}
+  if(startupLegacyUploadSeedPending&&startupLegacyUploadSeedSessionId===targetSid)seed=seed.concat(startupLegacyUploadSeed);
+  // Reuse the live controller list only when hydrating the same session again.
+  if(hydratedSessionId===targetSid)seed=seed.concat(uploads);
+  stagedUploads=withoutBuiltins(seed);
+  try{
+    if(window.localforage){
+      try{
+        var rawResources=await window.localforage.getItem(resourceStorageKey(targetSid));
+        if(!isSessionContextCurrent(owner))return false;
+        stagedMessageResources=cleanResourceObject(rawResources);
+        Object.keys(stagedMessageResources).forEach(function(id){stagedCatalogResources[id]=stagedMessageResources[id];});
+      }catch(resourceReadError){
+        if(!isSessionContextCurrent(owner))return false;
+        stagedMessageResources=Object.create(null);
+        stagedCatalogResources=Object.create(null);
+      }
+      var canonical=await window.localforage.getItem(uploadKey);
+      if(!isSessionContextCurrent(owner))return false;
+      canonicalReadOk=true;
+      if(Array.isArray(canonical)){
+        // An existing canonical array (including []) is authoritative.
+        stagedUploads=withoutBuiltins(canonical);
+      }else{
+        // Current-session legacy upload key; the unscoped key is a one-time
+        // migration source for the first ready session only.
+        for(var i=0;i<LEGACY_UPLOAD_IDB_NAMES.length;i++){
+          var scopedLegacy=storageKey(LEGACY_UPLOAD_IDB_NAMES[i],targetSid);
+          var legacyNames=uniq([scopedLegacy].concat(targetSid===startupLegacyUploadSeedSessionId?[LEGACY_UPLOAD_IDB_NAMES[i]]:[]));
+          for(var n=0;n<legacyNames.length;n++){
+            if(!isSessionContextCurrent(owner))return false;
+            try{
+              var legacyArray=await window.localforage.getItem(legacyNames[n]);
+              if(!isSessionContextCurrent(owner))return false;
+              if(Array.isArray(legacyArray)){
+                stagedCounts.legacyUploadItems+=legacyArray.length;
+                stagedUploads=withoutBuiltins(stagedUploads.concat(legacyArray));
+              }
+            }catch(legacyUploadReadError){if(!isSessionContextCurrent(owner))return false;}
+          }
+        }
+        try{
+          var oldRuntime=await window.localforage.getItem(runtimeKey);
+          if(!isSessionContextCurrent(owner))return false;
+          if(Array.isArray(oldRuntime)&&oldRuntime.length){
+            var recoveredRuntime=withoutBuiltins(oldRuntime);
+            stagedCounts.legacyUploadItems+=recoveredRuntime.length;
+            stagedUploads=withoutBuiltins(stagedUploads.concat(recoveredRuntime));
+          }
+        }catch(runtimeReadError){if(!isSessionContextCurrent(owner))return false;}
+        // Never enumerate all keys: only this session's group plus the unscoped
+        // retired key during the one-time first-session migration.
+        var scopedGroup=storageKey(LEGACY_GROUP_NAME,targetSid);
+        var groupKeys=uniq([scopedGroup].concat(targetSid===startupLegacyUploadSeedSessionId?[LEGACY_GROUP_NAME]:[]));
+        for(var gk=0;gk<groupKeys.length;gk++){
+          if(!isSessionContextCurrent(owner))return false;
+          try{
+            var groupValue=await window.localforage.getItem(groupKeys[gk]);
+            if(!isSessionContextCurrent(owner))return false;
+            var recoveredGroups=legacyGroupItems(groupValue);
+            if(recoveredGroups.length){
+              stagedUploads=withoutBuiltins(stagedUploads.concat(recoveredGroups));
+              stagedCounts.legacyGroupItems+=recoveredGroups.length;
+            }
+          }catch(groupReadError){if(!isSessionContextCurrent(owner))return false;}
+          if(!isSessionContextCurrent(owner))return false;
+          try{
+            await window.localforage.removeItem(groupKeys[gk]);
+            if(!isSessionContextCurrent(owner))return false;
+          }catch(groupRemoveError){if(!isSessionContextCurrent(owner))return false;}
+        }
+      }
+      var hiddenKeys=[CANONICAL_HIDDEN_KEY].concat(LEGACY_HIDDEN_KEYS);
+      for(var j=0;j<hiddenKeys.length;j++){
+        if(!isSessionContextCurrent(owner))return false;
+        try{
+          var hiddenValue=await window.localforage.getItem(hiddenKeys[j]);
+          if(!isSessionContextCurrent(owner))return false;
+          if(Array.isArray(hiddenValue)){
+            stagedCounts.legacyHiddenItems+=hiddenValue.length;
+            hiddenValue.forEach(function(value){value=norm(value);if(value)stagedHidden.add(value);});
+          }
+        }catch(hiddenReadError){if(!isSessionContextCurrent(owner))return false;}
+      }
+    }
+  }catch(readError){
+    console.warn('[共享表情包] 读取当前会话数据失败，已停止回写以保护原数据',readError);
+    canonicalReadOk=false;
+  }
+  // No shared state is changed until every asynchronous read is complete and
+  // the task still owns the active, ready session.
+  if(!isSessionContextCurrent(owner)||!canonicalReadOk)return false;
+  uploads=stagedUploads;
+  hidden=stagedHidden;
+  messageResources=stagedMessageResources;
+  catalogResources=stagedCatalogResources;
+  migrationState.legacyUploadItems=stagedCounts.legacyUploadItems;
+  migrationState.legacyHiddenItems=stagedCounts.legacyHiddenItems;
+  migrationState.legacyGroupItems=stagedCounts.legacyGroupItems;
+  migrationState.hydrated=true;
+  hydratedSessionId=targetSid;
+  if(startupLegacyUploadSeedPending&&startupLegacyUploadSeedSessionId===targetSid){
+    startupLegacyUploadSeedPending=false;
+    startupLegacyUploadSeed=[];
+  }
+  if(!isSessionContextCurrent(owner)||hydratedSessionId!==targetSid)return false;
+  persistUploads(owner);
+  persistHidden(owner);
+  syncRuntime(false,owner);
+  repairCurrentChatStickerResources(owner);
+  persistMessageResourcesNow(owner);
+  setTimeout(function(){
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==targetSid)return;
+    migrateCurrentChatStickerMessages(owner);
+    repairCurrentChatStickerResources(owner);
+  },0);
+  try{window.dispatchEvent(new CustomEvent('xiaoshu-sticker-resources-ready',{detail:{sessionId:targetSid,count:Object.keys(messageResources).length}}));}catch(_readyEventError){}
+  return true;
 })();
-try{return await hydratePromise;}
-finally{hydratePromise=null;}
+var thisToken=++hydratePromiseToken;
+hydratePromise=thisHydratePromise;
+hydratePromiseSessionId=targetSid;
+try{return await thisHydratePromise;}
+finally{
+  if(hydratePromise===thisHydratePromise&&hydratePromiseToken===thisToken){
+    hydratePromise=null;
+    hydratePromiseSessionId='';
+  }
 }
-loadSyncState();
-var api={getPool:getPool,getLocalPool:getLocalPool,getUploads:getUploads,getHidden:getHidden,send:sendSticker,sync:syncRuntime,openUpload:openUpload,addFiles:addFiles,hide:hideSticker,restore:restoreSticker,clearHidden:clearHidden,removeUpload:removeUpload,clearUploads:clearUploads,openAdmin:openAdmin,exportHidden:exportHidden,hydrate:hydrate,ensureInputs:ensureInputs,installWriteGuard:installLegacyGroupWriteGuard,idFor:stickerIdFor,register:registerMessageResource,resolve:resolveMessageResource,migrateMessages:migrateCurrentChatStickerMessages,repairMessages:repairCurrentChatStickerResources,getMigrationState:function(){return Object.assign({},migrationState);},getMessageResources:function(){return Object.assign({},messageResources);},flushMessageResources:function(){clearTimeout(resourcePersistTimer);resourcePersistTimer=null;var sid=currentSessionId();if(!sid||!sessionDataReady(sid)||!migrationState.hydrated||hydratedSessionId!==sid||!window.localforage)return Promise.resolve(false);var key=resourceStorageKey(sid);if(!key)return Promise.resolve(false);return window.localforage.setItem(key,Object.assign({},messageResources)).then(function(){return true;}).catch(function(err){console.warn('[表情资源表] 严格保存失败',err);return false;});}};
+}loadSyncState();
+// Pre-ready legacy data is a one-time migration seed owned by the first session
+// that reaches the ready barrier. It is never reused as another session's upload list.
+startupLegacyUploadSeed=uploads.slice();
+startupLegacyUploadSeedSessionId=currentSessionId();
+var api={getPool:getPool,getLocalPool:getLocalPool,getUploads:getUploads,getHidden:getHidden,send:sendSticker,sync:syncRuntime,openUpload:openUpload,addFiles:addFiles,hide:hideSticker,restore:restoreSticker,clearHidden:clearHidden,removeUpload:removeUpload,clearUploads:clearUploads,openAdmin:openAdmin,exportHidden:exportHidden,hydrate:hydrate,ensureInputs:ensureInputs,installWriteGuard:installLegacyGroupWriteGuard,idFor:stickerIdFor,register:registerMessageResource,resolve:resolveMessageResource,migrateMessages:migrateCurrentChatStickerMessages,repairMessages:repairCurrentChatStickerResources,getMigrationState:function(){return Object.assign({},migrationState);},getMessageResources:function(){var owner=captureSessionContext();return isSessionContextCurrent(owner)&&migrationState.hydrated&&hydratedSessionId===owner.sid?Object.assign({},messageResources):null;},flushMessageResources:function(){clearTimeout(resourcePersistTimer);resourcePersistTimer=null;resourcePersistToken++;var owner=captureSessionContext();return persistMessageResourcesSnapshot(owner,Object.assign({},messageResources)).catch(function(err){console.warn('[表情资源表] 严格保存失败',err);return false;});}};
 window.xiaoshuStickerStore=api;
 // Keep legacy global aliases pointed at the public API after sticker-core.js has
 // installed its deletion guard. Older callers must not retain private raw methods.
@@ -19339,7 +20025,8 @@ ensureModal();
 window.addEventListener('xiaoshu-session-data-ready',function(e){
 var sid=e&&e.detail&&e.detail.sessionId?String(e.detail.sessionId):currentSessionId();
 if(!sid)return;
-if(hydratedSessionId&&hydratedSessionId!==sid){migrationState.hydrated=false;uploads=[];}
+var owner=captureSessionContext(sid);
+if(hydratedSessionId&&hydratedSessionId!==sid){migrationState.hydrated=false;uploads=[];adminSelected.clear();adminSelectedSessionId='';resourceMigrationCatalogReady=false;clearTimeout(resourcePersistTimer);resourcePersistTimer=null;resourcePersistToken++;}
 tryHydrateCurrentSession(true);
 });
 if(!tryHydrateCurrentSession(false)){

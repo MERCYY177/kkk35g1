@@ -197,7 +197,7 @@ test('a stale tab purges tombstoned uploads again after hydrate', async () => {
 });
 
 test('batch-delete UI persists upload tombstones before mutating its private uploads array', () => {
-  const start = html.indexOf('function batchDeleteSelected(ask)');
+  const start = html.indexOf('function batchDeleteSelected(ask,expectedSessionId)');
   const end = html.indexOf('function downloadText(', start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
@@ -208,7 +208,10 @@ test('batch-delete UI persists upload tombstones before mutating its private upl
 });
 
 test('clear-all UI routes through the guarded public store API', () => {
-  assert.match(html, /#xs-clear-upload-stickers[^\n]*[\s\S]{0,250}xiaoshuStickerStore\.clearUploads\(true\)/);
+  const handlerAt = html.indexOf("m.querySelector('#xs-clear-upload-stickers')");
+  const handlerEnd = html.indexOf("m.querySelector('#xs-restore-hidden-stickers')", handlerAt);
+  assert.ok(handlerAt >= 0 && handlerEnd > handlerAt);
+  assert.match(html.slice(handlerAt, handlerEnd), /xiaoshuStickerStore\.clearUploads\(true,adminVisibleSessionId\)/);
 });
 
 test('legacy global aliases point to the guarded public methods, not private raw methods', () => {
@@ -234,7 +237,7 @@ test('failed tombstone persistence cancels single and clear-all deletion', () =>
 });
 
 test('batch deletion fails closed when the public deletion-marker helper is unavailable or fails', () => {
-  const start = html.indexOf('function batchDeleteSelected(ask)');
+  const start = html.indexOf('function batchDeleteSelected(ask,expectedSessionId)');
   const end = html.indexOf('function downloadText(', start);
   const body = html.slice(start, end);
   const persistAt = body.indexOf('guardedStore.markUploadsDeleted(uploadedChosen)!==true');

@@ -40,8 +40,9 @@ test('late general save cannot overwrite current uploads with a stale list', () 
 
 test('actual source gives canonical key precedence and keeps writes on the active session', () => {
   assert.ok(controller.includes('if(Array.isArray(canonical)){'), 'hydrate must detect canonical arrays, including []');
-  assert.match(controller, /uploads=withoutBuiltins\(canonical\);/);
-  assert.match(controller, /\}else\{\s*\/\/ One-time migration only when the canonical key does not exist yet\./);
+  assert.match(controller, /stagedUploads=withoutBuiltins\(canonical\);/, 'canonical data must be staged before the session-ownership commit');
+  assert.match(controller, /if\(Array\.isArray\(canonical\)\)\{[\s\S]*?stagedUploads=withoutBuiltins\(canonical\);[\s\S]*?\}\s*else\{/);
+  assert.match(controller, /unscoped key is a one-time[\s\S]*?first ready session only/i);
   assert.match(controller, /canonicalUploadWriteChain=canonicalUploadWriteChain\.catch/);
   assert.match(controller, /currentSessionId\(\)!==activeSid\|\|!migrationState\.hydrated\|\|hydratedSessionId!==activeSid/);
   assert.ok(saveDataLine && saveDataLine[0].includes('store.getUploads()'), 'saveData must read the authoritative store list');

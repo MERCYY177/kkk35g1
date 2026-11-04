@@ -342,12 +342,14 @@
       }
       return rawSend(src);
     };
-    api.sync = function (expectedSessionId) {
+    api.sync = function (eagerBuiltins, expectedContext) {
       var ownerSessionId = activeSessionId();
-      if (!ownerSessionId || (expectedSessionId && String(expectedSessionId) !== ownerSessionId)) return [];
+      var expectedSid = expectedContext && expectedContext.sid ? String(expectedContext.sid) :
+        (expectedContext ? String(expectedContext) : (typeof eagerBuiltins === 'string' ? eagerBuiltins : ''));
+      if (!ownerSessionId || (expectedSid && expectedSid !== ownerSessionId)) return [];
       purgeDeletedUploads();
       if (activeSessionId() !== ownerSessionId) return [];
-      return rawSync.apply(api, []);
+      return rawSync.call(api, eagerBuiltins, expectedContext);
     };
     api.hydrate = function () {
       var ownerSessionId = activeSessionId();

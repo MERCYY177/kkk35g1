@@ -86,6 +86,11 @@
   var loadedKey = '';
   var norm = function (value) { return String(value == null ? '' : value).trim(); };
 
+  function activeSessionId() {
+    try {
+      return String(root.SESSION_ID || (typeof root.__xiaoshuSessionDataReady === 'string' ? root.__xiaoshuSessionDataReady : '') || '');
+    } catch (_) { return ''; }
+  }
   function sessionKey() {
     var sid = '';
     try {
@@ -333,10 +338,14 @@
       return rawSync.apply(api, arguments);
     };
     api.hydrate = function () {
+      var ownerSessionId = activeSessionId();
       loadDeleted(true);
       return Promise.resolve(rawHydrate.apply(api, arguments)).then(function (result) {
+        // The raw controller may finish after another conversation has become active.
+        // Never run the post-hydrate purge against that newer session's upload list.
+        if (!ownerSessionId || activeSessionId() !== ownerSessionId) return false;
         var removed = purgeDeletedUploads();
-        if (removed) rawSync();
+        if (removed && activeSessionId() === ownerSessionId) rawSync();
         return result;
       });
     };
@@ -345,9 +354,13 @@
       return rawOpenAdmin.apply(api, arguments);
     };
     api.addFiles = function () {
+      var ownerSessionId = activeSessionId();
       purgeDeletedUploads();
       var before = new Set(rawGetUploads().map(norm));
       return Promise.resolve(rawAddFiles.apply(api, arguments)).then(function (result) {
+        // The controller also guards its upload commit. This outer guard prevents an
+        // old upload completion from unmarking tombstones or syncing the new session.
+        if (!ownerSessionId || activeSessionId() !== ownerSessionId) return result;
         var restoredDeletedSource = false;
         rawGetUploads().forEach(function (src) {
           if (!before.has(norm(src)) && unmarkDeleted(src)) restoredDeletedSource = true;

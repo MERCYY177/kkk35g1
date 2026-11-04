@@ -284,43 +284,52 @@
       before.forEach(function (id) { deleted.add(id); });
       return false;
     };
-    api.removeUpload = function (src, ask) {
+    api.removeUpload = function (src, ask, expectedSessionId) {
       src = norm(src);
+      var ownerSessionId = activeSessionId();
+      if (!ownerSessionId || (expectedSessionId && String(expectedSessionId) !== ownerSessionId)) return false;
       loadDeleted(true);
-      var exists = matches(rawGetUploads(), src);
-      if (!exists) return rawRemoveUpload(src, ask);
+      var currentUploads = rawGetUploads();
+      if (activeSessionId() !== ownerSessionId || !matches(currentUploads, src)) return false;
       if (ask !== false) {
         var ok = false;
         try { ok = root.confirm('删除这张上传表情？'); } catch (_) {}
-        if (!ok) return false;
+        if (!ok || activeSessionId() !== ownerSessionId) return false;
       }
-      if (!markDeleted(src)) {
+      if (!markDeleted(src) || activeSessionId() !== ownerSessionId) {
         try { if (typeof root.showNotification === 'function') root.showNotification('无法保存表情删除保护，已取消本次删除；请检查浏览器存储权限后重试', 'warning', 2600); } catch (_) {}
         return false;
       }
-      var removed = rawRemoveUpload(src, false);
+      var removed = rawRemoveUpload(src, false, ownerSessionId);
       if (!removed) unmarkDeleted(src);
       return removed;
     };
-    api.clearUploads = function (ask) {
+    api.clearUploads = function (ask, expectedSessionId) {
+      var ownerSessionId = activeSessionId();
+      if (!ownerSessionId || (expectedSessionId && String(expectedSessionId) !== ownerSessionId)) return false;
       loadDeleted(true);
       var list = rawGetUploads();
+      if (activeSessionId() !== ownerSessionId) return false;
       if (ask !== false) {
         var ok = false;
         try { ok = root.confirm('清空全部上传表情包？内置表情不会受影响。'); } catch (_) {}
-        if (!ok) return false;
+        if (!ok || activeSessionId() !== ownerSessionId) return false;
       }
-      if (!api.markUploadsDeleted(list)) {
+      if (!api.markUploadsDeleted(list) || activeSessionId() !== ownerSessionId) {
         try { if (typeof root.showNotification === 'function') root.showNotification('无法保存表情删除保护，已取消清空；请检查浏览器存储权限后重试', 'warning', 2600); } catch (_) {}
         return false;
       }
-      return rawClearUploads(false);
+      return rawClearUploads(false, ownerSessionId);
     };
-    api.hide = function (src, silent) {
+    api.hide = function (src, silent, expectedSessionId) {
       src = norm(src);
+      var ownerSessionId = activeSessionId();
+      if (!ownerSessionId || (expectedSessionId && String(expectedSessionId) !== ownerSessionId)) return false;
       loadDeleted(true);
-      if (matches(rawGetUploads(), src)) return api.removeUpload(src, false);
-      return rawHide(src, silent);
+      var currentUploads = rawGetUploads();
+      if (activeSessionId() !== ownerSessionId) return false;
+      if (matches(currentUploads, src)) return api.removeUpload(src, false, ownerSessionId);
+      return rawHide(src, silent, ownerSessionId);
     };
     api.send = function (src) {
       src = norm(src);
@@ -333,9 +342,12 @@
       }
       return rawSend(src);
     };
-    api.sync = function () {
+    api.sync = function (expectedSessionId) {
+      var ownerSessionId = activeSessionId();
+      if (!ownerSessionId || (expectedSessionId && String(expectedSessionId) !== ownerSessionId)) return [];
       purgeDeletedUploads();
-      return rawSync.apply(api, arguments);
+      if (activeSessionId() !== ownerSessionId) return [];
+      return rawSync.apply(api, []);
     };
     api.hydrate = function () {
       var ownerSessionId = activeSessionId();
@@ -353,11 +365,14 @@
       purgeDeletedUploads();
       return rawOpenAdmin.apply(api, arguments);
     };
-    api.addFiles = function () {
+    api.addFiles = function (files, expectedContext) {
       var ownerSessionId = activeSessionId();
+      var expectedSid = expectedContext && expectedContext.sid ? String(expectedContext.sid) : String(expectedContext || '');
+      if (!ownerSessionId || (expectedSid && expectedSid !== ownerSessionId)) return Promise.resolve(0);
       purgeDeletedUploads();
+      if (activeSessionId() !== ownerSessionId) return Promise.resolve(0);
       var before = new Set(rawGetUploads().map(norm));
-      return Promise.resolve(rawAddFiles.apply(api, arguments)).then(function (result) {
+      return Promise.resolve(rawAddFiles.call(api, files, {sid: ownerSessionId})).then(function (result) {
         // The controller also guards its upload commit. This outer guard prevents an
         // old upload completion from unmarking tombstones or syncing the new session.
         if (!ownerSessionId || activeSessionId() !== ownerSessionId) return result;

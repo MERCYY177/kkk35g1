@@ -153,7 +153,7 @@ function createHarness(options) {
   };
 
   vm.createContext(sandbox);
-  const instrumentedControllerSource = controllerSource.replace('var api={', 'window.__testStickerAdminOps={toggle:toggleAdminSelection,batchDelete:batchDeleteSelected};\\nvar api={');
+  const instrumentedControllerSource = controllerSource.replace('var api={', 'window.__testStickerAdminOps={toggle:toggleAdminSelection,batchDelete:batchDeleteSelected};' + String.fromCharCode(10) + 'var api={');
   vm.runInContext(instrumentedControllerSource, sandbox, { filename: 'shared-sticker-controller-v6.js' });
 
   return {

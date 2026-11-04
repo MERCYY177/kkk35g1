@@ -18902,6 +18902,10 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       uploads=[];
       messageResources=Object.create(null);
       catalogResources=Object.create(null);
+      // Compatibility consumers may fall back to this runtime-only alias when
+      // getPool() is temporarily empty during B hydration. Never leave A's pool here.
+      try{if(typeof stickerLibrary!=='undefined'&&Array.isArray(stickerLibrary))stickerLibrary.length=0;}catch(_aliasClearError){}
+      try{window.stickerLibrary=[];window._stickerLibrary=[];}catch(_windowAliasClearError){}
       resourceMigrationCatalogReady=false;
       fullPoolPublished=false;
       adminSelected.clear();

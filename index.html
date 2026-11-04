@@ -18775,7 +18775,16 @@ var INPUT_IDS = ['my-sticker-quick-upload'];
 var uploads = [];
 var hidden = new Set();
 var hydratePromise = null;
+var hydratePromiseSessionId = '';
+var hydratePromiseToken = 0;
 var hydratedSessionId = '';
+var sessionGenerationId = '';
+var sessionGeneration = 0;
+var startupLegacyUploadSeed = [];
+var startupLegacyUploadSeedSessionId = '';
+var startupLegacyUploadSeedPending = true;
+var resourcePersistToken = 0;
+var adminSelectedSessionId = '';
 var pendingUploadPersist = false;
 // Serialize writes to the canonical upload key so late autosaves cannot overtake a deletion.
 var canonicalUploadWriteChain = Promise.resolve();
@@ -18812,15 +18821,37 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   function indexCatalog(list){(list||[]).forEach(function(src){src=norm(src);if(!src||!isImage(src))return;catalogResources[stickerHash(src)]=src;});}
   function cleanResourceObject(raw){var out=Object.create(null);if(!raw||typeof raw!=='object'||Array.isArray(raw))return out;Object.keys(raw).slice(0,5000).forEach(function(id){var src=norm(raw[id]);if(/^stk_[a-z0-9_]+$/i.test(id)&&isImage(src))out[id]=src;});return out;}
   function resourceStorageKey(sid){return storageKeyForSession(CANONICAL_MESSAGE_RESOURCE_NAME,sid||currentSessionId());}
-  function persistMessageResourcesNow(){
-    var sid=currentSessionId();if(!sid||!sessionDataReady(sid)||!migrationState.hydrated||hydratedSessionId!==sid||!window.localforage)return Promise.resolve(false);
-    var key=resourceStorageKey(sid);if(!key)return Promise.resolve(false);
-    return window.localforage.setItem(key,Object.assign({},messageResources)).then(function(){return true;}).catch(function(err){console.warn('[表情资源表] 保存失败',err);return false;});
+  function persistMessageResourcesSnapshot(context,snapshot){
+    var ctx=context&&context.sid?context:captureSessionContext(context);
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid||!window.localforage)return Promise.resolve(false);
+    var key=resourceStorageKey(ctx.sid);if(!key||!isSessionContextCurrent(ctx))return Promise.resolve(false);
+    var payload=Object.assign({},snapshot||messageResources);
+    return window.localforage.setItem(key,payload).then(function(){return isSessionContextCurrent(ctx)&&hydratedSessionId===ctx.sid;}).catch(function(err){console.warn('[表情资源表] 保存失败',err);return false;});
   }
-  function scheduleResourcePersist(){clearTimeout(resourcePersistTimer);resourcePersistTimer=setTimeout(function(){resourcePersistTimer=null;persistMessageResourcesNow();},120);}
-  function registerMessageResource(src){src=norm(src);if(!isImage(src))return'';var id=stickerHash(src);catalogResources[id]=src;if(messageResources[id]!==src){messageResources[id]=src;scheduleResourcePersist();}return id;}
+  function persistMessageResourcesNow(context){
+    var ctx=context&&context.sid?context:captureSessionContext(context);
+    return persistMessageResourcesSnapshot(ctx,Object.assign({},messageResources));
+  }
+  function scheduleResourcePersist(){
+    var ctx=captureSessionContext(),snapshot=Object.assign({},messageResources),token=++resourcePersistToken;
+    clearTimeout(resourcePersistTimer);
+    resourcePersistTimer=setTimeout(function(){
+      if(token!==resourcePersistToken)return;
+      resourcePersistTimer=null;
+      persistMessageResourcesSnapshot(ctx,snapshot);
+    },120);
+  }
+  function registerMessageResource(src){
+    src=norm(src);if(!isImage(src))return'';
+    var ctx=captureSessionContext();if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return'';
+    var id=stickerHash(src);catalogResources[id]=src;
+    if(messageResources[id]!==src){messageResources[id]=src;scheduleResourcePersist();}
+    return id;
+  }
   function resolveMessageResource(id){id=String(id||'');return norm(messageResources[id]||catalogResources[id]||'');}
-  function migrateCurrentChatStickerMessages(){
+  function migrateCurrentChatStickerMessages(context){
+    var ctx=context&&context.sid?context:captureSessionContext(context);
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return 0;
     try{
       var list=(typeof messages!=='undefined'&&Array.isArray(messages))?messages:(Array.isArray(window.messages)?window.messages:[]);if(!list.length)return 0;
       var sourceToId=Object.create(null);Object.keys(catalogResources).forEach(function(id){sourceToId[catalogResources[id]]=id;});Object.keys(messageResources).forEach(function(id){sourceToId[messageResources[id]]=id;});
@@ -18829,13 +18860,15 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       return changed;
     }catch(e){console.warn('[表情资源表] 旧消息迁移失败',e);return 0;}
   }
-  function repairCurrentChatStickerResources(){
+  function repairCurrentChatStickerResources(context){
+    var ctx=context&&context.sid?context:captureSessionContext(context);
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return{repaired:0,missing:[]};
     try{
       if(!window.XiaoshuStickerCore)return{repaired:0,missing:[]};
       var list=(typeof messages!=='undefined'&&Array.isArray(messages))?messages:(Array.isArray(window.messages)?window.messages:[]);
       var catalog=buildPool(true),result=window.XiaoshuStickerCore.rebuildResourceMap(list,messageResources,catalog),repaired=0;
       Object.keys(result.map).forEach(function(id){if(messageResources[id]!==result.map[id]){messageResources[id]=result.map[id];repaired++;}catalogResources[id]=result.map[id];});
-      if(repaired)persistMessageResourcesNow();
+      if(repaired)persistMessageResourcesNow(ctx);
       return{repaired:repaired,missing:result.missing};
     }catch(e){console.warn('[表情资源表] 历史映射修复失败',e);return{repaired:0,missing:[]};}
   }
@@ -18859,6 +18892,17 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   function sessionDataReady(sid){
     sid=String(sid||currentSessionId()||'');
     return !!sid&&String(window.__xiaoshuSessionDataReady||'')===sid;
+  }
+  function captureSessionContext(sid){
+    sid=String(sid||currentSessionId()||'');
+    if(sessionGenerationId!==sid){sessionGenerationId=sid;sessionGeneration++;}
+    return{sid:sid,generation:sessionGeneration};
+  }
+  function isSessionContextCurrent(context){
+    if(!context||!context.sid)return false;
+    var activeSid=currentSessionId();
+    if(sessionGenerationId!==activeSid){sessionGenerationId=activeSid;sessionGeneration++;}
+    return activeSid===context.sid&&sessionGeneration===context.generation&&sessionDataReady(context.sid);
   }
   function readJsonFrom(store,key){
     try{if(!store)return[];var raw=store.getItem(key);if(!raw)return[];var v=JSON.parse(raw);return Array.isArray(v)?v:[];}catch(e){return[];}
@@ -18925,9 +18969,9 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   }
   // 会话尚未完成加载时绝不退回裸键，避免空数组覆盖正式会话数据。
   function storageKey(name,sid){return storageKeyForSession(name,sid||currentSessionId());}
-  function cleanupLegacySyncStores(){
+  function cleanupLegacySyncStores(sid){
     var ls=safeWebStorage('localStorage'),ss=safeWebStorage('sessionStorage');
-    LEGACY_UPLOAD_LOCAL_KEYS.forEach(function(k){removeStorageKey(ls,k);removeStorageKey(ss,k);});
+    if(!startupLegacyUploadSeedSessionId||String(sid||'')===startupLegacyUploadSeedSessionId)LEGACY_UPLOAD_LOCAL_KEYS.forEach(function(k){removeStorageKey(ls,k);removeStorageKey(ss,k);});
     removeStorageKey(ss,CANONICAL_HIDDEN_KEY);
     LEGACY_HIDDEN_KEYS.forEach(function(k){removeStorageKey(ls,k);removeStorageKey(ss,k);});
   }
@@ -18936,14 +18980,15 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       if(!window.localforage)return;
       sid=String(sid||currentSessionId()||'');
       var keys=[];
-      LEGACY_UPLOAD_IDB_NAMES.forEach(function(k){var scoped=storageKey(k,sid);if(scoped)keys.push(scoped);keys.push(k);});
+      LEGACY_UPLOAD_IDB_NAMES.forEach(function(k){var scoped=storageKey(k,sid);if(scoped)keys.push(scoped);if(sid&&sid===startupLegacyUploadSeedSessionId)keys.push(k);});
       var runtimeKey=storageKey(CANONICAL_RUNTIME_NAME,sid);if(runtimeKey)keys.push(runtimeKey);
       keys.push(CANONICAL_HIDDEN_KEY);
       var groupKey=storageKey(LEGACY_GROUP_NAME,sid);if(groupKey)keys.push(groupKey);
-      keys.push(LEGACY_GROUP_NAME);
+      if(sid&&sid===startupLegacyUploadSeedSessionId)keys.push(LEGACY_GROUP_NAME);
       LEGACY_HIDDEN_KEYS.forEach(function(k){keys.push(k);});
       uniq(keys).forEach(function(k){window.localforage.removeItem(k).catch(function(){});});
-      window.localforage.keys().then(function(all){(all||[]).filter(isLegacyGroupKey).forEach(function(k){window.localforage.removeItem(k).catch(function(){});});}).catch(function(){});
+      // Do not enumerate and delete every session's retired group key. Each session
+      // owns only its namespaced legacy key; the unscoped key migrates once to the first session.
     }catch(e){}
   }
   function installLegacyGroupWriteGuard(){
@@ -18986,17 +19031,20 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       return true;
     }catch(e){return false;}
   }
-  function persistHidden(){
+  function persistHidden(expectedContext){
+    var ctx=expectedContext&&expectedContext.sid?expectedContext:captureSessionContext(expectedContext);
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return false;
     var arr=Array.from(hidden);
     writeJsonTo(safeWebStorage('localStorage'),CANONICAL_HIDDEN_KEY,arr);
-    cleanupLegacySyncStores();
-    cleanupLegacyIdbStores(hydratedSessionId||currentSessionId());
+    cleanupLegacySyncStores(ctx.sid);
+    cleanupLegacyIdbStores(ctx.sid);
+    return true;
   }
-  function persistUploads(){
+  function persistUploads(expectedContext){
+    var ctx=expectedContext&&expectedContext.sid?expectedContext:captureSessionContext(expectedContext);
+    var sid=ctx.sid;
+    if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==sid){pendingUploadPersist=true;return false;}
     uploads=withoutBuiltins(uploads);
-    var sid=currentSessionId();
-    // 读取当前会话的正式数据以前，任何空数组或同步状态都只能留在内存，禁止落盘覆盖。
-    if(!sid||!sessionDataReady(sid)||!migrationState.hydrated||hydratedSessionId!==sid){pendingUploadPersist=true;return false;}
     var uploadKey=storageKey(CANONICAL_UPLOAD_NAME,sid);
     var runtimeKey=storageKey(CANONICAL_RUNTIME_NAME,sid);
     if(!uploadKey||!runtimeKey){pendingUploadPersist=true;return false;}
@@ -19017,7 +19065,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
       if(window.localforage){
         window.localforage.setItem(uploadKey,uploads.slice()).catch(function(err){console.warn('[共享表情包] 上传表情保存失败',err);});
         window.localforage.setItem(runtimeKey,[]).catch(function(){});
-        LEGACY_UPLOAD_IDB_NAMES.forEach(function(k){var scoped=storageKey(k,sid);if(scoped)window.localforage.removeItem(scoped).catch(function(){});window.localforage.removeItem(k).catch(function(){});});
+        LEGACY_UPLOAD_IDB_NAMES.forEach(function(k){var scoped=storageKey(k,sid);if(scoped)window.localforage.removeItem(scoped).catch(function(){});if(sid===startupLegacyUploadSeedSessionId)window.localforage.removeItem(k).catch(function(){});});
         pendingUploadPersist=false;
         return true;
       }
@@ -19034,7 +19082,11 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     var all=uniq(base.concat(withoutBuiltins(uploads))).filter(isImage);
     indexCatalog(all);
     var pool=all.filter(function(x){return !hidden.has(norm(x));});
-    if(includeBuiltins&&!resourceMigrationCatalogReady){resourceMigrationCatalogReady=true;setTimeout(migrateCurrentChatStickerMessages,0);}
+    if(includeBuiltins&&!resourceMigrationCatalogReady){
+      resourceMigrationCatalogReady=true;
+      var migrationContext=captureSessionContext();
+      setTimeout(function(){if(isSessionContextCurrent(migrationContext))migrateCurrentChatStickerMessages(migrationContext);},0);
+    }
     return pool;
   }
   function publishLegacyPool(pool){
@@ -19073,11 +19125,13 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
   function emit(pool){
     try{window.dispatchEvent(new CustomEvent('stickerLibraryUpdated',{detail:{count:pool.length,uploads:uploads.length,hidden:hidden.size}}));}catch(e){}
   }
-  function syncRuntime(eagerBuiltins){
+  function syncRuntime(eagerBuiltins,expectedContext){
+    var ctx=expectedContext&&expectedContext.sid?expectedContext:(expectedContext?captureSessionContext(expectedContext):null);
+    if(ctx&&!isSessionContextCurrent(ctx))return[];
     clearLegacyGroupRuntime();
     var validHiddenTargets=new Set(builtinSrcs().concat(uploads).map(norm)),staleHidden=false;
     hidden.forEach(function(src){if(!validHiddenTargets.has(norm(src))){hidden.delete(src);staleHidden=true;}});
-    if(staleHidden)persistHidden();
+    if(staleHidden)persistHidden(ctx||undefined);
     var eager=eagerBuiltins!==false;
     var pool=buildPool(eager);
     fullPoolPublished=eager;
@@ -19096,44 +19150,57 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     });
   }
   async function addFiles(files){
+    var owner=captureSessionContext();
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return 0;
     files=Array.prototype.slice.call(files||[]);
     if(!files.length)return 0;
     var results=await Promise.all(files.map(readFile));
+    // A completed FileReader/optimizer result is still owned by the session that
+    // started the batch. Discard it after a session switch, before touching uploads.
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return 0;
     var oversize=results.filter(function(x){return x==='__oversize__';}).length;
     var before=uploads.length;
     results.forEach(function(src){if(src&&src!=='__oversize__'&&isImage(src)&&uploads.indexOf(src)<0)uploads.push(src);});
     uploads=uniq(uploads).filter(isImage);
-    persistUploads();syncRuntime();
+    persistUploads(owner);syncRuntime(true,owner);
     var added=Math.max(0,uploads.length-before);
     if(oversize)notify(oversize+' 张图片超过 2MB，已跳过','warning',2200);
     notify(added?'已加入共享表情包 '+added+' 张':'没有新增表情包',added?'success':'info',1600);
     return added;
   }
   function openUpload(){var input=ensureInput(INPUT_IDS[0]);if(input)input.click();}
-  function hideSticker(src,silent){src=norm(src);if(!src)return;hidden.add(src);persistHidden();syncRuntime();if(!silent)notify('已隐藏，可在表情包管理中恢复','success',1500);}
-  function restoreSticker(src){src=norm(src);if(!src)return;hidden.delete(src);persistHidden();syncRuntime();}
+  function hideSticker(src,silent){var owner=captureSessionContext();src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;hidden.add(src);persistHidden(owner);syncRuntime(true,owner);if(!silent)notify('已隐藏，可在表情包管理中恢复','success',1500);return true;}
+  function restoreSticker(src){var owner=captureSessionContext();src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;hidden.delete(src);persistHidden(owner);syncRuntime(true,owner);return true;}
   function clearHidden(ask){
+    var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     if(ask!==false&&!confirm('恢复全部已隐藏表情？'))return false;
-    hidden.clear();persistHidden();syncRuntime();notify('已恢复全部隐藏表情');return true;
+    if(!isSessionContextCurrent(owner))return false;
+    hidden.clear();persistHidden(owner);syncRuntime(true,owner);notify('已恢复全部隐藏表情');return true;
   }
   function removeUpload(src,ask){
-    src=norm(src);if(!src)return false;
+    var owner=captureSessionContext();src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     if(ask!==false&&!confirm('删除这张上传表情？'))return false;
+    if(!isSessionContextCurrent(owner))return false;
     var before=uploads.length;uploads=uploads.filter(function(x){return norm(x)!==src;});hidden.delete(src);
     if(uploads.length===before)return false;
-    persistUploads();persistHidden();syncRuntime();notify('已删除上传表情');return true;
+    persistUploads(owner);persistHidden(owner);syncRuntime(true,owner);notify('已删除上传表情');return true;
   }
   function clearUploads(ask){
+    var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;
     if(ask!==false&&!confirm('清空全部上传表情包？内置表情不会受影响。'))return false;
-    uploads=[];persistUploads();syncRuntime();notify('已清空上传表情包');return true;
+    if(!isSessionContextCurrent(owner))return false;
+    uploads=[];persistUploads(owner);syncRuntime(true,owner);notify('已清空上传表情包');return true;
   }
-  function clearAdminSelection(){adminSelected.clear();renderAdmin();}
-  function selectAllAdmin(){adminVisibleItems.forEach(function(it){adminSelected.add(norm(it.src));});renderAdmin();}
-  function toggleAdminSelection(src){src=norm(src);if(!src)return false;if(adminSelected.has(src)){adminSelected.delete(src);return false;}adminSelected.add(src);return true;}
+  function clearAdminSelection(){adminSelected.clear();adminSelectedSessionId=currentSessionId();renderAdmin();}
+  function selectAllAdmin(){var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;adminSelected.clear();adminSelectedSessionId=owner.sid;adminVisibleItems.forEach(function(it){adminSelected.add(norm(it.src));});renderAdmin();return true;}
+  function toggleAdminSelection(src){var owner=captureSessionContext();src=norm(src);if(!src||!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return false;if(adminSelectedSessionId!==owner.sid){adminSelected.clear();adminSelectedSessionId=owner.sid;}if(adminSelected.has(src)){adminSelected.delete(src);return false;}adminSelected.add(src);return true;}
   function batchDeleteSelected(ask){
+    var owner=captureSessionContext();
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid||adminSelectedSessionId!==owner.sid)return false;
     var chosen=Array.from(adminSelected).filter(isImage);
     if(!chosen.length){notify('请先点选要删除的表情','info',1600);return false;}
     if(ask!==false&&!confirm('确定处理已选中的 '+chosen.length+' 张表情？\n上传表情会永久删除，内置表情会隐藏并可恢复。'))return false;
+    if(!isSessionContextCurrent(owner)||adminSelectedSessionId!==owner.sid)return false;
     var chosenSet=new Set(chosen.map(norm)),builtinSet=new Set(builtinSrcs().map(norm)),before=uploads.length,hiddenBuiltins=0;
     // Batch deletion previously edited the closure-level uploads array directly and
     // bypassed api.removeUpload(). Persist tombstones before changing that array so
@@ -19154,7 +19221,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     uploads=uploads.filter(function(src){return !chosenSet.has(norm(src));});
     var removedUploads=Math.max(0,before-uploads.length);
     chosen.forEach(function(src){src=norm(src);if(builtinSet.has(src)&&!hidden.has(src)){hidden.add(src);hiddenBuiltins++;}});
-    adminSelected.clear();persistUploads();persistHidden();syncRuntime();
+    adminSelected.clear();persistUploads(owner);persistHidden(owner);syncRuntime(true,owner);
     notify('已处理 '+(removedUploads+hiddenBuiltins)+' 张表情','success',1800);return true;
   }
   function downloadText(filename,text){
@@ -19244,75 +19311,162 @@ if(typeof showModal==='function')showModal(m);else m.style.display='flex';
 async function hydrate(force){
 var sid=currentSessionId();
 if(!sid||!sessionDataReady(sid))return false;
+var owner=captureSessionContext(sid);
 if(hydratedSessionId===sid&&migrationState.hydrated&&!force)return true;
-if(hydratePromise&&!force)return hydratePromise;
+if(hydratePromise&&hydratePromiseSessionId===sid&&!force)return hydratePromise;
 var targetSid=sid;
-if(hydratedSessionId&&hydratedSessionId!==targetSid){messageResources=Object.create(null);catalogResources=Object.create(null);resourceMigrationCatalogReady=false;clearTimeout(resourcePersistTimer);resourcePersistTimer=null;}
 var uploadKey=storageKey(CANONICAL_UPLOAD_NAME,targetSid);
 var runtimeKey=storageKey(CANONICAL_RUNTIME_NAME,targetSid);
 if(!uploadKey||!runtimeKey)return false;
-hydratePromise=(async function(){
-var canonicalReadOk=!window.localforage;
-try{
-// 主程序 loadData 已完成后，词法变量里的当前会话数据可作为同会话种子；切换会话时不沿用旧会话 uploads。
-var seed=[];
-try{if(typeof myStickerLibrary!=='undefined'&&Array.isArray(myStickerLibrary))seed=seed.concat(myStickerLibrary);}catch(e){}
-try{if(Array.isArray(window.myStickerLibrary))seed=seed.concat(window.myStickerLibrary);}catch(e){}
-// 保留会话就绪前从旧同步键/退役分组收集到的迁移候选，避免迁移数据在正式读取时被重置。
-uploads=withoutBuiltins(seed.concat(uploads));
-migrationState.hydrated=false;
-if(window.localforage){
-try{messageResources=cleanResourceObject(await window.localforage.getItem(resourceStorageKey(targetSid)));indexCatalog(Object.keys(messageResources).map(function(id){return messageResources[id];}));}catch(_resourceReadErr){messageResources=Object.create(null);}
-var canonical=await window.localforage.getItem(uploadKey);
-canonicalReadOk=true;
-if(Array.isArray(canonical)){
-// An existing canonical array (including []) is authoritative. Never merge aliases,
-// runtime pools, or retired legacy stores into it: those copies may contain deleted items.
-uploads=withoutBuiltins(canonical);
-}else{
-// One-time migration only when the canonical key does not exist yet.
-for(var i=0;i<LEGACY_UPLOAD_IDB_NAMES.length;i++){
-var scopedLegacy=storageKey(LEGACY_UPLOAD_IDB_NAMES[i],targetSid);
-var names=uniq([scopedLegacy,LEGACY_UPLOAD_IDB_NAMES[i]]);
-for(var n=0;n<names.length;n++){
-try{var arr=await window.localforage.getItem(names[n]);if(Array.isArray(arr)){migrationState.legacyUploadItems+=arr.length;uploads=withoutBuiltins(uploads.concat(arr));}}catch(e){}
+if(hydratedSessionId&&hydratedSessionId!==targetSid){
+  clearTimeout(resourcePersistTimer);resourcePersistTimer=null;resourcePersistToken++;
+  resourceMigrationCatalogReady=false;
 }
-}
-try{var oldRuntime=await window.localforage.getItem(runtimeKey);if(Array.isArray(oldRuntime)&&oldRuntime.length){var recovered=withoutBuiltins(oldRuntime);migrationState.legacyUploadItems+=recovered.length;uploads=withoutBuiltins(uploads.concat(recovered));}}catch(e){}
-var allKeys=[];try{allKeys=await window.localforage.keys();}catch(e){}
-var scopedGroup=storageKey(LEGACY_GROUP_NAME,targetSid);
-var groupKeys=uniq([scopedGroup,LEGACY_GROUP_NAME].concat((allKeys||[]).filter(isLegacyGroupKey)));
-for(var gk=0;gk<groupKeys.length;gk++){
-try{var gv=await window.localforage.getItem(groupKeys[gk]);if(Array.isArray(gv))mergeLegacyGroups(gv);}catch(e){}
-try{await window.localforage.removeItem(groupKeys[gk]);}catch(e){}
-}
-}
-var hkeys=[CANONICAL_HIDDEN_KEY].concat(LEGACY_HIDDEN_KEYS);
-for(var j=0;j<hkeys.length;j++){try{var hv=await window.localforage.getItem(hkeys[j]);if(Array.isArray(hv)){migrationState.legacyHiddenItems+=hv.length;mergeHidden(hv);}}catch(e){}}
-}
-}catch(e){
-console.warn('[共享表情包] 读取当前会话数据失败，已停止回写以保护原数据',e);
-canonicalReadOk=false;
-}
-// 等待期间若会话已改变，丢弃本次结果，绝不写入另一个会话。
-if(currentSessionId()!==targetSid||!sessionDataReady(targetSid))return false;
-if(!canonicalReadOk)return false;
-hydratedSessionId=targetSid;
-migrationState.hydrated=true;
-persistUploads();
-persistHidden();
-syncRuntime(false);
-repairCurrentChatStickerResources();
-persistMessageResourcesNow();
-setTimeout(function(){migrateCurrentChatStickerMessages();repairCurrentChatStickerResources();},0);
-try{window.dispatchEvent(new CustomEvent('xiaoshu-sticker-resources-ready',{detail:{sessionId:targetSid,count:Object.keys(messageResources).length}}));}catch(_readyEventError){}
-return true;
+if(!startupLegacyUploadSeedSessionId)startupLegacyUploadSeedSessionId=targetSid;
+var thisHydratePromise=(async function(){
+  var canonicalReadOk=!window.localforage;
+  var stagedUploads=[];
+  var stagedHidden=new Set(hidden);
+  var stagedMessageResources=Object.create(null);
+  var stagedCatalogResources=Object.create(null);
+  var stagedCounts={legacyUploadItems:0,legacyHiddenItems:0,legacyGroupItems:0};
+  var seed=[];
+  try{if(typeof myStickerLibrary!=='undefined'&&Array.isArray(myStickerLibrary))seed=seed.concat(myStickerLibrary);}catch(e){}
+  try{if(Array.isArray(window.myStickerLibrary))seed=seed.concat(window.myStickerLibrary);}catch(e){}
+  if(startupLegacyUploadSeedPending&&startupLegacyUploadSeedSessionId===targetSid)seed=seed.concat(startupLegacyUploadSeed);
+  // Reuse the live controller list only when hydrating the same session again.
+  if(hydratedSessionId===targetSid)seed=seed.concat(uploads);
+  stagedUploads=withoutBuiltins(seed);
+  try{
+    if(window.localforage){
+      try{
+        var rawResources=await window.localforage.getItem(resourceStorageKey(targetSid));
+        if(!isSessionContextCurrent(owner))return false;
+        stagedMessageResources=cleanResourceObject(rawResources);
+        Object.keys(stagedMessageResources).forEach(function(id){stagedCatalogResources[id]=stagedMessageResources[id];});
+      }catch(resourceReadError){
+        if(!isSessionContextCurrent(owner))return false;
+        stagedMessageResources=Object.create(null);
+        stagedCatalogResources=Object.create(null);
+      }
+      var canonical=await window.localforage.getItem(uploadKey);
+      if(!isSessionContextCurrent(owner))return false;
+      canonicalReadOk=true;
+      if(Array.isArray(canonical)){
+        // An existing canonical array (including []) is authoritative.
+        stagedUploads=withoutBuiltins(canonical);
+      }else{
+        // Current-session legacy upload key; the unscoped key is a one-time
+        // migration source for the first ready session only.
+        for(var i=0;i<LEGACY_UPLOAD_IDB_NAMES.length;i++){
+          var scopedLegacy=storageKey(LEGACY_UPLOAD_IDB_NAMES[i],targetSid);
+          var legacyNames=uniq([scopedLegacy].concat(targetSid===startupLegacyUploadSeedSessionId?[LEGACY_UPLOAD_IDB_NAMES[i]]:[]));
+          for(var n=0;n<legacyNames.length;n++){
+            if(!isSessionContextCurrent(owner))return false;
+            try{
+              var legacyArray=await window.localforage.getItem(legacyNames[n]);
+              if(!isSessionContextCurrent(owner))return false;
+              if(Array.isArray(legacyArray)){
+                stagedCounts.legacyUploadItems+=legacyArray.length;
+                stagedUploads=withoutBuiltins(stagedUploads.concat(legacyArray));
+              }
+            }catch(legacyUploadReadError){if(!isSessionContextCurrent(owner))return false;}
+          }
+        }
+        try{
+          var oldRuntime=await window.localforage.getItem(runtimeKey);
+          if(!isSessionContextCurrent(owner))return false;
+          if(Array.isArray(oldRuntime)&&oldRuntime.length){
+            var recoveredRuntime=withoutBuiltins(oldRuntime);
+            stagedCounts.legacyUploadItems+=recoveredRuntime.length;
+            stagedUploads=withoutBuiltins(stagedUploads.concat(recoveredRuntime));
+          }
+        }catch(runtimeReadError){if(!isSessionContextCurrent(owner))return false;}
+        // Never enumerate all keys: only this session's group plus the unscoped
+        // retired key during the one-time first-session migration.
+        var scopedGroup=storageKey(LEGACY_GROUP_NAME,targetSid);
+        var groupKeys=uniq([scopedGroup].concat(targetSid===startupLegacyUploadSeedSessionId?[LEGACY_GROUP_NAME]:[]));
+        for(var gk=0;gk<groupKeys.length;gk++){
+          if(!isSessionContextCurrent(owner))return false;
+          try{
+            var groupValue=await window.localforage.getItem(groupKeys[gk]);
+            if(!isSessionContextCurrent(owner))return false;
+            var recoveredGroups=legacyGroupItems(groupValue);
+            if(recoveredGroups.length){
+              stagedUploads=withoutBuiltins(stagedUploads.concat(recoveredGroups));
+              stagedCounts.legacyGroupItems+=recoveredGroups.length;
+            }
+          }catch(groupReadError){if(!isSessionContextCurrent(owner))return false;}
+          if(!isSessionContextCurrent(owner))return false;
+          try{
+            await window.localforage.removeItem(groupKeys[gk]);
+            if(!isSessionContextCurrent(owner))return false;
+          }catch(groupRemoveError){if(!isSessionContextCurrent(owner))return false;}
+        }
+      }
+      var hiddenKeys=[CANONICAL_HIDDEN_KEY].concat(LEGACY_HIDDEN_KEYS);
+      for(var j=0;j<hiddenKeys.length;j++){
+        if(!isSessionContextCurrent(owner))return false;
+        try{
+          var hiddenValue=await window.localforage.getItem(hiddenKeys[j]);
+          if(!isSessionContextCurrent(owner))return false;
+          if(Array.isArray(hiddenValue)){
+            stagedCounts.legacyHiddenItems+=hiddenValue.length;
+            hiddenValue.forEach(function(value){value=norm(value);if(value)stagedHidden.add(value);});
+          }
+        }catch(hiddenReadError){if(!isSessionContextCurrent(owner))return false;}
+      }
+    }
+  }catch(readError){
+    console.warn('[共享表情包] 读取当前会话数据失败，已停止回写以保护原数据',readError);
+    canonicalReadOk=false;
+  }
+  // No shared state is changed until every asynchronous read is complete and
+  // the task still owns the active, ready session.
+  if(!isSessionContextCurrent(owner)||!canonicalReadOk)return false;
+  uploads=stagedUploads;
+  hidden=stagedHidden;
+  messageResources=stagedMessageResources;
+  catalogResources=stagedCatalogResources;
+  migrationState.legacyUploadItems=stagedCounts.legacyUploadItems;
+  migrationState.legacyHiddenItems=stagedCounts.legacyHiddenItems;
+  migrationState.legacyGroupItems=stagedCounts.legacyGroupItems;
+  migrationState.hydrated=true;
+  hydratedSessionId=targetSid;
+  if(startupLegacyUploadSeedPending&&startupLegacyUploadSeedSessionId===targetSid){
+    startupLegacyUploadSeedPending=false;
+    startupLegacyUploadSeed=[];
+  }
+  if(!isSessionContextCurrent(owner)||hydratedSessionId!==targetSid)return false;
+  persistUploads(owner);
+  persistHidden(owner);
+  syncRuntime(false,owner);
+  repairCurrentChatStickerResources(owner);
+  persistMessageResourcesNow(owner);
+  setTimeout(function(){
+    if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==targetSid)return;
+    migrateCurrentChatStickerMessages(owner);
+    repairCurrentChatStickerResources(owner);
+  },0);
+  try{window.dispatchEvent(new CustomEvent('xiaoshu-sticker-resources-ready',{detail:{sessionId:targetSid,count:Object.keys(messageResources).length}}));}catch(_readyEventError){}
+  return true;
 })();
-try{return await hydratePromise;}
-finally{hydratePromise=null;}
+var thisToken=++hydratePromiseToken;
+hydratePromise=thisHydratePromise;
+hydratePromiseSessionId=targetSid;
+try{return await thisHydratePromise;}
+finally{
+  if(hydratePromise===thisHydratePromise&&hydratePromiseToken===thisToken){
+    hydratePromise=null;
+    hydratePromiseSessionId='';
+  }
 }
-loadSyncState();
-var api={getPool:getPool,getLocalPool:getLocalPool,getUploads:getUploads,getHidden:getHidden,send:sendSticker,sync:syncRuntime,openUpload:openUpload,addFiles:addFiles,hide:hideSticker,restore:restoreSticker,clearHidden:clearHidden,removeUpload:removeUpload,clearUploads:clearUploads,openAdmin:openAdmin,exportHidden:exportHidden,hydrate:hydrate,ensureInputs:ensureInputs,installWriteGuard:installLegacyGroupWriteGuard,idFor:stickerIdFor,register:registerMessageResource,resolve:resolveMessageResource,migrateMessages:migrateCurrentChatStickerMessages,repairMessages:repairCurrentChatStickerResources,getMigrationState:function(){return Object.assign({},migrationState);},getMessageResources:function(){return Object.assign({},messageResources);},flushMessageResources:function(){clearTimeout(resourcePersistTimer);resourcePersistTimer=null;var sid=currentSessionId();if(!sid||!sessionDataReady(sid)||!migrationState.hydrated||hydratedSessionId!==sid||!window.localforage)return Promise.resolve(false);var key=resourceStorageKey(sid);if(!key)return Promise.resolve(false);return window.localforage.setItem(key,Object.assign({},messageResources)).then(function(){return true;}).catch(function(err){console.warn('[表情资源表] 严格保存失败',err);return false;});}};
+}loadSyncState();
+// Pre-ready legacy data is a one-time migration seed owned by the first session
+// that reaches the ready barrier. It is never reused as another session's upload list.
+startupLegacyUploadSeed=uploads.slice();
+startupLegacyUploadSeedSessionId=currentSessionId();
+var api={getPool:getPool,getLocalPool:getLocalPool,getUploads:getUploads,getHidden:getHidden,send:sendSticker,sync:syncRuntime,openUpload:openUpload,addFiles:addFiles,hide:hideSticker,restore:restoreSticker,clearHidden:clearHidden,removeUpload:removeUpload,clearUploads:clearUploads,openAdmin:openAdmin,exportHidden:exportHidden,hydrate:hydrate,ensureInputs:ensureInputs,installWriteGuard:installLegacyGroupWriteGuard,idFor:stickerIdFor,register:registerMessageResource,resolve:resolveMessageResource,migrateMessages:migrateCurrentChatStickerMessages,repairMessages:repairCurrentChatStickerResources,getMigrationState:function(){return Object.assign({},migrationState);},getMessageResources:function(){return Object.assign({},messageResources);},flushMessageResources:function(){clearTimeout(resourcePersistTimer);resourcePersistTimer=null;resourcePersistToken++;var owner=captureSessionContext();return persistMessageResourcesSnapshot(owner,Object.assign({},messageResources)).catch(function(err){console.warn('[表情资源表] 严格保存失败',err);return false;});}};
 window.xiaoshuStickerStore=api;
 // Keep legacy global aliases pointed at the public API after sticker-core.js has
 // installed its deletion guard. Older callers must not retain private raw methods.
@@ -19339,7 +19493,8 @@ ensureModal();
 window.addEventListener('xiaoshu-session-data-ready',function(e){
 var sid=e&&e.detail&&e.detail.sessionId?String(e.detail.sessionId):currentSessionId();
 if(!sid)return;
-if(hydratedSessionId&&hydratedSessionId!==sid){migrationState.hydrated=false;uploads=[];}
+var owner=captureSessionContext(sid);
+if(hydratedSessionId&&hydratedSessionId!==sid){migrationState.hydrated=false;uploads=[];adminSelected.clear();adminSelectedSessionId='';resourceMigrationCatalogReady=false;clearTimeout(resourcePersistTimer);resourcePersistTimer=null;resourcePersistToken++;}
 tryHydrateCurrentSession(true);
 });
 if(!tryHydrateCurrentSession(false)){

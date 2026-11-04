@@ -18848,7 +18848,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     if(messageResources[id]!==src){messageResources[id]=src;scheduleResourcePersist();}
     return id;
   }
-  function resolveMessageResource(id){id=String(id||'');return norm(messageResources[id]||catalogResources[id]||'');}
+  function resolveMessageResource(id){var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return'';id=String(id||'');return norm(messageResources[id]||catalogResources[id]||'');}
   function migrateCurrentChatStickerMessages(context){
     var ctx=context&&context.sid?context:captureSessionContext(context);
     if(!isSessionContextCurrent(ctx)||!migrationState.hydrated||hydratedSessionId!==ctx.sid)return 0;
@@ -18893,15 +18893,37 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     sid=String(sid||currentSessionId()||'');
     return !!sid&&String(window.__xiaoshuSessionDataReady||'')===sid;
   }
+  function resetSessionOwnedRuntime(previousSid,nextSid){
+    if(!previousSid||previousSid===nextSid)return;
+    // Drop the previous conversation's in-memory views as soon as any public or
+    // async path observes a new active session, even before its ready event arrives.
+    if(hydratedSessionId!==nextSid){
+      migrationState.hydrated=false;
+      uploads=[];
+      messageResources=Object.create(null);
+      catalogResources=Object.create(null);
+      resourceMigrationCatalogReady=false;
+      fullPoolPublished=false;
+      adminSelected.clear();
+      adminSelectedSessionId='';
+      clearTimeout(resourcePersistTimer);
+      resourcePersistTimer=null;
+      resourcePersistToken++;
+    }
+  }
   function captureSessionContext(sid){
     sid=String(sid||currentSessionId()||'');
-    if(sessionGenerationId!==sid){sessionGenerationId=sid;sessionGeneration++;}
+    if(sessionGenerationId!==sid){
+      var previousSid=sessionGenerationId;
+      sessionGenerationId=sid;sessionGeneration++;
+      resetSessionOwnedRuntime(previousSid,sid);
+    }
     return{sid:sid,generation:sessionGeneration};
   }
   function isSessionContextCurrent(context){
     if(!context||!context.sid)return false;
     var activeSid=currentSessionId();
-    if(sessionGenerationId!==activeSid){sessionGenerationId=activeSid;sessionGeneration++;}
+    if(sessionGenerationId!==activeSid)captureSessionContext(activeSid);
     return activeSid===context.sid&&sessionGeneration===context.generation&&sessionDataReady(context.sid);
   }
   function readJsonFrom(store,key){
@@ -19085,7 +19107,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     return false;
   }
   var fullPoolPublished=false;
-  function getUploads(){return uploads.slice();}
+  function getUploads(){var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return[];return uploads.slice();}
   function getHidden(){return Array.from(hidden);}
   function buildPool(includeBuiltins){
     var base=includeBuiltins?builtinSrcs():[];
@@ -19104,11 +19126,12 @@ function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){retu
     try{if(Array.isArray(stickerLibrary)){stickerLibrary.length=0;pool.forEach(function(x){stickerLibrary.push(x);});}window._stickerLibrary=pool.slice();}catch(e){window._stickerLibrary=pool.slice();}
   }
   function getPool(){
+    var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return[];
     var pool=buildPool(true);
     if(!fullPoolPublished){fullPoolPublished=true;publishLegacyPool(pool);}
     return pool;
   }
-  function getLocalPool(){return buildPool(true).filter(isImage);}
+  function getLocalPool(){var owner=captureSessionContext();if(!isSessionContextCurrent(owner)||!migrationState.hydrated||hydratedSessionId!==owner.sid)return[];return buildPool(true).filter(isImage);}
   function sendSticker(src){
     src=norm(src);
     if(!src||!isImage(src))return false;
@@ -19477,7 +19500,7 @@ finally{
 // that reaches the ready barrier. It is never reused as another session's upload list.
 startupLegacyUploadSeed=uploads.slice();
 startupLegacyUploadSeedSessionId=currentSessionId();
-var api={getPool:getPool,getLocalPool:getLocalPool,getUploads:getUploads,getHidden:getHidden,send:sendSticker,sync:syncRuntime,openUpload:openUpload,addFiles:addFiles,hide:hideSticker,restore:restoreSticker,clearHidden:clearHidden,removeUpload:removeUpload,clearUploads:clearUploads,openAdmin:openAdmin,exportHidden:exportHidden,hydrate:hydrate,ensureInputs:ensureInputs,installWriteGuard:installLegacyGroupWriteGuard,idFor:stickerIdFor,register:registerMessageResource,resolve:resolveMessageResource,migrateMessages:migrateCurrentChatStickerMessages,repairMessages:repairCurrentChatStickerResources,getMigrationState:function(){return Object.assign({},migrationState);},getMessageResources:function(){return Object.assign({},messageResources);},flushMessageResources:function(){clearTimeout(resourcePersistTimer);resourcePersistTimer=null;resourcePersistToken++;var owner=captureSessionContext();return persistMessageResourcesSnapshot(owner,Object.assign({},messageResources)).catch(function(err){console.warn('[表情资源表] 严格保存失败',err);return false;});}};
+var api={getPool:getPool,getLocalPool:getLocalPool,getUploads:getUploads,getHidden:getHidden,send:sendSticker,sync:syncRuntime,openUpload:openUpload,addFiles:addFiles,hide:hideSticker,restore:restoreSticker,clearHidden:clearHidden,removeUpload:removeUpload,clearUploads:clearUploads,openAdmin:openAdmin,exportHidden:exportHidden,hydrate:hydrate,ensureInputs:ensureInputs,installWriteGuard:installLegacyGroupWriteGuard,idFor:stickerIdFor,register:registerMessageResource,resolve:resolveMessageResource,migrateMessages:migrateCurrentChatStickerMessages,repairMessages:repairCurrentChatStickerResources,getMigrationState:function(){return Object.assign({},migrationState);},getMessageResources:function(){var owner=captureSessionContext();return isSessionContextCurrent(owner)&&migrationState.hydrated&&hydratedSessionId===owner.sid?Object.assign({},messageResources):Object.create(null);},flushMessageResources:function(){clearTimeout(resourcePersistTimer);resourcePersistTimer=null;resourcePersistToken++;var owner=captureSessionContext();return persistMessageResourcesSnapshot(owner,Object.assign({},messageResources)).catch(function(err){console.warn('[表情资源表] 严格保存失败',err);return false;});}};
 window.xiaoshuStickerStore=api;
 // Keep legacy global aliases pointed at the public API after sticker-core.js has
 // installed its deletion guard. Older callers must not retain private raw methods.
